@@ -20,6 +20,7 @@ import (
 	"github.com/voocel/ainovel-cli/domain"
 	"github.com/voocel/ainovel-cli/state"
 	"github.com/voocel/ainovel-cli/tools"
+	"github.com/voocel/litellm"
 )
 
 // emitFn 是可选的 UIEvent 发射回调，用于向 TUI 转发结构化事件。
@@ -38,6 +39,7 @@ func Run(cfg Config, refs tools.References, prompts Prompts, styles map[string]s
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
+	log.Printf("[boot] provider=%s model=%s base_url=%s output=%s", cfg.Provider, cfg.ModelName, cfg.BaseURL, cfg.OutputDir)
 
 	// 1. 初始化状态
 	store := state.NewStore(cfg.OutputDir)
@@ -61,10 +63,10 @@ func Run(cfg Config, refs tools.References, prompts Prompts, styles map[string]s
 	askUser.SetHandler(cliAskUserHandler)
 
 	// 4. 确定性控制面：事件监听 + FollowUp 注入
-	registerSubscription(coordinator, store, nil, nil, nil)
+	registerSubscription(coordinator, store, cfg.Provider, nil, nil, nil)
 
 	// 5. 初始化运行元信息（保留已有 SteerHistory）
-	if err := store.InitRunMeta(cfg.Style, cfg.ModelName); err != nil {
+	if err := store.InitRunMeta(cfg.Style, cfg.Provider, cfg.ModelName); err != nil {
 		log.Printf("[warn] 初始化运行元信息失败: %v", err)
 	}
 
@@ -115,7 +117,9 @@ func Run(cfg Config, refs tools.References, prompts Prompts, styles map[string]s
 }
 
 // registerSubscription 注册 coordinator 事件订阅，包含确定性控制和可选的 UIEvent/Delta 转发。
-func registerSubscription(coordinator *agentcore.Agent, store *state.Store, emit emitFn, onDelta deltaFn, onClear clearFn) {
+func registerSubscription(coordinator *agentcore.Agent, store *state.Store, provider string, emit emitFn, onDelta deltaFn, onClear clearFn) {
+	var lastProgressSummary string
+
 	coordinator.Subscribe(func(ev agentcore.Event) {
 		switch ev.Type {
 		case agentcore.EventToolExecStart:
@@ -133,6 +137,13 @@ func registerSubscription(coordinator *agentcore.Agent, store *state.Store, emit
 				return
 			}
 			summary := parseProgressSummary(ev)
+			if summary == "" {
+				return
+			}
+			if summary == lastProgressSummary {
+				return
+			}
+			lastProgressSummary = summary
 			log.Printf("[progress] %s", summary)
 			if emit != nil {
 				emit(UIEvent{Time: time.Now(), Category: "TOOL", Summary: summary, Level: "info"})
@@ -151,6 +162,7 @@ func registerSubscription(coordinator *agentcore.Agent, store *state.Store, emit
 			}
 
 		case agentcore.EventToolExecEnd:
+			lastProgressSummary = ""
 			if ev.IsError {
 				log.Printf("[tool:error] %s", ev.Tool)
 				if emit != nil {
@@ -178,9 +190,9 @@ func registerSubscription(coordinator *agentcore.Agent, store *state.Store, emit
 			}
 
 		case agentcore.EventError:
-			log.Printf("[error] %v", ev.Err)
+			log.Printf("[error][provider=%s] %v", provider, ev.Err)
 			if emit != nil {
-				emit(UIEvent{Time: time.Now(), Category: "ERROR", Summary: fmt.Sprintf("%v", ev.Err), Level: "error"})
+				emit(UIEvent{Time: time.Now(), Category: "ERROR", Summary: fmt.Sprintf("[%s] %v", provider, ev.Err), Level: "error"})
 			}
 		}
 	})
@@ -460,13 +472,18 @@ func parseProgressSummary(ev agentcore.Event) string {
 		return "progress"
 	}
 	var data struct {
-		Agent string `json:"agent"`
-		Tool  string `json:"tool"`
-		Turn  int    `json:"turn"`
-		Error bool   `json:"error"`
+		Agent    string `json:"agent"`
+		Tool     string `json:"tool"`
+		Turn     int    `json:"turn"`
+		Error    bool   `json:"error"`
+		Thinking string `json:"thinking"`
 	}
 	if err := json.Unmarshal(ev.Result, &data); err != nil {
 		return truncateLog(string(ev.Result), 60)
+	}
+	// subagent 的 thinking 更新属于高频内部推理，不适合刷到事件流面板。
+	if data.Thinking != "" && data.Tool == "" {
+		return ""
 	}
 	if data.Tool != "" {
 		if data.Error {
@@ -540,9 +557,23 @@ func createModel(cfg Config) (agentcore.ChatModel, error) {
 		return llm.NewAnthropicModel(cfg.ModelName, cfg.APIKey, baseURL...)
 	case "gemini":
 		return llm.NewGeminiModel(cfg.ModelName, cfg.APIKey, baseURL...)
-	default: // openai, openrouter 及其他 OpenAI 兼容服务
+	case "openrouter":
+		return newOpenRouterModel(cfg.ModelName, cfg.APIKey, baseURL...)
+	default: // openai 及其他 OpenAI 兼容服务
 		return llm.NewOpenAIModel(cfg.ModelName, cfg.APIKey, baseURL...)
 	}
+}
+
+func newOpenRouterModel(model, apiKey string, baseURL ...string) (agentcore.ChatModel, error) {
+	cfg := litellm.ProviderConfig{APIKey: apiKey}
+	if len(baseURL) > 0 {
+		cfg.BaseURL = baseURL[0]
+	}
+	client, err := litellm.NewWithProvider("openrouter", cfg)
+	if err != nil {
+		return nil, fmt.Errorf("openrouter: %w", err)
+	}
+	return llm.NewLiteLLMAdapter(model, client), nil
 }
 
 // cliAskUserHandler 是 CLI 模式下的交互式选择器，上下键选择，回车确认。

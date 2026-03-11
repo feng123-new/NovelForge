@@ -25,6 +25,7 @@ type UIEvent struct {
 
 // UISnapshot 是 TUI 渲染所需的聚合状态快照。
 type UISnapshot struct {
+	Provider          string
 	NovelName         string
 	ModelName         string
 	Style             string
@@ -94,6 +95,7 @@ func NewRuntime(cfg Config, refs tools.References, prompts Prompts, styles map[s
 	if err := cfg.ValidateBase(); err != nil {
 		return nil, err
 	}
+	log.Printf("[boot] provider=%s model=%s base_url=%s output=%s", cfg.Provider, cfg.ModelName, cfg.BaseURL, cfg.OutputDir)
 
 	store := state.NewStore(cfg.OutputDir)
 	if err := store.Init(); err != nil {
@@ -119,10 +121,10 @@ func NewRuntime(cfg Config, refs tools.References, prompts Prompts, styles map[s
 	}
 
 	// 注册事件订阅：确定性控制 + UIEvent 转发 + 流式 delta 转发
-	registerSubscription(coordinator, store, rt.emit, rt.emitDelta, rt.emitClear)
+	registerSubscription(coordinator, store, cfg.Provider, rt.emit, rt.emitDelta, rt.emitClear)
 
 	// 初始化运行元信息
-	if err := store.InitRunMeta(cfg.Style, cfg.ModelName); err != nil {
+	if err := store.InitRunMeta(cfg.Style, cfg.Provider, cfg.ModelName); err != nil {
 		log.Printf("[warn] 初始化运行元信息失败: %v", err)
 	}
 
@@ -249,6 +251,7 @@ func (rt *Runtime) Steer(text string) {
 func (rt *Runtime) Snapshot() UISnapshot {
 	snap := UISnapshot{
 		NovelName: rt.cfg.NovelName,
+		Provider:  rt.cfg.Provider,
 		ModelName: rt.cfg.ModelName,
 		Style:     rt.cfg.Style,
 	}

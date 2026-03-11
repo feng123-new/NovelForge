@@ -1,8 +1,10 @@
 package app
 
 import (
+	"encoding/json"
 	"testing"
 
+	"github.com/voocel/agentcore"
 	"github.com/voocel/ainovel-cli/domain"
 	"github.com/voocel/ainovel-cli/state"
 )
@@ -68,5 +70,55 @@ func TestFinalizeSteerIfIdleKeepsActiveFlow(t *testing.T) {
 	}
 	if runMeta.PendingSteer != "加入反转" {
 		t.Fatalf("expected pending steer preserved, got %q", runMeta.PendingSteer)
+	}
+}
+
+func TestParseProgressSummaryIgnoresThinkingUpdate(t *testing.T) {
+	result, err := json.Marshal(map[string]any{
+		"agent":    "architect",
+		"thinking": "好的，我已经获得了模板。",
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	summary := parseProgressSummary(agentcore.Event{Result: result})
+	if summary != "" {
+		t.Fatalf("expected thinking update to be ignored, got %q", summary)
+	}
+}
+
+func TestParseProgressSummaryKeepsToolProgress(t *testing.T) {
+	result, err := json.Marshal(map[string]any{
+		"agent": "writer",
+		"tool":  "plan_chapter",
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	summary := parseProgressSummary(agentcore.Event{Result: result})
+	if summary != "writer → plan_chapter" {
+		t.Fatalf("unexpected summary: %q", summary)
+	}
+}
+
+func TestCreateModelUsesOpenRouterProvider(t *testing.T) {
+	model, err := createModel(Config{
+		Provider:  "openrouter",
+		ModelName: "stepfun/step-3.5-flash:free",
+		APIKey:    "test-key",
+		BaseURL:   "https://openrouter.ai/api/v1",
+	})
+	if err != nil {
+		t.Fatalf("createModel: %v", err)
+	}
+
+	providerModel, ok := model.(interface{ ProviderName() string })
+	if !ok {
+		t.Fatalf("model does not expose provider name")
+	}
+	if provider := providerModel.ProviderName(); provider != "openrouter" {
+		t.Fatalf("expected provider openrouter, got %q", provider)
 	}
 }

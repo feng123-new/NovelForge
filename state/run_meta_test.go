@@ -13,6 +13,7 @@ func TestSaveAndLoadRunMeta(t *testing.T) {
 
 	meta := domain.RunMeta{
 		StartedAt: "2026-03-07T10:00:00+08:00",
+		Provider:  "openrouter",
 		Style:     "fantasy",
 		Model:     "gpt-4o",
 	}
@@ -26,6 +27,9 @@ func TestSaveAndLoadRunMeta(t *testing.T) {
 	}
 	if loaded.Style != "fantasy" {
 		t.Errorf("style mismatch: %s", loaded.Style)
+	}
+	if loaded.Provider != "openrouter" {
+		t.Errorf("provider mismatch: %s", loaded.Provider)
 	}
 	if loaded.Model != "gpt-4o" {
 		t.Errorf("model mismatch: %s", loaded.Model)
@@ -80,6 +84,7 @@ func TestAppendSteerEntry_PreservesExistingMeta(t *testing.T) {
 	// 先保存 RunMeta
 	_ = store.SaveRunMeta(domain.RunMeta{
 		StartedAt: "2026-03-07T10:00:00+08:00",
+		Provider:  "openrouter",
 		Style:     "suspense",
 		Model:     "gpt-4o",
 	})
@@ -90,6 +95,9 @@ func TestAppendSteerEntry_PreservesExistingMeta(t *testing.T) {
 	meta, _ := store.LoadRunMeta()
 	if meta.Style != "suspense" {
 		t.Errorf("style should be preserved, got %s", meta.Style)
+	}
+	if meta.Provider != "openrouter" {
+		t.Errorf("provider should be preserved, got %s", meta.Provider)
 	}
 	if meta.Model != "gpt-4o" {
 		t.Errorf("model should be preserved, got %s", meta.Model)
@@ -106,6 +114,7 @@ func TestInitRunMeta_PreservesHistory(t *testing.T) {
 	// 先建立带历史的 RunMeta
 	_ = store.SaveRunMeta(domain.RunMeta{
 		StartedAt:    "old",
+		Provider:     "openai",
 		Style:        "fantasy",
 		Model:        "old-model",
 		SteerHistory: []domain.SteerEntry{{Input: "历史干预", Timestamp: "ts"}},
@@ -113,11 +122,14 @@ func TestInitRunMeta_PreservesHistory(t *testing.T) {
 	})
 
 	// InitRunMeta 应保留 SteerHistory 和 PendingSteer
-	_ = store.InitRunMeta("suspense", "new-model")
+	_ = store.InitRunMeta("suspense", "openrouter", "new-model")
 
 	meta, _ := store.LoadRunMeta()
 	if meta.Style != "suspense" {
 		t.Errorf("style should be updated, got %s", meta.Style)
+	}
+	if meta.Provider != "openrouter" {
+		t.Errorf("provider should be updated, got %s", meta.Provider)
 	}
 	if meta.Model != "new-model" {
 		t.Errorf("model should be updated, got %s", meta.Model)

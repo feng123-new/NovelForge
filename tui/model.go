@@ -13,6 +13,14 @@ import (
 
 const maxEvents = 500
 
+type focusPane int
+
+const (
+	focusEvents focusPane = iota
+	focusStream
+	focusDetail
+)
+
 type appMode int
 
 const (
@@ -29,15 +37,18 @@ type Model struct {
 	runtime      *app.Runtime
 	snapshot     app.UISnapshot
 	events       []app.UIEvent
-	viewport     viewport.Model  // 事件流 viewport
-	streamVP     viewport.Model  // 流式输出 viewport
+	viewport     viewport.Model   // 事件流 viewport
+	streamVP     viewport.Model   // 流式输出 viewport
+	detailVP     viewport.Model   // 右侧详情 viewport
 	streamBuf    *strings.Builder // 流式文本累积缓冲
 	textarea     textarea.Model
 	width        int
 	height       int
 	autoScroll   bool
 	streamScroll bool // 流式面板自动跟随
-	focusStream  bool // true=焦点在流式面板, false=事件流
+	focusPane    focusPane
+	hoverPane    focusPane
+	hoverActive  bool
 	mode         appMode
 	err          error
 	spinnerIdx   int
@@ -63,6 +74,9 @@ func NewModel(rt *app.Runtime) Model {
 	svp := viewport.New(80, 10)
 	svp.SetContent("")
 
+	dvp := viewport.New(40, 20)
+	dvp.SetContent("")
+
 	return Model{
 		runtime:      rt,
 		autoScroll:   true,
@@ -71,6 +85,7 @@ func NewModel(rt *app.Runtime) Model {
 		textarea:     ta,
 		viewport:     vp,
 		streamVP:     svp,
+		detailVP:     dvp,
 		streamBuf:    &strings.Builder{},
 	}
 }
@@ -97,6 +112,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.textarea.SetWidth(m.inputWidth())
 		m.updateViewportSize()
+		m.refreshDetailViewport()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -116,7 +132,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.streamRound = 0
 			return m, nil
 		case tea.KeyTab:
-			m.focusStream = !m.focusStream
+			m.focusPane = (m.focusPane + 1) % 3
 			return m, nil
 		case tea.KeyEnter:
 			text := strings.TrimSpace(m.textarea.Value())
@@ -134,10 +150,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case tea.KeyUp, tea.KeyPgUp:
-			if m.focusStream {
+			if m.focusPane == focusStream {
 				m.streamScroll = false
 				var cmd tea.Cmd
 				m.streamVP, cmd = m.streamVP.Update(msg)
+				return m, cmd
+			}
+			if m.focusPane == focusDetail {
+				var cmd tea.Cmd
+				m.detailVP, cmd = m.detailVP.Update(msg)
 				return m, cmd
 			}
 			m.autoScroll = false
@@ -145,12 +166,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
 		case tea.KeyDown, tea.KeyPgDown:
-			if m.focusStream {
+			if m.focusPane == focusStream {
 				var cmd tea.Cmd
 				m.streamVP, cmd = m.streamVP.Update(msg)
 				if m.streamVP.AtBottom() {
 					m.streamScroll = true
 				}
+				return m, cmd
+			}
+			if m.focusPane == focusDetail {
+				var cmd tea.Cmd
+				m.detailVP, cmd = m.detailVP.Update(msg)
 				return m, cmd
 			}
 			var cmd tea.Cmd
@@ -160,9 +186,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, cmd
 		case tea.KeyEnd:
-			if m.focusStream {
+			if m.focusPane == focusStream {
 				m.streamScroll = true
 				m.streamVP.GotoBottom()
+			} else if m.focusPane == focusDetail {
+				m.detailVP.GotoBottom()
 			} else {
 				m.autoScroll = true
 				m.viewport.GotoBottom()
@@ -171,12 +199,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
+		if pane, ok := m.paneAtMouse(msg.X, msg.Y); ok {
+			m.hoverPane = pane
+			m.hoverActive = true
+			if msg.Action == tea.MouseActionPress {
+				m.focusPane = pane
+			}
+		} else {
+			m.hoverActive = false
+		}
 		var cmd tea.Cmd
-		if m.focusStream {
+		if m.focusPane == focusStream {
 			m.streamVP, cmd = m.streamVP.Update(msg)
 			if msg.Action == tea.MouseActionPress {
 				m.streamScroll = m.streamVP.AtBottom()
 			}
+		} else if m.focusPane == focusDetail {
+			m.detailVP, cmd = m.detailVP.Update(msg)
 		} else {
 			m.viewport, cmd = m.viewport.Update(msg)
 			if msg.Action == tea.MouseActionPress {
@@ -196,6 +235,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case snapshotMsg:
 		m.snapshot = app.UISnapshot(msg)
+		m.refreshDetailViewport()
 		return m, tickSnapshot(m.runtime)
 
 	case doneMsg:
@@ -260,6 +300,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func (m *Model) paneAtMouse(x, y int) (focusPane, bool) {
+	if m.width == 0 || m.height == 0 {
+		return focusEvents, false
+	}
+
+	topH := lipgloss.Height(renderTopBar(m.snapshot, m.width, ""))
+	inputH := lipgloss.Height(renderInputBox(m.textarea.View(), m.snapshot, m.runtime.Dir(), m.width))
+	bodyH := m.height - topH - inputH
+	if bodyH < 1 {
+		return focusEvents, false
+	}
+
+	bodyStartY := topH
+	bodyEndY := topH + bodyH
+	if y < bodyStartY || y >= bodyEndY {
+		return focusEvents, false
+	}
+
+	leftW := m.width * 25 / 100
+	rightW := m.detailWidth()
+	centerStartX := leftW
+	rightStartX := m.width - rightW
+
+	if x >= rightStartX {
+		return focusDetail, true
+	}
+	if x < centerStartX {
+		return focusEvents, true
+	}
+
+	eventH, _ := m.splitHeights(bodyH)
+	if y-bodyStartY < eventH {
+		return focusEvents, true
+	}
+	return focusStream, true
+}
+
+func (m *Model) paneHighlighted(pane focusPane) bool {
+	if m.focusPane == pane {
+		return true
+	}
+	return m.hoverActive && m.hoverPane == pane
+}
+
 // refreshEventViewport 重新渲染事件流内容并设置 viewport。
 func (m *Model) refreshEventViewport() {
 	centerW := m.eventFlowWidth()
@@ -273,15 +357,26 @@ func (m *Model) refreshEventViewport() {
 	}
 }
 
+func (m *Model) refreshDetailViewport() {
+	rightW := m.detailWidth()
+	if rightW <= 4 {
+		return
+	}
+	m.detailVP.SetContent(renderDetailContent(m.snapshot, rightW-4))
+}
+
 // updateViewportSize 根据当前窗口尺寸更新 viewport 大小。
 func (m *Model) updateViewportSize() {
 	centerW := m.eventFlowWidth()
+	rightW := m.detailWidth()
 	bodyH := m.bodyHeight()
 	eventH, streamH := m.splitHeights(bodyH)
 	m.viewport.Width = centerW - 2
 	m.viewport.Height = eventH - 1 // -1 为 event panel header 行
 	m.streamVP.Width = centerW - 2
 	m.streamVP.Height = streamH - 1 // -1 为 stream panel header 行
+	m.detailVP.Width = rightW - 2
+	m.detailVP.Height = bodyH
 }
 
 // splitHeights 计算事件流和流式输出的高度分配。
@@ -309,8 +404,15 @@ func (m *Model) eventFlowWidth() int {
 		return 80
 	}
 	leftW := m.width * 25 / 100
-	rightW := m.width * 30 / 100
+	rightW := m.detailWidth()
 	return m.width - leftW - rightW
+}
+
+func (m *Model) detailWidth() int {
+	if m.width == 0 {
+		return 40
+	}
+	return m.width * 30 / 100
 }
 
 func (m *Model) bodyHeight() int {
@@ -362,7 +464,7 @@ func (m Model) View() string {
 		body = renderWelcome(m.width, bodyH, errMsg)
 	} else {
 		leftW := m.width * 25 / 100
-		rightW := m.width * 30 / 100
+		rightW := m.detailWidth()
 		centerW := m.width - leftW - rightW
 		eventH, streamH := m.splitHeights(bodyH)
 
@@ -375,12 +477,12 @@ func (m Model) View() string {
 			m.streamVP.Height = streamH - 1 // -1 为 stream panel header 行
 		}
 
-		eventFlow := renderEventFlowViewport(m.viewport, centerW, eventH, !m.focusStream)
-		streamPanel := renderStreamPanel(m.streamVP, centerW, streamH, m.focusStream)
+		eventFlow := renderEventFlowViewport(m.viewport, centerW, eventH, m.paneHighlighted(focusEvents))
+		streamPanel := renderStreamPanel(m.streamVP, centerW, streamH, m.paneHighlighted(focusStream))
 		center := lipgloss.JoinVertical(lipgloss.Left, eventFlow, streamPanel)
 
 		left := renderStatePanel(m.snapshot, leftW, bodyH)
-		right := renderDetailPanel(m.snapshot, rightW, bodyH)
+		right := renderDetailPanel(m.detailVP, rightW, bodyH, m.paneHighlighted(focusDetail))
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, center, right)
 	}
 

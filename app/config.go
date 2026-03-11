@@ -36,7 +36,7 @@ func (c *Config) Validate() error {
 // ValidateBase 校验基础配置（TUI 模式下 Prompt 由用户输入，不在此检查）。
 func (c *Config) ValidateBase() error {
 	if c.APIKey == "" {
-		return fmt.Errorf("api key is required (set OPENAI_API_KEY or ANTHROPIC_API_KEY)")
+		return fmt.Errorf("api key is required (set OPENROUTER_API_KEY, Z_OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY)")
 	}
 	switch c.Provider {
 	case "openai", "anthropic", "gemini", "openrouter":

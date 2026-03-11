@@ -20,7 +20,7 @@ func renderInputBox(inputView string, snap app.UISnapshot, outputDir string, wid
 	line1 := prompt + inputView
 
 	// 第二行：左快捷键，右进度
-	hints := lipgloss.NewStyle().Foreground(colorDim).Render("Tab 切换 · ^L 清屏 · Esc 重置 · Enter 发送")
+	hints := lipgloss.NewStyle().Foreground(colorDim).Render("点击/Tab 切换面板 · ↑↓ 滚动 · End 跳底 · ^L 清屏 · Esc 重置 · Enter 发送")
 	info := buildRightInfo(snap, outputDir)
 
 	hintsW := lipgloss.Width(hints)
@@ -52,6 +52,9 @@ func renderInputBox(inputView string, snap app.UISnapshot, outputDir string, wid
 func buildRightInfo(snap app.UISnapshot, outputDir string) string {
 	var parts []string
 
+	if snap.Provider != "" {
+		parts = append(parts, snap.Provider)
+	}
 	if snap.ModelName != "" {
 		parts = append(parts, snap.ModelName)
 	}

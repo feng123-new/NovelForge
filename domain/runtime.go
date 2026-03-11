@@ -62,6 +62,7 @@ func (p *Progress) NextChapter() int {
 // RunMeta 运行元信息，持久化到 meta/run.json。
 type RunMeta struct {
 	StartedAt    string       `json:"started_at"`
+	Provider     string       `json:"provider,omitempty"`
 	Style        string       `json:"style"`
 	Model        string       `json:"model"`
 	SteerHistory []SteerEntry `json:"steer_history,omitempty"`

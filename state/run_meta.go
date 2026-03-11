@@ -26,10 +26,11 @@ func (s *Store) LoadRunMeta() (*domain.RunMeta, error) {
 }
 
 // InitRunMeta 初始化或更新运行元信息，保留已有的 SteerHistory。
-func (s *Store) InitRunMeta(style, model string) error {
+func (s *Store) InitRunMeta(style, provider, model string) error {
 	existing, _ := s.LoadRunMeta()
 	meta := domain.RunMeta{
 		StartedAt: time.Now().Format(time.RFC3339),
+		Provider:  provider,
 		Style:     style,
 		Model:     model,
 	}

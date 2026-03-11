@@ -27,6 +27,9 @@ func renderTopBar(snap app.UISnapshot, width int, spinnerFrame string) string {
 
 	// 第二行左侧：模型 + 风格
 	var infoParts []string
+	if snap.Provider != "" {
+		infoParts = append(infoParts, snap.Provider)
+	}
 	if snap.ModelName != "" {
 		infoParts = append(infoParts, snap.ModelName)
 	}
@@ -238,10 +241,9 @@ func renderStreamSeparator(round, width int) string {
 	return dimLine + dimLabel + dimLine
 }
 
-// renderDetailPanel 渲染右侧详情面板。
+// renderDetailContent 构建右侧详情面板内容。
 // 优先展示基础设定（大纲、角色），然后是运行时信息（提交、审阅等）。
-func renderDetailPanel(snap app.UISnapshot, width, height int) string {
-	contentW := width - 4 // 边框 + padding
+func renderDetailContent(snap app.UISnapshot, contentW int) string {
 	var b strings.Builder
 
 	// 大纲
@@ -309,14 +311,23 @@ func renderDetailPanel(snap app.UISnapshot, width, height int) string {
 		}
 	}
 
+	return b.String()
+}
+
+// renderDetailPanel 渲染右侧可滚动详情面板。
+func renderDetailPanel(vp viewport.Model, width, height int, focused bool) string {
+	borderColor := colorDim
+	if focused {
+		borderColor = colorAccent
+	}
 	style := lipgloss.NewStyle().
 		Width(width).
 		Height(height).
 		Border(baseBorder, false, false, false, true).
-		BorderForeground(colorDim).
+		BorderForeground(borderColor).
 		Padding(0, 1)
 
-	return style.Render(b.String())
+	return style.Render(vp.View())
 }
 
 // renderWelcome 渲染新建态首屏。
