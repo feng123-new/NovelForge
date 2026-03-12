@@ -167,9 +167,18 @@ func registerSubscription(coordinator *agentcore.Agent, store *state.Store, prov
 		case agentcore.EventToolExecEnd:
 			lastProgressSummary = ""
 			if ev.IsError {
-				log.Printf("[tool:error] %s", ev.Tool)
+				detail := extractToolErrorText(ev.Result)
+				if detail != "" {
+					log.Printf("[tool:error] %s → %s", ev.Tool, detail)
+				} else {
+					log.Printf("[tool:error] %s", ev.Tool)
+				}
 				if emit != nil {
-					emit(UIEvent{Time: time.Now(), Category: "ERROR", Summary: ev.Tool + " 执行失败", Level: "error"})
+					summary := ev.Tool + " 执行失败"
+					if detail != "" {
+						summary += "： " + truncateLog(detail, 80)
+					}
+					emit(UIEvent{Time: time.Now(), Category: "ERROR", Summary: summary, Level: "error"})
 				}
 				return
 			}
@@ -616,6 +625,35 @@ func extractLoadingSummary(result json.RawMessage) string {
 		return ""
 	}
 	return data.Summary
+}
+
+func extractToolErrorText(result json.RawMessage) string {
+	if len(result) == 0 {
+		return ""
+	}
+
+	var plain string
+	if err := json.Unmarshal(result, &plain); err == nil {
+		return plain
+	}
+
+	var obj struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+		Detail  string `json:"detail"`
+	}
+	if err := json.Unmarshal(result, &obj); err == nil {
+		switch {
+		case obj.Error != "":
+			return obj.Error
+		case obj.Message != "":
+			return obj.Message
+		case obj.Detail != "":
+			return obj.Detail
+		}
+	}
+
+	return truncateLog(string(result), 160)
 }
 
 func truncateLog(s string, maxRunes int) string {

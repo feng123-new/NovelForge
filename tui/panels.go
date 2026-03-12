@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -228,17 +229,183 @@ func renderStreamPanel(vp viewport.Model, width, height int, focused bool) strin
 	return header + "\n" + vpStyle.Render(vp.View())
 }
 
-// renderStreamSeparator 渲染流式面板中的轮次分隔线。
-func renderStreamSeparator(round, width int) string {
-	label := fmt.Sprintf(" #%d ", round)
-	lineW := (width - lipgloss.Width(label)) / 2
-	if lineW < 1 {
-		lineW = 1
+// renderStreamContent 将流式输出按轮次渲染为分块内容，避免长段直接拼接导致错乱。
+func renderStreamContent(rounds []string, width int) string {
+	if width < 24 {
+		width = 24
 	}
-	line := strings.Repeat("─", lineW)
-	dimLine := lipgloss.NewStyle().Foreground(colorDim).Render(line)
-	dimLabel := lipgloss.NewStyle().Foreground(colorDim).Render(label)
-	return dimLine + dimLabel + dimLine
+
+	var blocks []string
+	displayIndex := 0
+	for i, round := range rounds {
+		text := strings.TrimSpace(round)
+		if text == "" {
+			continue
+		}
+		displayIndex++
+		blocks = append(blocks, renderStreamBlock(displayIndex, text, width, i == len(rounds)-1))
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
+func renderStreamBlock(index int, text string, width int, active bool) string {
+	headerStyle := lipgloss.NewStyle().Foreground(colorDim)
+	bodyStyle := lipgloss.NewStyle().Foreground(colorText)
+	dividerColor := colorDim
+	if active {
+		headerStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+		dividerColor = colorAccent
+	}
+
+	header := headerStyle.Render(fmt.Sprintf("◆ 第 %d 段", index))
+	divider := lipgloss.NewStyle().Foreground(dividerColor).Render(strings.Repeat("─", max(8, width)))
+	lines := wrapStreamText(text, max(16, width-4))
+
+	var b strings.Builder
+	b.WriteString(header)
+	b.WriteString("\n")
+	b.WriteString(divider)
+	b.WriteString("\n")
+	for i, line := range lines {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(bodyStyle.Render(line))
+	}
+	return b.String()
+}
+
+func wrapStreamText(text string, width int) []string {
+	if width < 8 {
+		return []string{text}
+	}
+
+	var out []string
+	for _, raw := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		if strings.TrimSpace(raw) == "" {
+			out = append(out, "")
+			continue
+		}
+		if compact, ok := compactJSONLine(raw, width); ok {
+			out = append(out, compact)
+			continue
+		}
+		prefix, rest, nextPrefix := parseWrapPrefix(raw)
+		wrapped := wrapRunes(rest, max(4, width-lipgloss.Width(prefix)))
+		for i, line := range wrapped {
+			if i == 0 {
+				out = append(out, prefix+line)
+				continue
+			}
+			out = append(out, nextPrefix+line)
+		}
+	}
+	return out
+}
+
+func compactJSONLine(line string, width int) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return "", false
+	}
+	if !(strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")) {
+		return "", false
+	}
+
+	var value any
+	if err := json.Unmarshal([]byte(trimmed), &value); err != nil {
+		return "", false
+	}
+
+	compact, err := json.Marshal(value)
+	if err != nil {
+		return "", false
+	}
+
+	text := string(compact)
+	limit := max(24, width-2)
+	if lipgloss.Width(text) > limit {
+		text = truncate(text, limit-1)
+	}
+	return lipgloss.NewStyle().Foreground(colorDim).Render("JSON: ") +
+		lipgloss.NewStyle().Foreground(lipgloss.Color("#8fb7c9")).Render(text), true
+}
+
+func parseWrapPrefix(line string) (prefix, content, nextPrefix string) {
+	indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+	trimmed := strings.TrimSpace(line)
+
+	switch {
+	case strings.HasPrefix(trimmed, "- "), strings.HasPrefix(trimmed, "* "), strings.HasPrefix(trimmed, "• "):
+		prefix = indent + trimmed[:2]
+		content = strings.TrimSpace(trimmed[2:])
+		nextPrefix = indent + "  "
+		return prefix, content, nextPrefix
+	case orderedListPrefix(trimmed) != "":
+		marker := orderedListPrefix(trimmed)
+		prefix = indent + marker
+		content = strings.TrimSpace(strings.TrimPrefix(trimmed, marker))
+		nextPrefix = indent + strings.Repeat(" ", lipgloss.Width(marker))
+		return prefix, content, nextPrefix
+	case strings.HasPrefix(trimmed, "```"):
+		return indent, trimmed, indent
+	default:
+		return indent, trimmed, indent
+	}
+}
+
+func orderedListPrefix(line string) string {
+	end := strings.Index(line, ". ")
+	if end <= 0 {
+		return ""
+	}
+	for _, r := range line[:end] {
+		if r < '0' || r > '9' {
+			return ""
+		}
+	}
+	return line[:end+2]
+}
+
+func wrapRunes(text string, width int) []string {
+	if text == "" {
+		return []string{""}
+	}
+	if width < 2 {
+		return []string{text}
+	}
+
+	var lines []string
+	var current strings.Builder
+	currentWidth := 0
+
+	for _, r := range text {
+		rw := lipgloss.Width(string(r))
+		if currentWidth > 0 && currentWidth+rw > width {
+			lines = append(lines, strings.TrimRight(current.String(), " "))
+			current.Reset()
+			currentWidth = 0
+			if r == ' ' {
+				continue
+			}
+		}
+		current.WriteRune(r)
+		currentWidth += rw
+	}
+	if current.Len() > 0 {
+		lines = append(lines, strings.TrimRight(current.String(), " "))
+	}
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // renderDetailContent 构建右侧详情面板内容。

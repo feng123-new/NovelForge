@@ -17,11 +17,13 @@ func Run(cfg app.Config, refs tools.References, prompts app.Prompts, styles map[
 	if err != nil {
 		return err
 	}
+	bridge := newAskUserBridge()
+	rt.AskUser().SetHandler(bridge.handler)
 	restoreLog := redirectLogger(rt.Dir())
 	defer restoreLog()
 	defer rt.Close()
 
-	m := NewModel(rt)
+	m := NewModel(rt, bridge)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err = p.Run()
 	return err

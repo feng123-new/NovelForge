@@ -51,10 +51,10 @@ func (t *AskUserTool) SetHandler(h AskUserHandler) {
 	t.mu.Unlock()
 }
 
-func (t *AskUserTool) Name() string        { return "ask_user" }
-func (t *AskUserTool) Label() string        { return "询问用户" }
+func (t *AskUserTool) Name() string  { return "ask_user" }
+func (t *AskUserTool) Label() string { return "询问用户" }
 func (t *AskUserTool) Description() string {
-	return "向用户提出结构化问题，用于需要用户确认方向、澄清需求或做出选择时。用户可以从预设选项中选择，也可以自由输入。"
+	return "当需求信息不足、且缺失信息会明显影响规划方向时，向用户提出 1-4 个结构化问题。每个问题必须包含 header、question 和 2-4 个选项；用户可选预设项，也可自由补充。返回结果是可直接阅读的中文摘要，格式类似：用户回答：[篇幅] 长篇；[重心] 剧情升级（补充：不要后宫）。只有在无法稳定判断篇幅、主线重心、关键约束或明确偏好时才使用；不要把能自行合理推断的问题都抛给用户。"
 }
 
 func (t *AskUserTool) Schema() map[string]any {

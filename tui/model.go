@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -35,12 +36,15 @@ var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 // Model 是 TUI 的顶层状态。
 type Model struct {
 	runtime      *app.Runtime
+	askBridge    *askUserBridge
+	askState     *askUserState
 	snapshot     app.UISnapshot
 	events       []app.UIEvent
 	viewport     viewport.Model   // 事件流 viewport
 	streamVP     viewport.Model   // 流式输出 viewport
 	detailVP     viewport.Model   // 右侧详情 viewport
 	streamBuf    *strings.Builder // 流式文本累积缓冲
+	streamRounds []string
 	textarea     textarea.Model
 	width        int
 	height       int
@@ -56,7 +60,7 @@ type Model struct {
 }
 
 // NewModel 创建 TUI Model。
-func NewModel(rt *app.Runtime) Model {
+func NewModel(rt *app.Runtime, bridge *askUserBridge) Model {
 	ta := textarea.New()
 	ta.Placeholder = "输入小说需求，例如：写一部12章都市悬疑小说"
 	ta.CharLimit = 500
@@ -79,6 +83,7 @@ func NewModel(rt *app.Runtime) Model {
 
 	return Model{
 		runtime:      rt,
+		askBridge:    bridge,
 		autoScroll:   true,
 		streamScroll: true,
 		mode:         modeNew,
@@ -94,6 +99,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		textarea.Blink,
 		listenEvents(m.runtime),
+		listenAskUser(m.askBridge),
 		listenDone(m.runtime),
 		listenStream(m.runtime),
 		listenStreamClear(m.runtime),
@@ -116,6 +122,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.askState != nil {
+			return m.handleAskUserKey(msg)
+		}
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
@@ -127,6 +136,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetContent("")
 			m.viewport.GotoTop()
 			m.streamBuf.Reset()
+			m.streamRounds = nil
 			m.streamVP.SetContent("")
 			m.streamVP.GotoTop()
 			m.streamRound = 0
@@ -233,6 +243,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshEventViewport()
 		return m, listenEvents(m.runtime)
 
+	case askUserMsg:
+		m.askState = newAskUserState(askUserRequest(msg))
+		m.textarea.Blur()
+		m.events = append(m.events, app.UIEvent{
+			Time: time.Now(), Category: "SYSTEM", Summary: "等待用户补充关键信息", Level: "info",
+		})
+		m.refreshEventViewport()
+		return m, listenAskUser(m.askBridge)
+
 	case snapshotMsg:
 		m.snapshot = app.UISnapshot(msg)
 		m.refreshDetailViewport()
@@ -270,22 +289,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tickSpinner()
 
 	case streamDeltaMsg:
-		m.streamBuf.WriteString(string(msg))
-		m.streamVP.SetContent(m.streamBuf.String())
+		if len(m.streamRounds) == 0 {
+			m.streamRounds = append(m.streamRounds, "")
+		}
+		m.streamRounds[len(m.streamRounds)-1] += string(msg)
+		m.streamVP.SetContent(renderStreamContent(m.streamRounds, m.streamVP.Width))
 		if m.streamScroll {
 			m.streamVP.GotoBottom()
 		}
 		return m, listenStream(m.runtime)
 
 	case streamClearMsg:
-		// 新一轮输出：保留历史内容，用分隔线标记新段落
-		m.streamRound++
-		if m.streamBuf.Len() > 0 {
-			m.streamBuf.WriteString("\n")
-			m.streamBuf.WriteString(renderStreamSeparator(m.streamRound, m.streamVP.Width))
-			m.streamBuf.WriteString("\n")
+		// 新一轮输出：按轮次分块显示，避免长文本和分隔线直接拼接导致错乱。
+		if len(m.streamRounds) == 0 {
+			m.streamRounds = append(m.streamRounds, "")
+		} else if strings.TrimSpace(m.streamRounds[len(m.streamRounds)-1]) != "" {
+			m.streamRounds = append(m.streamRounds, "")
 		}
-		m.streamVP.SetContent(m.streamBuf.String())
+		m.streamRound = len(m.streamRounds)
+		m.streamVP.SetContent(renderStreamContent(m.streamRounds, m.streamVP.Width))
 		if m.streamScroll {
 			m.streamVP.GotoBottom()
 		}
@@ -486,5 +508,80 @@ func (m Model) View() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, center, right)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, topBar, body, inputBox)
+	view := lipgloss.JoinVertical(lipgloss.Left, topBar, body, inputBox)
+	if m.askState != nil {
+		return renderAskUserModal(m.width, m.height, m.askState)
+	}
+	return view
+}
+
+func (m Model) handleAskUserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.askState == nil {
+		return m, nil
+	}
+	state := m.askState
+	q := state.currentQuestion()
+
+	if state.typing {
+		switch msg.Type {
+		case tea.KeyEsc:
+			state.cancelCurrentTyping()
+			return m, nil
+		case tea.KeyEnter:
+			if state.finishCurrentAnswer() {
+				state.submit()
+				m.askState = nil
+				if m.mode != modeDone {
+					m.textarea.Focus()
+				}
+			}
+			return m, nil
+		case tea.KeyBackspace, tea.KeyCtrlH:
+			if state.input != "" {
+				_, size := utf8.DecodeLastRuneInString(state.input)
+				state.input = state.input[:len(state.input)-size]
+			}
+			return m, nil
+		default:
+			if msg.Type == tea.KeyRunes {
+				state.input += string(msg.Runes)
+			}
+			return m, nil
+		}
+	}
+
+	switch msg.Type {
+	case tea.KeyUp:
+		state.moveCursor(-1)
+	case tea.KeyDown:
+		state.moveCursor(1)
+	case tea.KeySpace:
+		if q.MultiSelect {
+			state.toggleSelection()
+			if state.cursor == len(q.Options) && !state.selected[state.cursor] {
+				state.input = ""
+			}
+		}
+	case tea.KeyEnter:
+		if q.MultiSelect {
+			if state.cursor == len(q.Options) {
+				state.toggleSelection()
+				if state.selected[state.cursor] {
+					state.typing = true
+				}
+				return m, nil
+			}
+			if len(state.selected) == 0 {
+				state.toggleSelection()
+			}
+		}
+		if state.finishCurrentAnswer() {
+			state.submit()
+			m.askState = nil
+			if m.mode != modeDone {
+				m.textarea.Focus()
+			}
+		}
+	}
+	return m, nil
 }

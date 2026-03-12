@@ -151,3 +151,29 @@ func TestPlanningTierGuidanceForMid(t *testing.T) {
 		t.Fatalf("expected architect_mid guidance, got %q", guidance)
 	}
 }
+
+func TestExtractToolErrorTextFromJSONString(t *testing.T) {
+	result, err := json.Marshal("save planning tier: permission denied")
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	text := extractToolErrorText(result)
+	if text != "save planning tier: permission denied" {
+		t.Fatalf("unexpected error text: %q", text)
+	}
+}
+
+func TestExtractToolErrorTextFromJSONObject(t *testing.T) {
+	result, err := json.Marshal(map[string]any{
+		"message": "parse outline JSON: invalid character",
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	text := extractToolErrorText(result)
+	if text != "parse outline JSON: invalid character" {
+		t.Fatalf("unexpected error text: %q", text)
+	}
+}

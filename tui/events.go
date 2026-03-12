@@ -12,6 +12,7 @@ type (
 	eventMsg       app.UIEvent
 	snapshotMsg    app.UISnapshot
 	doneMsg        struct{}
+	askUserMsg     askUserRequest
 	startResultMsg struct{ err error }
 	steerResultMsg struct{}
 	spinnerTickMsg time.Time
@@ -100,5 +101,15 @@ func listenStreamClear(rt *app.Runtime) tea.Cmd {
 			return nil
 		}
 		return streamClearMsg{}
+	}
+}
+
+func listenAskUser(bridge *askUserBridge) tea.Cmd {
+	return func() tea.Msg {
+		req, ok := <-bridge.requests
+		if !ok {
+			return nil
+		}
+		return askUserMsg(req)
 	}
 }
