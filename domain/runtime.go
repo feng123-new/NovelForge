@@ -59,6 +59,25 @@ func (p *Progress) NextChapter() int {
 	return max + 1
 }
 
+// ContextProfile 上下文加载策略，根据总章节数自适应。
+type ContextProfile struct {
+	SummaryWindow  int  // 加载最近 N 章摘要
+	TimelineWindow int  // 加载最近 N 章时间线
+	FullContext    bool // true = 忽略窗口，全量加载
+}
+
+// NewContextProfile 根据总章节数计算上下文策略。
+func NewContextProfile(totalChapters int) ContextProfile {
+	switch {
+	case totalChapters <= 15:
+		return ContextProfile{FullContext: true}
+	case totalChapters <= 50:
+		return ContextProfile{SummaryWindow: 5, TimelineWindow: 10}
+	default:
+		return ContextProfile{SummaryWindow: 3, TimelineWindow: 8}
+	}
+}
+
 // RunMeta 运行元信息，持久化到 meta/run.json。
 type RunMeta struct {
 	StartedAt    string       `json:"started_at"`

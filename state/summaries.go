@@ -39,3 +39,8 @@ func (s *Store) LoadRecentSummaries(current, count int) ([]domain.ChapterSummary
 	}
 	return result, nil
 }
+
+// LoadAllSummaries 加载 current 章之前的所有摘要（短篇全量模式）。
+func (s *Store) LoadAllSummaries(current int) ([]domain.ChapterSummary, error) {
+	return s.LoadRecentSummaries(current, current)
+}

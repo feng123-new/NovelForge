@@ -73,6 +73,12 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 	}
 
 	if a.Chapter > 0 {
+		// 根据总章节数计算上下文策略
+		profile := domain.NewContextProfile(0)
+		if progress, err := t.store.LoadProgress(); err == nil && progress != nil && progress.TotalChapters > 0 {
+			profile = domain.NewContextProfile(progress.TotalChapters)
+		}
+
 		// 角色按 Tier 过滤：core/important 始终返回，secondary/decorative 按出场匹配
 		t.loadFilteredCharacters(result, a.Chapter)
 
@@ -80,18 +86,35 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 		if entry, err := t.store.GetChapterOutline(a.Chapter); err == nil {
 			result["current_chapter_outline"] = entry
 		}
-		if summaries, err := t.store.LoadRecentSummaries(a.Chapter, 2); err == nil && len(summaries) > 0 {
-			result["recent_summaries"] = summaries
+		if profile.FullContext {
+			if summaries, err := t.store.LoadAllSummaries(a.Chapter); err == nil && len(summaries) > 0 {
+				result["recent_summaries"] = summaries
+			}
+		} else {
+			if summaries, err := t.store.LoadRecentSummaries(a.Chapter, profile.SummaryWindow); err == nil && len(summaries) > 0 {
+				result["recent_summaries"] = summaries
+			}
 		}
 
-		// V3: 状态数据分级加载
-		// timeline：只取最近 5 章的事件（避免后期全量膨胀）
-		if timeline, err := t.store.LoadRecentTimeline(a.Chapter, 5); err == nil && len(timeline) > 0 {
-			result["timeline"] = timeline
+		// 状态数据按策略加载
+		if profile.FullContext {
+			if timeline, err := t.store.LoadTimeline(); err == nil && len(timeline) > 0 {
+				result["timeline"] = timeline
+			}
+		} else {
+			if timeline, err := t.store.LoadRecentTimeline(a.Chapter, profile.TimelineWindow); err == nil && len(timeline) > 0 {
+				result["timeline"] = timeline
+			}
 		}
-		// foreshadow：只取未回收条目（已回收的对后续写作无意义）
-		if foreshadow, err := t.store.LoadActiveForeshadow(); err == nil && len(foreshadow) > 0 {
-			result["foreshadow_ledger"] = foreshadow
+		// foreshadow：短篇全量，否则只取未回收条目
+		if profile.FullContext {
+			if foreshadow, err := t.store.LoadForeshadowLedger(); err == nil && len(foreshadow) > 0 {
+				result["foreshadow_ledger"] = foreshadow
+			}
+		} else {
+			if foreshadow, err := t.store.LoadActiveForeshadow(); err == nil && len(foreshadow) > 0 {
+				result["foreshadow_ledger"] = foreshadow
+			}
 		}
 		// relationships：保持全量（pair-key 去重，数据量天然可控）
 		if relationships, err := t.store.LoadRelationships(); err == nil && len(relationships) > 0 {
