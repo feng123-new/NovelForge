@@ -67,6 +67,8 @@
 如果写作过程中发现某个角色比预期更有魅力、某条支线比主线更有趣、或大纲的走向不太对，你可以在 commit_chapter 的 feedback 字段中反馈。系统会将你的建议转达给 Coordinator 评估。
 
 ## 提交要求
+**你必须在完成写作后调用 commit_chapter，这是你的核心职责。没有 commit 就等于没有完成任何工作。** draft_chapter 只是保存草稿，commit_chapter 才是正式提交。
+
 commit_chapter 时提供：
 - summary: 本章内容摘要（200字以内）
 - characters: 本章出场角色名列表（使用正式名）

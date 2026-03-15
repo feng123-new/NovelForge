@@ -7,14 +7,15 @@ import (
 
 // Config 小说应用配置。
 type Config struct {
-	Prompt    string // 用户的小说需求
-	NovelName string // 小说名（用作输出目录名）
-	OutputDir string // 输出根目录，默认 output/{NovelName}
-	Provider  string // LLM 提供商：openai / anthropic / gemini
-	ModelName string // LLM 模型名
-	APIKey    string // API Key
-	BaseURL   string // API Base URL（可选）
-	Style     string // 写作风格（default/suspense/fantasy/romance）
+	Prompt        string // 用户的小说需求
+	NovelName     string // 小说名（用作输出目录名）
+	OutputDir     string // 输出根目录，默认 output/{NovelName}
+	Provider      string // LLM 提供商：openai / anthropic / gemini
+	ModelName     string // LLM 模型名
+	APIKey        string // API Key
+	BaseURL       string // API Base URL（可选）
+	Style         string // 写作风格（default/suspense/fantasy/romance）
+	ContextWindow int    // 模型上下文窗口大小（token），默认 128000
 }
 
 // Prompts 嵌入的提示词。
@@ -71,5 +72,8 @@ func (c *Config) FillDefaults() {
 	}
 	if c.Style == "" {
 		c.Style = "default"
+	}
+	if c.ContextWindow <= 0 {
+		c.ContextWindow = 128000
 	}
 }

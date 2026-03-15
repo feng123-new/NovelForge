@@ -59,13 +59,14 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		}
 	}
 
+	result := map[string]any{"saved": true, "type": a.Type, "scale": a.Scale}
+
 	switch a.Type {
 	case "premise":
 		if err := t.store.SavePremise(content); err != nil {
 			return nil, fmt.Errorf("save premise: %w", err)
 		}
 		_ = t.store.UpdatePhase(domain.PhasePremise)
-		return json.Marshal(map[string]any{"saved": true, "type": "premise", "scale": a.Scale})
 
 	case "outline":
 		var entries []domain.OutlineEntry
@@ -76,14 +77,13 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 			return nil, fmt.Errorf("save outline: %w", err)
 		}
 		_ = t.store.UpdatePhase(domain.PhaseOutline)
-		// 根据大纲长度自动设定总章节数
 		_ = t.store.SetTotalChapters(len(entries))
 		if domain.PlanningTier(a.Scale) != domain.PlanningTierLong {
 			_ = t.store.SetLayered(false)
 			_ = t.store.UpdateVolumeArc(0, 0)
 			_ = t.store.ClearLayeredOutline()
 		}
-		return json.Marshal(map[string]any{"saved": true, "type": "outline", "chapters": len(entries), "scale": a.Scale})
+		result["chapters"] = len(entries)
 
 	case "layered_outline":
 		var volumes []domain.VolumeOutline
@@ -93,7 +93,6 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		if err := t.store.SaveLayeredOutline(volumes); err != nil {
 			return nil, fmt.Errorf("save layered_outline: %w", err)
 		}
-		// 展开为扁平大纲，兼容现有 GetChapterOutline
 		flat := domain.FlattenOutline(volumes)
 		if err := t.store.SaveOutline(flat); err != nil {
 			return nil, fmt.Errorf("save flattened outline: %w", err)
@@ -105,11 +104,8 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		if len(volumes) > 0 && len(volumes[0].Arcs) > 0 {
 			_ = t.store.UpdateVolumeArc(volumes[0].Index, volumes[0].Arcs[0].Index)
 		}
-		return json.Marshal(map[string]any{
-			"saved": true, "type": "layered_outline",
-			"volumes": len(volumes), "chapters": total,
-			"scale": a.Scale,
-		})
+		result["volumes"] = len(volumes)
+		result["chapters"] = total
 
 	case "characters":
 		var chars []domain.Character
@@ -119,7 +115,7 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		if err := t.store.SaveCharacters(chars); err != nil {
 			return nil, fmt.Errorf("save characters: %w", err)
 		}
-		return json.Marshal(map[string]any{"saved": true, "type": "characters", "count": len(chars), "scale": a.Scale})
+		result["count"] = len(chars)
 
 	case "world_rules":
 		var rules []domain.WorldRule
@@ -129,11 +125,15 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		if err := t.store.SaveWorldRules(rules); err != nil {
 			return nil, fmt.Errorf("save world_rules: %w", err)
 		}
-		return json.Marshal(map[string]any{"saved": true, "type": "world_rules", "count": len(rules), "scale": a.Scale})
+		result["count"] = len(rules)
 
 	default:
 		return nil, fmt.Errorf("unknown type %q, expected premise/outline/layered_outline/characters/world_rules", a.Type)
 	}
+
+	// 返回剩余未完成项，引导 Architect 继续
+	result["remaining"] = t.remaining()
+	return json.Marshal(result)
 }
 
 func normalizeFoundationContent(raw json.RawMessage) (string, error) {
@@ -150,4 +150,22 @@ func normalizeFoundationContent(raw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("invalid content: expected Markdown string or valid JSON value")
 	}
 	return string(raw), nil
+}
+
+// remaining 检查基础设定中还缺少哪些必要项。
+func (t *SaveFoundationTool) remaining() []string {
+	var missing []string
+	if p, _ := t.store.LoadPremise(); p == "" {
+		missing = append(missing, "premise")
+	}
+	if o, _ := t.store.LoadOutline(); len(o) == 0 {
+		missing = append(missing, "outline")
+	}
+	if c, _ := t.store.LoadCharacters(); len(c) == 0 {
+		missing = append(missing, "characters")
+	}
+	if r, _ := t.store.LoadWorldRules(); len(r) == 0 {
+		missing = append(missing, "world_rules")
+	}
+	return missing
 }

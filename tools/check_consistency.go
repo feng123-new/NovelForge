@@ -21,7 +21,7 @@ func NewCheckConsistencyTool(store *state.Store) *CheckConsistencyTool {
 
 func (t *CheckConsistencyTool) Name() string { return "check_consistency" }
 func (t *CheckConsistencyTool) Description() string {
-	return "加载章节内容和全部状态数据（时间线、伏笔、关系、世界规则、角色状态），供你自行对照检查一致性"
+	return "加载章节内容和对照数据（世界规则、伏笔、关系、别名、最近摘要），供你检查一致性"
 }
 func (t *CheckConsistencyTool) Label() string { return "一致性检查" }
 
@@ -55,18 +55,17 @@ func (t *CheckConsistencyTool) Execute(_ context.Context, args json.RawMessage) 
 	result["content"] = content
 	result["word_count"] = wordCount
 
-	// 状态数据（全部加载，Agent 自行决定怎么用）
-	if timeline, _ := t.store.LoadTimeline(); len(timeline) > 0 {
-		result["timeline"] = timeline
+	// 对照数据：保留全局性的一致性检查数据，避免重复加载 novel_context 已有的窗口数据
+	if rules, _ := t.store.LoadWorldRules(); len(rules) > 0 {
+		result["world_rules"] = rules
 	}
-	if foreshadow, _ := t.store.LoadForeshadowLedger(); len(foreshadow) > 0 {
+	if foreshadow, _ := t.store.LoadActiveForeshadow(); len(foreshadow) > 0 {
 		result["foreshadow_ledger"] = foreshadow
 	}
 	if relationships, _ := t.store.LoadRelationships(); len(relationships) > 0 {
 		result["relationships"] = relationships
 	}
 	if chars, _ := t.store.LoadCharacters(); len(chars) > 0 {
-		result["characters"] = chars
 		aliasMap := make(map[string]string)
 		for _, c := range chars {
 			for _, alias := range c.Aliases {
@@ -76,12 +75,6 @@ func (t *CheckConsistencyTool) Execute(_ context.Context, args json.RawMessage) 
 		if len(aliasMap) > 0 {
 			result["alias_map"] = aliasMap
 		}
-	}
-	if changes, _ := t.store.LoadRecentStateChanges(a.Chapter, 5); len(changes) > 0 {
-		result["recent_state_changes"] = changes
-	}
-	if rules, _ := t.store.LoadWorldRules(); len(rules) > 0 {
-		result["world_rules"] = rules
 	}
 	if summaries, _ := t.store.LoadRecentSummaries(a.Chapter, 2); len(summaries) > 0 {
 		result["recent_summaries"] = summaries

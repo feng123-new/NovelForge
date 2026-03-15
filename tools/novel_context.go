@@ -126,15 +126,9 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 			warn("current_chapter_outline", err)
 		}
 
-		// 摘要加载：分层 vs 扁平
+		// 摘要加载：分层 vs 扁平窗口
 		if profile.Layered {
 			t.loadLayeredSummaries(result, a.Chapter, profile.SummaryWindow, warn)
-		} else if profile.FullContext {
-			if summaries, err := t.store.LoadAllSummaries(a.Chapter); err == nil && len(summaries) > 0 {
-				result["recent_summaries"] = summaries
-			} else {
-				warn("recent_summaries", err)
-			}
 		} else {
 			if summaries, err := t.store.LoadRecentSummaries(a.Chapter, profile.SummaryWindow); err == nil && len(summaries) > 0 {
 				result["recent_summaries"] = summaries
@@ -143,33 +137,17 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 			}
 		}
 
-		// 时间线：Layered 用窗口，其他按策略
-		if profile.FullContext {
-			if timeline, err := t.store.LoadTimeline(); err == nil && len(timeline) > 0 {
-				result["timeline"] = timeline
-			} else {
-				warn("timeline", err)
-			}
+		// 时间线：窗口加载
+		if timeline, err := t.store.LoadRecentTimeline(a.Chapter, profile.TimelineWindow); err == nil && len(timeline) > 0 {
+			result["timeline"] = timeline
 		} else {
-			if timeline, err := t.store.LoadRecentTimeline(a.Chapter, profile.TimelineWindow); err == nil && len(timeline) > 0 {
-				result["timeline"] = timeline
-			} else {
-				warn("timeline", err)
-			}
+			warn("timeline", err)
 		}
-		// foreshadow：短篇全量，否则只取未回收条目
-		if profile.FullContext {
-			if foreshadow, err := t.store.LoadForeshadowLedger(); err == nil && len(foreshadow) > 0 {
-				result["foreshadow_ledger"] = foreshadow
-			} else {
-				warn("foreshadow_ledger", err)
-			}
+		// foreshadow：只取未回收条目
+		if foreshadow, err := t.store.LoadActiveForeshadow(); err == nil && len(foreshadow) > 0 {
+			result["foreshadow_ledger"] = foreshadow
 		} else {
-			if foreshadow, err := t.store.LoadActiveForeshadow(); err == nil && len(foreshadow) > 0 {
-				result["foreshadow_ledger"] = foreshadow
-			} else {
-				warn("foreshadow_ledger", err)
-			}
+			warn("foreshadow_ledger", err)
 		}
 		// relationships：保持全量（pair-key 去重，数据量天然可控）
 		if relationships, err := t.store.LoadRelationships(); err == nil && len(relationships) > 0 {
@@ -177,8 +155,8 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 		} else {
 			warn("relationship_state", err)
 		}
-		// 状态变化：最近 5 章的角色/实体状态变化
-		if changes, err := t.store.LoadRecentStateChanges(a.Chapter, 5); err == nil && len(changes) > 0 {
+		// 状态变化：最近 2 章
+		if changes, err := t.store.LoadRecentStateChanges(a.Chapter, 2); err == nil && len(changes) > 0 {
 			result["recent_state_changes"] = changes
 		} else {
 			warn("recent_state_changes", err)
@@ -229,6 +207,17 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 			result["chapter_plan"] = plan
 		} else {
 			warn("chapter_plan", err)
+		}
+
+		// 前章尾部：嵌入前一章末尾 ~800 字，Writer 无需额外调用 read_chapter 获取衔接上文
+		if a.Chapter > 1 {
+			if prevText, err := t.store.LoadChapterText(a.Chapter - 1); err == nil && prevText != "" {
+				runes := []rune(prevText)
+				if len(runes) > 800 {
+					runes = runes[len(runes)-800:]
+				}
+				result["previous_tail"] = string(runes)
+			}
 		}
 
 		// 风格锚点：从前文提取代表性段落
@@ -288,11 +277,20 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 			warn("volume_summaries", err)
 		}
 		result["references"] = t.architectReferences()
+
+		// 基础设定完备性检查
+		result["foundation_status"] = t.foundationStatus()
 	}
 
 	if len(warnings) > 0 {
 		result["_warnings"] = warnings
 	}
+
+	// 优先级预算：总大小超过阈值时自动裁剪低优先级数据
+	if a.Chapter > 0 {
+		trimByBudget(result, 100*1024) // 100KB 预算
+	}
+
 	result["_loading_summary"] = buildLoadingSummary(result, a.Chapter)
 	return json.Marshal(result)
 }
@@ -363,6 +361,9 @@ func buildLoadingSummary(result map[string]any, chapter int) string {
 	if n := countSlice("recent_state_changes"); n > 0 {
 		items = append(items, fmt.Sprintf("状态变化:%d", n))
 	}
+	if _, ok := result["previous_tail"]; ok {
+		items = append(items, "前章尾部:ok")
+	}
 
 	// 参考资料
 	if refs, ok := result["references"].(map[string]string); ok && len(refs) > 0 {
@@ -370,6 +371,9 @@ func buildLoadingSummary(result map[string]any, chapter int) string {
 	}
 	if warnings, ok := result["_warnings"].([]string); ok && len(warnings) > 0 {
 		items = append(items, fmt.Sprintf("告警:%d", len(warnings)))
+	}
+	if trimmed, ok := result["_trimmed"].([]string); ok && len(trimmed) > 0 {
+		items = append(items, fmt.Sprintf("裁剪:%s", strings.Join(trimmed, ",")))
 	}
 
 	if len(items) > 0 {
@@ -520,15 +524,17 @@ func (t *ContextTool) writerReferences(chapter int) map[string]string {
 			refs[k] = v
 		}
 	}
-	// 始终加载的核心参考
-	add("chapter_guide", t.refs.ChapterGuide)
+	// 渐进式加载：始终保留核心参考，前 3 章额外加载完整写作指南
+	add("consistency", t.refs.Consistency)
 	add("hook_techniques", t.refs.HookTechniques)
 	add("quality_checklist", t.refs.QualityChecklist)
-	add("consistency", t.refs.Consistency)
-	add("dialogue_writing", t.refs.DialogueWriting)
-	add("style_reference", t.refs.StyleReference)
+	if chapter <= 3 {
+		add("chapter_guide", t.refs.ChapterGuide)
+		add("dialogue_writing", t.refs.DialogueWriting)
+		add("style_reference", t.refs.StyleReference)
+	}
 
-	// 仅首章加载的补充参考（后续章节不再需要）
+	// 仅首章加载的补充参考
 	if chapter <= 1 {
 		add("chapter_template", t.refs.ChapterTemplate)
 		add("content_expansion", t.refs.ContentExpansion)
@@ -551,6 +557,29 @@ func (t *ContextTool) architectReferences() map[string]string {
 	return refs
 }
 
+// foundationStatus 检查基础设定的完备性，返回缺失项列表。
+func (t *ContextTool) foundationStatus() map[string]any {
+	status := map[string]any{"ready": true}
+	var missing []string
+	if p, _ := t.store.LoadPremise(); p == "" {
+		missing = append(missing, "premise")
+	}
+	if o, _ := t.store.LoadOutline(); len(o) == 0 {
+		missing = append(missing, "outline")
+	}
+	if c, _ := t.store.LoadCharacters(); len(c) == 0 {
+		missing = append(missing, "characters")
+	}
+	if r, _ := t.store.LoadWorldRules(); len(r) == 0 {
+		missing = append(missing, "world_rules")
+	}
+	if len(missing) > 0 {
+		status["ready"] = false
+		status["missing"] = missing
+	}
+	return status
+}
+
 // ContextSummary 返回当前状态的简要摘要（供日志使用）。
 func (t *ContextTool) ContextSummary() string {
 	var parts []string
@@ -567,4 +596,44 @@ func (t *ContextTool) ContextSummary() string {
 		return "empty"
 	}
 	return strings.Join(parts, ", ")
+}
+
+// trimByBudget 按优先级裁剪 result，使 JSON 总大小不超过 budget 字节。
+// 优先级（从低到高）：references < voice_samples < style_anchors < previous_tail < timeline
+//   < recent_state_changes < foreshadow_ledger < relationship_state < 其余（不裁剪）
+// 裁剪的 key 会记录到 result["_trimmed"] 供日志排查。
+func trimByBudget(result map[string]any, budget int) {
+	// 先测量当前大小
+	data, err := json.Marshal(result)
+	if err != nil || len(data) <= budget {
+		return
+	}
+
+	// 按优先级从低到高列出可裁剪的 key
+	trimOrder := []string{
+		"references",
+		"voice_samples",
+		"style_anchors",
+		"previous_tail",
+		"timeline",
+		"recent_state_changes",
+		"foreshadow_ledger",
+		"relationship_state",
+	}
+
+	var trimmed []string
+	for _, key := range trimOrder {
+		if _, ok := result[key]; !ok {
+			continue
+		}
+		delete(result, key)
+		trimmed = append(trimmed, key)
+		data, err = json.Marshal(result)
+		if err != nil || len(data) <= budget {
+			break
+		}
+	}
+	if len(trimmed) > 0 {
+		result["_trimmed"] = trimmed
+	}
 }

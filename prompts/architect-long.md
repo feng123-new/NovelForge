@@ -114,3 +114,4 @@
 - 不要过早透支所有高潮和谜底
 - 不要把同一种爽点反复复制到每一卷
 - 不要让中后期只是前期的放大版
+- **你必须按顺序完成全部 4 步（premise → layered_outline → characters → world_rules），全部保存后才算完成。每次 save_foundation 返回值中的 `remaining` 字段会告诉你还有哪些未完成，不要在 remaining 非空时停止。**

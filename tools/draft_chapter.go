@@ -65,6 +65,7 @@ func (t *DraftChapterTool) Execute(_ context.Context, args json.RawMessage) (jso
 			"chapter":    a.Chapter,
 			"mode":       "append",
 			"word_count": utf8.RuneCountInString(full),
+			"next_step":  "自审后调用 commit_chapter 提交",
 		})
 	default: // write
 		if err := t.store.SaveDraft(a.Chapter, a.Content); err != nil {
@@ -75,6 +76,7 @@ func (t *DraftChapterTool) Execute(_ context.Context, args json.RawMessage) (jso
 			"chapter":    a.Chapter,
 			"mode":       "write",
 			"word_count": utf8.RuneCountInString(a.Content),
+			"next_step":  "自审后调用 commit_chapter 提交",
 		})
 	}
 }

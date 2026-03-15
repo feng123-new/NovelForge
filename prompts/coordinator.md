@@ -60,18 +60,18 @@
 调用对应规划师完成基础设定：
 
 ```json
-{"agent": "architect_short", "task": "根据以下需求生成短篇/单卷小说基础设定。\\n\\n<用户需求>"}
+{"agent": "architect_short", "task": "根据以下需求生成短篇/单卷小说基础设定（premise + outline + characters + world_rules，全部保存后才算完成）。\\n\\n<用户需求>"}
 ```
 
 ```json
-{"agent": "architect_mid", "task": "根据以下需求生成中篇/多阶段小说基础设定。\\n\\n<用户需求>"}
+{"agent": "architect_mid", "task": "根据以下需求生成中篇/多阶段小说基础设定（premise + outline + characters + world_rules，全部保存后才算完成）。\\n\\n<用户需求>"}
 ```
 
 ```json
-{"agent": "architect_long", "task": "根据以下需求生成长篇/连载型小说基础设定。\\n\\n<用户需求>"}
+{"agent": "architect_long", "task": "根据以下需求生成长篇/连载型小说基础设定（premise + layered_outline + characters + world_rules，全部保存后才算完成）。\\n\\n<用户需求>"}
 ```
 
-规划完成后，用 novel_context 确认设定已保存，再开始写作。
+规划完成后，用 novel_context（不传 chapter）确认设定已保存。**必须检查返回值中的 `foundation_status.ready` 为 true 且 `foundation_status.missing` 为空**。如果有缺失项，重新调用对应规划师补全缺失部分，不要跳过直接写作。
 
 ### 第二阶段：逐章写作
 

@@ -182,20 +182,39 @@ func registerSubscription(coordinator *agentcore.Agent, store *state.Store, prov
 				}
 				return
 			}
+
+			// subagent 结果：提取 usage 和 error，单独记录
+			if ev.Tool == "subagent" {
+				logSubAgentResult(ev.Result, emit)
+				handleFoundationCheck(coordinator, store, emit)
+				committed := handleSubAgentDone(coordinator, store, emit)
+				if !committed {
+					handleUncommittedDraft(coordinator, store, emit)
+				}
+				handleEditorDone(coordinator, store, emit)
+				break
+			}
+
+			// novel_context：提取加载摘要替代原始 JSON
+			if ev.Tool == "novel_context" {
+				if summary := extractLoadingSummary(ev.Result); summary != "" {
+					log.Printf("[tool:done] novel_context → %s", summary)
+					if emit != nil {
+						emit(UIEvent{Time: time.Now(), Category: "CONTEXT", Summary: summary, Level: "info"})
+					}
+				} else {
+					log.Printf("[tool:done] novel_context → %s", truncateLog(string(ev.Result), 200))
+				}
+				if emit != nil {
+					emit(UIEvent{Time: time.Now(), Category: "TOOL", Summary: "novel_context.done", Level: "info"})
+				}
+				break
+			}
+
+			// 其他工具：保持原样
 			log.Printf("[tool:done] %s → %s", ev.Tool, truncateLog(string(ev.Result), 200))
 			if emit != nil {
 				emit(UIEvent{Time: time.Now(), Category: "TOOL", Summary: ev.Tool + ".done", Level: "info"})
-			}
-			// 上下文加载可视化：提取 novel_context 的加载摘要
-			if ev.Tool == "novel_context" && emit != nil {
-				if summary := extractLoadingSummary(ev.Result); summary != "" {
-					emit(UIEvent{Time: time.Now(), Category: "CONTEXT", Summary: summary, Level: "info"})
-				}
-			}
-
-			if ev.Tool == "subagent" {
-				handleSubAgentDone(coordinator, store, emit)
-				handleEditorDone(coordinator, store, emit)
 			}
 
 		case agentcore.EventMessageEnd:
@@ -337,11 +356,52 @@ func determineRecovery(progress *domain.Progress, runMeta *domain.RunMeta) recov
 	return recoveryResult{IsNew: true}
 }
 
+// handleFoundationCheck 在 SubAgent 完成后检查基础设定是否完备。
+// 如果 phase 仍在 premise（有 premise 但无 outline），注入确定性提醒。
+func handleFoundationCheck(coordinator *agentcore.Agent, store *state.Store, emit emitFn) {
+	progress, _ := store.LoadProgress()
+	if progress == nil {
+		return
+	}
+	// 只在规划阶段检查（premise 已保存但 outline 未保存）
+	if progress.Phase != domain.PhasePremise {
+		return
+	}
+	var missing []string
+	if o, _ := store.LoadOutline(); len(o) == 0 {
+		missing = append(missing, "outline")
+	}
+	if c, _ := store.LoadCharacters(); len(c) == 0 {
+		missing = append(missing, "characters")
+	}
+	if r, _ := store.LoadWorldRules(); len(r) == 0 {
+		missing = append(missing, "world_rules")
+	}
+	if len(missing) == 0 {
+		return
+	}
+	log.Printf("[host] 基础设定不完整，缺失: %v", missing)
+	if emit != nil {
+		emit(UIEvent{Time: time.Now(), Category: "SYSTEM",
+			Summary: fmt.Sprintf("基础设定不完整，缺失: %v", missing), Level: "warn"})
+	}
+	runMeta, _ := store.LoadRunMeta()
+	guidance := planningTierGuidance(runMeta)
+	msg := fmt.Sprintf(
+		"[系统] 基础设定不完整，以下项目尚未保存：%v。请重新调用对应规划师补全这些设定。在基础设定全部完备前，不要调用 writer。",
+		missing)
+	if guidance != "" {
+		msg += "\n" + guidance
+	}
+	coordinator.FollowUp(agentcore.UserMsg(msg))
+}
+
 // handleSubAgentDone 在每次 SubAgent 调用完成后读取文件系统信号，注入确定性任务。
-func handleSubAgentDone(coordinator *agentcore.Agent, store *state.Store, emit emitFn) {
+// 返回 true 表示检测到 commit 信号（Writer 正常完成）。
+func handleSubAgentDone(coordinator *agentcore.Agent, store *state.Store, emit emitFn) bool {
 	result, err := store.LoadLastCommit()
 	if err != nil || result == nil {
-		return
+		return false
 	}
 	if err := store.ClearLastCommit(); err != nil {
 		log.Printf("[host] 清除 commit 信号失败: %v", err)
@@ -378,7 +438,7 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *state.Store, emit e
 			coordinator.FollowUp(agentcore.UserMsg(fmt.Sprintf(
 				"[系统] 当前处于重写流程，但提交了非队列章节（第 %d 章）。请先完成待重写章节 %v 后再继续新章节。",
 				result.Chapter, progress.PendingRewrites)))
-			return
+			return true
 		}
 		if err := store.CompleteRewrite(result.Chapter); err != nil {
 			log.Printf("[host] 完成重写标记失败: %v", err)
@@ -396,7 +456,7 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *state.Store, emit e
 			log.Printf("[host] 还有 %d 章待处理：%v", len(updated.PendingRewrites), updated.PendingRewrites)
 			saveCheckpoint(store, fmt.Sprintf("ch%02d-commit", result.Chapter))
 		}
-		return
+		return true
 	}
 
 	// 确定性判断 1.5：长篇弧/卷边界处理
@@ -454,7 +514,7 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *state.Store, emit e
 		}
 		clearHandledSteer(store)
 		saveCheckpoint(store, fmt.Sprintf("ch%02d-commit", result.Chapter))
-		return
+		return true
 	}
 
 	// 确定性判断 1：全书完成（TotalChapters 由大纲自动设定）
@@ -475,7 +535,7 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *state.Store, emit e
 		coordinator.FollowUp(agentcore.UserMsg(fmt.Sprintf(
 			"[系统] 全部 %d 章已写完。请总结全书并结束。不要再调用 writer。",
 			totalChapters)))
-		return
+		return true
 	}
 
 	// 确定性判断 2：需要全局审阅
@@ -493,6 +553,37 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *state.Store, emit e
 	}
 	clearHandledSteer(store)
 	saveCheckpoint(store, fmt.Sprintf("ch%02d-commit", result.Chapter))
+	return true
+}
+
+// handleUncommittedDraft 在 Writer 结束但没有 commit 时检测是否存在未提交的草稿。
+// 如果存在，提醒 Coordinator 重新调用 writer 完成提交。
+func handleUncommittedDraft(coordinator *agentcore.Agent, store *state.Store, emit emitFn) {
+	progress, _ := store.LoadProgress()
+	if progress == nil || progress.Phase == domain.PhaseComplete {
+		return
+	}
+	// 确定下一个应该写的章节
+	next := 1
+	if progress.InProgressChapter > 0 {
+		next = progress.InProgressChapter
+	} else if len(progress.CompletedChapters) > 0 {
+		next = progress.NextChapter()
+	}
+	// 检查该章节是否有草稿但未提交
+	draft, _ := store.LoadDraft(next)
+	if draft == "" {
+		return
+	}
+	// 有草稿但没有 commit 信号
+	log.Printf("[host] Writer 结束但第 %d 章草稿未提交", next)
+	if emit != nil {
+		emit(UIEvent{Time: time.Now(), Category: "SYSTEM",
+			Summary: fmt.Sprintf("第 %d 章有草稿但未提交", next), Level: "warn"})
+	}
+	coordinator.FollowUp(agentcore.UserMsg(fmt.Sprintf(
+		"[系统] Writer 结束但第 %d 章草稿未提交。请重新调用 writer 完成该章的自审和提交（commit_chapter）。",
+		next)))
 }
 
 // handleEditorDone 在 Editor SubAgent 完成后读取审阅信号。
@@ -599,10 +690,11 @@ func parseProgressSummary(ev agentcore.Event) string {
 		return "progress"
 	}
 	var data struct {
-		Agent    string `json:"agent"`
-		Tool     string `json:"tool"`
-		Turn     int    `json:"turn"`
-		Error    bool   `json:"error"`
+		Agent   string `json:"agent"`
+		Tool    string `json:"tool"`
+		Turn    int    `json:"turn"`
+		Error   bool   `json:"error"`
+		Message string `json:"message"`
 		Thinking string `json:"thinking"`
 	}
 	if err := json.Unmarshal(ev.Result, &data); err != nil {
@@ -614,6 +706,9 @@ func parseProgressSummary(ev agentcore.Event) string {
 	}
 	if data.Tool != "" {
 		if data.Error {
+			if data.Message != "" {
+				return fmt.Sprintf("%s → %s (error: %s)", data.Agent, data.Tool, truncateLog(data.Message, 120))
+			}
 			return fmt.Sprintf("%s → %s (error)", data.Agent, data.Tool)
 		}
 		return fmt.Sprintf("%s → %s", data.Agent, data.Tool)
@@ -636,6 +731,50 @@ func extractLoadingSummary(result json.RawMessage) string {
 		return ""
 	}
 	return data.Summary
+}
+
+// logSubAgentResult 从 subagent 结果中提取 usage 和 error，分别记录结构化日志。
+func logSubAgentResult(result json.RawMessage, emit emitFn) {
+	if len(result) == 0 {
+		log.Printf("[tool:done] subagent → (empty)")
+		return
+	}
+	var data struct {
+		Output string `json:"output"`
+		Error  string `json:"error"`
+		Usage  struct {
+			Input      int     `json:"input"`
+			Output     int     `json:"output"`
+			CacheRead  int     `json:"cache_read"`
+			CacheWrite int     `json:"cache_write"`
+			Cost       float64 `json:"cost"`
+			Turns      int     `json:"turns"`
+			Tools      int     `json:"tools"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(result, &data); err != nil {
+		log.Printf("[tool:done] subagent → %s", truncateLog(string(result), 200))
+		return
+	}
+
+	// 记录 usage
+	u := data.Usage
+	log.Printf("[usage] input=%d output=%d cache_read=%d turns=%d tools=%d",
+		u.Input, u.Output, u.CacheRead, u.Turns, u.Tools)
+
+	if data.Error != "" {
+		log.Printf("[subagent:error] %s", data.Error)
+		if emit != nil {
+			emit(UIEvent{Time: time.Now(), Category: "ERROR",
+				Summary: "subagent: " + truncateLog(data.Error, 80), Level: "error"})
+		}
+		return
+	}
+
+	log.Printf("[tool:done] subagent → %s", truncateLog(data.Output, 200))
+	if emit != nil {
+		emit(UIEvent{Time: time.Now(), Category: "TOOL", Summary: "subagent.done", Level: "info"})
+	}
 }
 
 func extractToolErrorText(result json.RawMessage) string {

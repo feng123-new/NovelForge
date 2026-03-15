@@ -106,4 +106,5 @@
 
 - 短篇最重要的是集中与收束
 - 不要预埋大量未来再说的线
-- 不要把短篇写成“长篇开头”
+- 不要把短篇写成”长篇开头”
+- **你必须按顺序完成全部 4 步（premise → outline → characters → world_rules），全部保存后才算完成。每次 save_foundation 返回值中的 `remaining` 字段会告诉你还有哪些未完成，不要在 remaining 非空时停止。**

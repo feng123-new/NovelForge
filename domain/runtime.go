@@ -76,7 +76,6 @@ func (p *Progress) NextChapter() int {
 type ContextProfile struct {
 	SummaryWindow  int  // 加载最近 N 章摘要
 	TimelineWindow int  // 加载最近 N 章时间线
-	FullContext    bool // true = 忽略窗口，全量加载
 	Layered        bool // true = 启用分层摘要加载（卷摘要+弧摘要+章摘要）
 }
 
@@ -84,11 +83,11 @@ type ContextProfile struct {
 func NewContextProfile(totalChapters int) ContextProfile {
 	switch {
 	case totalChapters <= 15:
-		return ContextProfile{FullContext: true}
+		return ContextProfile{SummaryWindow: 10, TimelineWindow: 10}
 	case totalChapters <= 50:
-		return ContextProfile{SummaryWindow: 5, TimelineWindow: 10}
+		return ContextProfile{SummaryWindow: 5, TimelineWindow: 8}
 	default:
-		return ContextProfile{SummaryWindow: 3, TimelineWindow: 8, Layered: true}
+		return ContextProfile{SummaryWindow: 3, TimelineWindow: 5, Layered: true}
 	}
 }
 

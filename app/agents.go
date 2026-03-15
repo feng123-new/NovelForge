@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/voocel/agentcore"
+	"github.com/voocel/agentcore/memory"
 	"github.com/voocel/ainovel-cli/state"
 	"github.com/voocel/ainovel-cli/tools"
 )
@@ -80,12 +81,19 @@ func BuildCoordinator(
 	}
 
 	writer := agentcore.SubAgentConfig{
-		Name:         "writer",
-		Description:  "创作者：自主完成一章的构思、写作、自审和提交",
-		Model:        model,
-		SystemPrompt: writerPrompt,
-		Tools:        writerTools,
-		MaxTurns:     20,
+		Name:             "writer",
+		Description:      "创作者：自主完成一章的构思、写作、自审和提交",
+		Model:            model,
+		SystemPrompt:     writerPrompt,
+		Tools:            writerTools,
+		MaxTurns:         20,
+		TransformContext: memory.NewCompaction(memory.CompactionConfig{
+			Model:            model,
+			ContextWindow:    cfg.ContextWindow,
+			ReserveTokens:    16384,
+			KeepRecentTokens: 20000,
+		}),
+		ConvertToLLM: memory.CompactionConvertToLLM,
 	}
 
 	editor := agentcore.SubAgentConfig{
@@ -104,6 +112,15 @@ func BuildCoordinator(
 		agentcore.WithSystemPrompt(prompts.Coordinator),
 		agentcore.WithTools(subagentTool, contextTool, askUser),
 		agentcore.WithMaxTurns(60),
+		agentcore.WithContextPipeline(
+			memory.NewCompaction(memory.CompactionConfig{
+				Model:            model,
+				ContextWindow:    cfg.ContextWindow,
+				ReserveTokens:    32000,
+				KeepRecentTokens: 30000,
+			}),
+			memory.CompactionConvertToLLM,
+		),
 	)
 	return agent, askUser
 }
