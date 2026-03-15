@@ -6,12 +6,11 @@ import (
 	"fmt"
 
 	"github.com/voocel/agentcore/schema"
-	"github.com/voocel/ainovel-cli/domain"
 	"github.com/voocel/ainovel-cli/state"
 )
 
-// CheckConsistencyTool 对照状态文件检查章节一致性。
-// 返回上下文数据和已知约束供 LLM 判断，不做 AI 推理。
+// CheckConsistencyTool 返回章节内容和全部状态数据，供 Agent 自行对照判断。
+// 纯 IO 工具：只负责加载数据，不注入指令。
 type CheckConsistencyTool struct {
 	store *state.Store
 }
@@ -22,7 +21,7 @@ func NewCheckConsistencyTool(store *state.Store) *CheckConsistencyTool {
 
 func (t *CheckConsistencyTool) Name() string { return "check_consistency" }
 func (t *CheckConsistencyTool) Description() string {
-	return "检查章节一致性。返回章节内容、全部状态数据和具体检查清单，你需要逐项对照并以 JSON 格式返回冲突项"
+	return "加载章节内容和全部状态数据（时间线、伏笔、关系、世界规则、角色状态），供你自行对照检查一致性"
 }
 func (t *CheckConsistencyTool) Label() string { return "一致性检查" }
 
@@ -45,7 +44,7 @@ func (t *CheckConsistencyTool) Execute(_ context.Context, args json.RawMessage) 
 
 	result := map[string]any{"chapter": a.Chapter}
 
-	// 加载章节内容（polished 优先）
+	// 章节内容
 	content, wordCount, err := t.store.LoadChapterContent(a.Chapter)
 	if err != nil {
 		return nil, fmt.Errorf("load chapter content: %w", err)
@@ -56,22 +55,18 @@ func (t *CheckConsistencyTool) Execute(_ context.Context, args json.RawMessage) 
 	result["content"] = content
 	result["word_count"] = wordCount
 
-	// 加载全部状态数据供 LLM 对照
+	// 状态数据（全部加载，Agent 自行决定怎么用）
 	if timeline, _ := t.store.LoadTimeline(); len(timeline) > 0 {
 		result["timeline"] = timeline
 	}
 	if foreshadow, _ := t.store.LoadForeshadowLedger(); len(foreshadow) > 0 {
 		result["foreshadow_ledger"] = foreshadow
-		if active := filterActive(foreshadow); len(active) > 0 {
-			result["unresolved_foreshadow"] = active
-		}
 	}
 	if relationships, _ := t.store.LoadRelationships(); len(relationships) > 0 {
 		result["relationships"] = relationships
 	}
 	if chars, _ := t.store.LoadCharacters(); len(chars) > 0 {
 		result["characters"] = chars
-		// 构建别名映射表，供 LLM 识别角色的不同称呼
 		aliasMap := make(map[string]string)
 		for _, c := range chars {
 			for _, alias := range c.Aliases {
@@ -82,65 +77,15 @@ func (t *CheckConsistencyTool) Execute(_ context.Context, args json.RawMessage) 
 			result["alias_map"] = aliasMap
 		}
 	}
-	// 加载最近状态变化，供对照当前章节的状态描述
 	if changes, _ := t.store.LoadRecentStateChanges(a.Chapter, 5); len(changes) > 0 {
 		result["recent_state_changes"] = changes
 	}
-
 	if rules, _ := t.store.LoadWorldRules(); len(rules) > 0 {
 		result["world_rules"] = rules
-		// 提取边界清单，方便 LLM 逐条对照
-		var boundaries []string
-		for _, r := range rules {
-			if r.Boundary != "" {
-				boundaries = append(boundaries, fmt.Sprintf("[%s] %s", r.Category, r.Boundary))
-			}
-		}
-		if len(boundaries) > 0 {
-			result["world_rules_boundaries"] = boundaries
-		}
 	}
-
-	// 加载前两章摘要
 	if summaries, _ := t.store.LoadRecentSummaries(a.Chapter, 2); len(summaries) > 0 {
 		result["recent_summaries"] = summaries
 	}
 
-	result["instruction"] = `请逐项对照以上状态数据检查本章内容，返回 JSON 数组格式的冲突项：
-[
-  {
-    "type": "timeline|foreshadow|relationship|character|world_rules|state",
-    "severity": "critical|error|warning",
-    "description": "具体冲突描述",
-    "suggestion": "建议修正范围和方式"
-  }
-]
-
-severity 分级：
-- critical：严重逻辑硬伤，必须修复（如角色已死但再次出场、违反世界规则核心边界）
-- error：明显矛盾，应当修复（如时间线冲突、角色行为与人设严重不符）
-- warning：轻微瑕疵，可后续处理（如细节不够精确、可改进但不影响阅读）
-
-检查清单：
-1. 时间线：本章事件时间是否与已有 timeline 矛盾
-2. 伏笔：unresolved_foreshadow 中是否有本章应推进但遗漏的
-3. 人物关系：角色互动是否与 relationships 当前状态矛盾
-4. 角色一致性：行为是否符合 characters 中的性格和弧线
-5. 世界规则：逐条检查 world_rules_boundaries 中的边界约束，本章内容是否违反任何一条
-6. 别名一致性：如果有 alias_map，检查同一角色的不同称呼是否指向正确的人
-7. 状态连续性：如果有 recent_state_changes，检查本章对角色状态的描述是否与最近的状态变化记录一致
-
-如果没有发现冲突，返回空数组 []。不要返回其他格式。`
-
 	return json.Marshal(result)
-}
-
-func filterActive(entries []domain.ForeshadowEntry) []domain.ForeshadowEntry {
-	var active []domain.ForeshadowEntry
-	for _, e := range entries {
-		if e.Status != "resolved" {
-			active = append(active, e)
-		}
-	}
-	return active
 }

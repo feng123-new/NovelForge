@@ -2,23 +2,8 @@ package domain
 
 import (
 	"fmt"
-	"strings"
 	"unicode/utf8"
 )
-
-// MergeScenes 将多个场景草稿按顺序合并为完整章节正文。
-// 返回合并后的正文和总字数（按 rune 计）。
-func MergeScenes(scenes []SceneDraft) (string, int) {
-	var b strings.Builder
-	for i, s := range scenes {
-		if i > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString(s.Content)
-	}
-	content := b.String()
-	return content, utf8.RuneCountInString(content)
-}
 
 // ReviewInterval 全局审阅间隔（每 N 章触发一次）。
 const ReviewInterval = 5
@@ -32,7 +17,6 @@ func ShouldReview(completedCount int) (bool, string) {
 }
 
 // ShouldArcReview 长篇模式下判断是否需要弧级/卷级评审。
-// 弧结束时触发评审，替代固定间隔。
 func ShouldArcReview(isArcEnd, isVolumeEnd bool, volume, arc int) (bool, string) {
 	if isVolumeEnd {
 		return true, fmt.Sprintf("第 %d 卷第 %d 弧结束（卷结束），触发弧级+卷级评审", volume, arc)
@@ -41,4 +25,9 @@ func ShouldArcReview(isArcEnd, isVolumeEnd bool, volume, arc int) (bool, string)
 		return true, fmt.Sprintf("第 %d 卷第 %d 弧结束，触发弧级评审", volume, arc)
 	}
 	return false, ""
+}
+
+// WordCount 按 rune 计算字数。
+func WordCount(content string) int {
+	return utf8.RuneCountInString(content)
 }

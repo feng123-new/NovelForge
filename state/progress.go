@@ -157,30 +157,7 @@ func (s *Store) LoadLastCommit() (*domain.CommitResult, error) {
 	return &r, nil
 }
 
-// MarkSceneComplete 标记场景完成，用于场景级 checkpoint。
-// 切换到不同章节时自动清空旧的 CompletedScenes。
-func (s *Store) MarkSceneComplete(chapter, scene int) error {
-	return s.withWriteLock(func() error {
-		p, err := s.loadProgressUnlocked()
-		if err != nil {
-			return err
-		}
-		if p == nil {
-			return fmt.Errorf("progress not initialized, call InitProgress first")
-		}
-		// 章节切换：清空旧场景列表
-		if p.InProgressChapter != chapter {
-			p.CompletedScenes = nil
-		}
-		p.InProgressChapter = chapter
-		if !slices.Contains(p.CompletedScenes, scene) {
-			p.CompletedScenes = append(p.CompletedScenes, scene)
-		}
-		return s.saveProgressUnlocked(p)
-	})
-}
-
-// ClearInProgress 清除场景级进度状态（章节提交后调用）。
+// ClearInProgress 清除进度中间状态（章节提交后调用）。
 func (s *Store) ClearInProgress() error {
 	return s.withWriteLock(func() error {
 		p, err := s.loadProgressUnlocked()

@@ -283,12 +283,11 @@ func determineRecovery(progress *domain.Progress, runMeta *domain.RunMeta) recov
 
 	if progress.InProgressChapter > 0 {
 		ch := progress.InProgressChapter
-		scenes := len(progress.CompletedScenes)
 		return recoveryResult{
 			PromptText: withGuidance(fmt.Sprintf(
-				"第 %d 章正在进行中，已完成 %d 个场景。请调用 writer 从场景 %d 继续写作。总共需要写 %d 章。",
-				ch, scenes, scenes+1, progress.TotalChapters)),
-			Label: fmt.Sprintf("场景级恢复：第 %d 章已完成 %d 个场景", ch, scenes),
+				"第 %d 章正在进行中，已有部分草稿。请调用 writer 继续完成该章（可用 read_chapter 读取已有草稿）。总共需要写 %d 章。",
+				ch, progress.TotalChapters)),
+			Label: fmt.Sprintf("恢复：第 %d 章进行中", ch),
 		}
 	}
 
@@ -348,15 +347,27 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *state.Store, emit e
 		log.Printf("[host] 清除 commit 信号失败: %v", err)
 	}
 
-	log.Printf("[host] 章节提交信号：第 %d 章，%d 字，%d 个场景",
-		result.Chapter, result.WordCount, result.SceneCount)
+	log.Printf("[host] 章节提交信号：第 %d 章，%d 字",
+		result.Chapter, result.WordCount)
 	if emit != nil {
 		emit(UIEvent{
 			Time:     time.Now(),
 			Category: "SYSTEM",
-			Summary:  fmt.Sprintf("第 %d 章已提交：%d 字，%d 个场景", result.Chapter, result.WordCount, result.SceneCount),
+			Summary:  fmt.Sprintf("第 %d 章已提交：%d 字", result.Chapter, result.WordCount),
 			Level:    "success",
 		})
+	}
+
+	// outline_feedback 处理：Writer 反馈大纲偏离
+	if result.Feedback != nil && result.Feedback.Deviation != "" {
+		log.Printf("[host] outline_feedback: %s", result.Feedback.Deviation)
+		if emit != nil {
+			emit(UIEvent{Time: time.Now(), Category: "SYSTEM",
+				Summary: "Writer 反馈大纲偏离: " + truncateLog(result.Feedback.Deviation, 60), Level: "info"})
+		}
+		coordinator.FollowUp(agentcore.UserMsg(fmt.Sprintf(
+			"[系统] Writer 在第 %d 章写作中发现大纲偏离。偏离：%s。建议：%s。请评估是否需要调整后续大纲。",
+			result.Chapter, result.Feedback.Deviation, result.Feedback.Suggestion)))
 	}
 
 	// 确定性判断 0：正在重写/打磨流程中

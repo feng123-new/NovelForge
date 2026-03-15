@@ -38,7 +38,7 @@
 - 差异化卖点（至少 2 条）
 - 本作为什么适合短篇/单卷收束
 
-调用 save_foundation(type="premise", scale="short", content=<Markdown文本>)
+调用 save_foundation(type="premise", scale="short", content=<Markdown文本字符串>)
 
 ### 3. 生成 Outline
 
@@ -49,7 +49,7 @@
 - title
 - core_event
 - hook
-- scenes（3-5 个场景）
+- scenes（3-5 个要点，描述本章的关键段落和事件）
 
 要求：
 
@@ -59,7 +59,9 @@
 - 世界规则只保留会直接影响剧情的部分
 - 结局必须回收核心承诺
 
-调用 save_foundation(type="outline", scale="short", content=<JSON数组字符串>)
+调用 save_foundation(type="outline", scale="short", content=<JSON数组>)
+
+注意：`content` 对于 outline / characters / world_rules 直接传 JSON 数组，不要再手动包成转义字符串。
 
 ### 4. 生成 Characters
 
@@ -76,7 +78,7 @@
 - 角色功能必须清晰，避免冗余
 - 主要角色弧线要在单卷内完成
 
-调用 save_foundation(type="characters", scale="short", content=<JSON数组字符串>)
+调用 save_foundation(type="characters", scale="short", content=<JSON数组>)
 
 ### 5. 生成 World Rules
 
@@ -90,7 +92,7 @@
 - 只保留必要规则，避免为短篇过度设计世界
 - 规则必须直接服务当前冲突
 
-调用 save_foundation(type="world_rules", scale="short", content=<JSON数组字符串>)
+调用 save_foundation(type="world_rules", scale="short", content=<JSON数组>)
 
 ## 增量修改模式
 

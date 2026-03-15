@@ -21,26 +21,32 @@ func NewSaveFoundationTool(store *state.Store) *SaveFoundationTool {
 
 func (t *SaveFoundationTool) Name() string { return "save_foundation" }
 func (t *SaveFoundationTool) Description() string {
-	return "保存小说基础设定。type=premise 时 content 为 Markdown；type=outline 时 content 为 JSON 数组；type=characters 时 content 为 JSON 数组；type=world_rules 时 content 为 JSON 数组。scale 可选，用于记录 short/mid/long 规划级别"
+	return "保存小说基础设定。参数固定为 {type, content, scale?}。type 可选 premise / outline / layered_outline / characters / world_rules。premise 时 content 必须是 Markdown 字符串；outline、layered_outline、characters、world_rules 时 content 优先直接传 JSON 数组或对象，不要再手动包一层转义字符串；工具也兼容传入 JSON 字符串。scale 可选，仅允许 short / mid / long。"
 }
 func (t *SaveFoundationTool) Label() string { return "保存设定" }
 
 func (t *SaveFoundationTool) Schema() map[string]any {
 	return schema.Object(
 		schema.Property("type", schema.Enum("设定类型", "premise", "outline", "layered_outline", "characters", "world_rules")).Required(),
-		schema.Property("content", schema.String("内容。premise 为 Markdown 文本，outline/layered_outline/characters/world_rules 为 JSON 字符串")).Required(),
+		schema.Property("content", map[string]any{
+			"description": "内容。premise 传 Markdown 字符串；outline/layered_outline/characters/world_rules 直接传 JSON 数组或对象即可，也兼容传 JSON 字符串。不要把数组再次手动转义成难读的字符串。",
+		}).Required(),
 		schema.Property("scale", schema.Enum("规划级别", "short", "mid", "long")),
 	)
 }
 
 func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var a struct {
-		Type    string `json:"type"`
-		Content string `json:"content"`
-		Scale   string `json:"scale"`
+		Type    string          `json:"type"`
+		Content json.RawMessage `json:"content"`
+		Scale   string          `json:"scale"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return nil, fmt.Errorf("invalid args: %w", err)
+	}
+	content, err := normalizeFoundationContent(a.Content)
+	if err != nil {
+		return nil, err
 	}
 	if a.Scale != "" {
 		switch domain.PlanningTier(a.Scale) {
@@ -55,7 +61,7 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 
 	switch a.Type {
 	case "premise":
-		if err := t.store.SavePremise(a.Content); err != nil {
+		if err := t.store.SavePremise(content); err != nil {
 			return nil, fmt.Errorf("save premise: %w", err)
 		}
 		_ = t.store.UpdatePhase(domain.PhasePremise)
@@ -63,7 +69,7 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 
 	case "outline":
 		var entries []domain.OutlineEntry
-		if err := json.Unmarshal([]byte(a.Content), &entries); err != nil {
+		if err := json.Unmarshal([]byte(content), &entries); err != nil {
 			return nil, fmt.Errorf("parse outline JSON: %w", err)
 		}
 		if err := t.store.SaveOutline(entries); err != nil {
@@ -81,7 +87,7 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 
 	case "layered_outline":
 		var volumes []domain.VolumeOutline
-		if err := json.Unmarshal([]byte(a.Content), &volumes); err != nil {
+		if err := json.Unmarshal([]byte(content), &volumes); err != nil {
 			return nil, fmt.Errorf("parse layered_outline JSON: %w", err)
 		}
 		if err := t.store.SaveLayeredOutline(volumes); err != nil {
@@ -107,7 +113,7 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 
 	case "characters":
 		var chars []domain.Character
-		if err := json.Unmarshal([]byte(a.Content), &chars); err != nil {
+		if err := json.Unmarshal([]byte(content), &chars); err != nil {
 			return nil, fmt.Errorf("parse characters JSON: %w", err)
 		}
 		if err := t.store.SaveCharacters(chars); err != nil {
@@ -117,7 +123,7 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 
 	case "world_rules":
 		var rules []domain.WorldRule
-		if err := json.Unmarshal([]byte(a.Content), &rules); err != nil {
+		if err := json.Unmarshal([]byte(content), &rules); err != nil {
 			return nil, fmt.Errorf("parse world_rules JSON: %w", err)
 		}
 		if err := t.store.SaveWorldRules(rules); err != nil {
@@ -128,4 +134,20 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 	default:
 		return nil, fmt.Errorf("unknown type %q, expected premise/outline/layered_outline/characters/world_rules", a.Type)
 	}
+}
+
+func normalizeFoundationContent(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", fmt.Errorf("content is required")
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text, nil
+	}
+
+	if !json.Valid(raw) {
+		return "", fmt.Errorf("invalid content: expected Markdown string or valid JSON value")
+	}
+	return string(raw), nil
 }

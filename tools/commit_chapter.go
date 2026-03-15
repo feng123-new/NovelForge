@@ -12,7 +12,6 @@ import (
 )
 
 // CommitChapterTool 提交章节：加载正文 → 保存终稿 → 生成摘要 → 更新状态 → 更新进度。
-// 这是唯一允许写入 chapters/、summaries/、更新状态文件和进度的工具。
 type CommitChapterTool struct {
 	store *state.Store
 }
@@ -23,7 +22,7 @@ func NewCommitChapterTool(store *state.Store) *CommitChapterTool {
 
 func (t *CommitChapterTool) Name() string { return "commit_chapter" }
 func (t *CommitChapterTool) Description() string {
-	return "提交章节。优先使用打磨版正文，同时更新时间线、伏笔、关系状态。返回结构化信号"
+	return "提交章节终稿。加载草稿正文，保存为终稿，同时更新时间线、伏笔、关系、角色状态。返回结构化信号"
 }
 func (t *CommitChapterTool) Label() string { return "提交章节" }
 
@@ -34,7 +33,7 @@ func (t *CommitChapterTool) Schema() map[string]any {
 		schema.Property("characters", schema.Array("涉及角色", schema.String(""))),
 	)
 	foreshadowSchema := schema.Object(
-		schema.Property("id", schema.String("伏笔 ID（新埋设时自定义，推进/回收时使用已有 ID）")).Required(),
+		schema.Property("id", schema.String("伏笔 ID")).Required(),
 		schema.Property("action", schema.Enum("操作", "plant", "advance", "resolve")).Required(),
 		schema.Property("description", schema.String("伏笔描述（仅 plant 时必需）")),
 	)
@@ -45,10 +44,14 @@ func (t *CommitChapterTool) Schema() map[string]any {
 	)
 	stateChangeSchema := schema.Object(
 		schema.Property("entity", schema.String("角色名或实体名")).Required(),
-		schema.Property("field", schema.String("变化属性：realm/location/status/power/relation 等")).Required(),
-		schema.Property("old_value", schema.String("变化前的值（首次出现可空）")),
+		schema.Property("field", schema.String("变化属性")).Required(),
+		schema.Property("old_value", schema.String("变化前的值")),
 		schema.Property("new_value", schema.String("变化后的值")).Required(),
 		schema.Property("reason", schema.String("变化原因")),
+	)
+	feedbackSchema := schema.Object(
+		schema.Property("deviation", schema.String("偏离大纲的描述")).Required(),
+		schema.Property("suggestion", schema.String("对后续大纲的调整建议")).Required(),
 	)
 	return schema.Object(
 		schema.Property("chapter", schema.Int("章节号")).Required(),
@@ -58,9 +61,10 @@ func (t *CommitChapterTool) Schema() map[string]any {
 		schema.Property("timeline_events", schema.Array("本章时间线事件", timelineSchema)),
 		schema.Property("foreshadow_updates", schema.Array("伏笔操作", foreshadowSchema)),
 		schema.Property("relationship_changes", schema.Array("关系变化", relationshipSchema)),
-		schema.Property("state_changes", schema.Array("角色/实体状态变化（修为提升、位置转移、状态变化等）", stateChangeSchema)),
+		schema.Property("state_changes", schema.Array("角色/实体状态变化", stateChangeSchema)),
 		schema.Property("hook_type", schema.Enum("章末钩子类型", "crisis", "mystery", "desire", "emotion", "choice")),
 		schema.Property("dominant_strand", schema.Enum("本章主导叙事线", "quest", "fire", "constellation")),
+		schema.Property("feedback", feedbackSchema),
 	)
 }
 
@@ -76,6 +80,7 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 		StateChanges        []domain.StateChange       `json:"state_changes"`
 		HookType            string                     `json:"hook_type"`
 		DominantStrand      string                     `json:"dominant_strand"`
+		Feedback            *domain.OutlineFeedback    `json:"feedback"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return nil, fmt.Errorf("invalid args: %w", err)
@@ -87,7 +92,7 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 		return nil, err
 	}
 
-	// 1. 加载章节正文（polished 优先，否则 merge scenes）
+	// 1. 加载章节正文
 	content, wordCount, err := t.store.LoadChapterContent(a.Chapter)
 	if err != nil {
 		return nil, fmt.Errorf("load chapter content: %w", err)
@@ -157,7 +162,8 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 	if progress != nil {
 		completedCount = len(progress.CompletedChapters)
 	}
-	// 6b. 长篇模式：弧级边界检测（替代固定间隔评审）+ 更新卷弧位置
+
+	// 6b. 长篇模式：弧级边界检测
 	var arcEnd, volumeEnd bool
 	var vol, arc int
 	if progress != nil && progress.Layered {
@@ -169,7 +175,6 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 			volumeEnd = boundary.IsVolumeEnd
 			vol = boundary.Volume
 			arc = boundary.Arc
-			// 每次提交时更新卷弧位置，确保 novel_context 的 position 始终正确
 			_ = t.store.UpdateVolumeArc(vol, arc)
 		}
 	}
@@ -182,35 +187,29 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 		reviewRequired, reviewReason = domain.ShouldReview(completedCount)
 	}
 
-	// 7. 计算场景数
-	sceneCount := 0
-	if scenes, err := t.store.LoadSceneDrafts(a.Chapter); err == nil {
-		sceneCount = len(scenes)
-	}
-
-	// 8. 构造结构化信号
+	// 7. 构造结构化信号
 	result := domain.CommitResult{
 		Chapter:        a.Chapter,
 		Committed:      true,
 		WordCount:      wordCount,
-		SceneCount:     sceneCount,
 		NextChapter:    a.Chapter + 1,
 		ReviewRequired: reviewRequired,
 		ReviewReason:   reviewReason,
 		HookType:       a.HookType,
 		DominantStrand: a.DominantStrand,
+		Feedback:       a.Feedback,
 		ArcEnd:         arcEnd,
 		VolumeEnd:      volumeEnd,
 		Volume:         vol,
 		Arc:            arc,
 	}
 
-	// 9. 写入信号文件供宿主程序读取（优先于清理操作，确保信号不丢失）
+	// 8. 写入信号文件
 	if err := t.store.SaveLastCommit(result); err != nil {
 		return nil, fmt.Errorf("save commit signal: %w", err)
 	}
 
-	// 10. 清除场景级进度（章节已提交）
+	// 9. 清除进度中间状态
 	if err := t.store.ClearInProgress(); err != nil {
 		return nil, fmt.Errorf("clear in-progress: %w", err)
 	}

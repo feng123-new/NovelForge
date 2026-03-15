@@ -84,7 +84,7 @@ func renderStatePanel(snap app.UISnapshot, width, height int) string {
 	b.WriteString(renderField("Words", formatNumber(snap.TotalWordCount)))
 
 	if snap.InProgressChapter > 0 {
-		b.WriteString(renderField("Writing", fmt.Sprintf("第%d章 场景%d", snap.InProgressChapter, snap.CompletedScenes)))
+		b.WriteString(renderField("Writing", fmt.Sprintf("第%d章", snap.InProgressChapter)))
 	}
 
 	if len(snap.PendingRewrites) > 0 {

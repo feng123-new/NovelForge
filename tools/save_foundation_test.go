@@ -111,3 +111,41 @@ func TestSaveFoundationOutlineClearsLayeredStateWhenDowngrading(t *testing.T) {
 		t.Fatalf("expected planning tier %q, got %q", domain.PlanningTierMid, meta.PlanningTier)
 	}
 }
+
+func TestSaveFoundationAcceptsDirectJSONArrayContent(t *testing.T) {
+	dir := t.TempDir()
+	store := state.NewStore(dir)
+	if err := store.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	tool := NewSaveFoundationTool(store)
+	args, err := json.Marshal(map[string]any{
+		"type": "outline",
+		"content": []map[string]any{
+			{
+				"chapter":    1,
+				"title":      "第一章",
+				"core_event": "主角登场",
+				"hook":       "继续",
+				"scenes":     []string{"场景一", "场景二"},
+			},
+		},
+		"scale": "short",
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	if _, err := tool.Execute(context.Background(), args); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	outline, err := store.LoadOutline()
+	if err != nil {
+		t.Fatalf("LoadOutline: %v", err)
+	}
+	if len(outline) != 1 || outline[0].Title != "第一章" {
+		t.Fatalf("unexpected outline: %+v", outline)
+	}
+}

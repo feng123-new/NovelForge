@@ -37,7 +37,6 @@ type UISnapshot struct {
 	CompletedCount    int
 	TotalWordCount    int
 	InProgressChapter int
-	CompletedScenes   int
 	PendingRewrites   []int
 	RewriteReason     string
 	PendingSteer      string
@@ -272,7 +271,6 @@ func (rt *Runtime) Snapshot() UISnapshot {
 		snap.CompletedCount = len(progress.CompletedChapters)
 		snap.TotalWordCount = progress.TotalWordCount
 		snap.InProgressChapter = progress.InProgressChapter
-		snap.CompletedScenes = len(progress.CompletedScenes)
 		snap.PendingRewrites = progress.PendingRewrites
 		snap.RewriteReason = progress.RewriteReason
 	}

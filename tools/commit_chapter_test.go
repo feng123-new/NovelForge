@@ -25,8 +25,8 @@ func TestCommitChapterRejectsNonPendingRewrite(t *testing.T) {
 	if err := store.SetFlow(domain.FlowRewriting); err != nil {
 		t.Fatalf("SetFlow: %v", err)
 	}
-	if err := store.SavePolished(3, "这是错误章节的正文。"); err != nil {
-		t.Fatalf("SavePolished: %v", err)
+	if err := store.SaveDraft(3, "这是错误章节的正文。"); err != nil {
+		t.Fatalf("SaveDraft: %v", err)
 	}
 
 	tool := NewCommitChapterTool(store)
@@ -76,8 +76,8 @@ func TestCommitChapterAllowsPendingRewrite(t *testing.T) {
 	if err := store.SetFlow(domain.FlowRewriting); err != nil {
 		t.Fatalf("SetFlow: %v", err)
 	}
-	if err := store.SavePolished(2, "这是正确待重写章节的正文。"); err != nil {
-		t.Fatalf("SavePolished: %v", err)
+	if err := store.SaveDraft(2, "这是正确待重写章节的正文。"); err != nil {
+		t.Fatalf("SaveDraft: %v", err)
 	}
 
 	tool := NewCommitChapterTool(store)

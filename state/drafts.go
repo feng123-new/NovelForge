@@ -3,21 +3,19 @@ package state
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
-	"strconv"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/voocel/ainovel-cli/domain"
 )
 
-// SaveChapterPlan 保存章节规划到 drafts/{ch}.plan.json。
+// SaveChapterPlan 保存章节构思到 drafts/{ch}.plan.json。
 func (s *Store) SaveChapterPlan(plan domain.ChapterPlan) error {
 	return s.writeJSON(fmt.Sprintf("drafts/%02d.plan.json", plan.Chapter), plan)
 }
 
-// LoadChapterPlan 读取章节规划。
+// LoadChapterPlan 读取章节构思。
 func (s *Store) LoadChapterPlan(chapter int) (*domain.ChapterPlan, error) {
 	var plan domain.ChapterPlan
 	if err := s.readJSON(fmt.Sprintf("drafts/%02d.plan.json", chapter), &plan); err != nil {
@@ -29,47 +27,30 @@ func (s *Store) LoadChapterPlan(chapter int) (*domain.ChapterPlan, error) {
 	return &plan, nil
 }
 
-// SaveSceneDraft 保存场景草稿到 drafts/{ch}.scene-{n}.md。
-func (s *Store) SaveSceneDraft(draft domain.SceneDraft) error {
-	rel := fmt.Sprintf("drafts/%02d.scene-%d.md", draft.Chapter, draft.Scene)
-	return s.writeMarkdown(rel, draft.Content)
+// SaveDraft 保存整章草稿到 drafts/{ch}.draft.md。
+func (s *Store) SaveDraft(chapter int, content string) error {
+	return s.writeMarkdown(fmt.Sprintf("drafts/%02d.draft.md", chapter), content)
 }
 
-// LoadSceneDrafts 加载指定章节的所有场景草稿，按场景编号排序。
-func (s *Store) LoadSceneDrafts(chapter int) ([]domain.SceneDraft, error) {
-	pattern := filepath.Join(s.dir, "drafts", fmt.Sprintf("%02d.scene-*.md", chapter))
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, err
+// AppendDraft 追加内容到现有草稿（续写模式）。
+func (s *Store) AppendDraft(chapter int, content string) error {
+	rel := fmt.Sprintf("drafts/%02d.draft.md", chapter)
+	existing, err := s.readFile(rel)
+	if err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	sort.Strings(matches)
-
-	var drafts []domain.SceneDraft
-	for _, m := range matches {
-		base := filepath.Base(m)
-		sceneNum := parseSceneNum(base)
-		content, err := os.ReadFile(m)
-		if err != nil {
-			return nil, fmt.Errorf("read scene draft %s: %w", base, err)
-		}
-		drafts = append(drafts, domain.SceneDraft{
-			Chapter:   chapter,
-			Scene:     sceneNum,
-			Content:   string(content),
-			WordCount: utf8.RuneCountInString(string(content)),
-		})
+	var merged string
+	if len(existing) > 0 {
+		merged = string(existing) + "\n\n" + content
+	} else {
+		merged = content
 	}
-	return drafts, nil
+	return s.writeMarkdown(rel, merged)
 }
 
-// SavePolished 保存打磨后的章节正文到 drafts/{ch}.polished.md。
-func (s *Store) SavePolished(chapter int, content string) error {
-	return s.writeMarkdown(fmt.Sprintf("drafts/%02d.polished.md", chapter), content)
-}
-
-// LoadPolished 读取打磨后的章节正文。不存在时返回空字符串。
-func (s *Store) LoadPolished(chapter int) (string, error) {
-	data, err := s.readFile(fmt.Sprintf("drafts/%02d.polished.md", chapter))
+// LoadDraft 读取整章草稿。
+func (s *Store) LoadDraft(chapter int) (string, error) {
+	data, err := s.readFile(fmt.Sprintf("drafts/%02d.draft.md", chapter))
 	if os.IsNotExist(err) {
 		return "", nil
 	}
@@ -79,21 +60,16 @@ func (s *Store) LoadPolished(chapter int) (string, error) {
 	return string(data), nil
 }
 
-// LoadChapterContent 加载章节正文：优先 polished，否则 merge scenes。
+// LoadChapterContent 加载章节草稿正文及字数。
 func (s *Store) LoadChapterContent(chapter int) (string, int, error) {
-	polished, err := s.LoadPolished(chapter)
+	draft, err := s.LoadDraft(chapter)
 	if err != nil {
 		return "", 0, err
 	}
-	if polished != "" {
-		return polished, utf8.RuneCountInString(polished), nil
+	if draft != "" {
+		return draft, utf8.RuneCountInString(draft), nil
 	}
-	drafts, err := s.LoadSceneDrafts(chapter)
-	if err != nil {
-		return "", 0, err
-	}
-	content, wc := domain.MergeScenes(drafts)
-	return content, wc, nil
+	return "", 0, nil
 }
 
 // SaveFinalChapter 保存最终章节正文到 chapters/{ch}.md。
@@ -101,14 +77,120 @@ func (s *Store) SaveFinalChapter(chapter int, content string) error {
 	return s.writeMarkdown(fmt.Sprintf("chapters/%02d.md", chapter), content)
 }
 
-// parseSceneNum 从文件名如 "01.scene-2.md" 提取场景编号。
-func parseSceneNum(filename string) int {
-	// 格式：{ch}.scene-{n}.md
-	parts := strings.Split(filename, "scene-")
-	if len(parts) < 2 {
-		return 0
+// LoadChapterText 读取已提交的终稿原文。
+func (s *Store) LoadChapterText(chapter int) (string, error) {
+	data, err := s.readFile(fmt.Sprintf("chapters/%02d.md", chapter))
+	if os.IsNotExist(err) {
+		return "", nil
 	}
-	numStr := strings.TrimSuffix(parts[1], ".md")
-	n, _ := strconv.Atoi(numStr)
-	return n
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// LoadChapterRange 读取指定范围的终稿原文片段（每章截取前 maxRunes 个字符）。
+func (s *Store) LoadChapterRange(from, to, maxRunes int) (map[int]string, error) {
+	result := make(map[int]string)
+	for ch := from; ch <= to; ch++ {
+		text, err := s.LoadChapterText(ch)
+		if err != nil {
+			return nil, err
+		}
+		if text == "" {
+			continue
+		}
+		if maxRunes > 0 {
+			runes := []rune(text)
+			if len(runes) > maxRunes {
+				text = string(runes[:maxRunes]) + "..."
+			}
+		}
+		result[ch] = text
+	}
+	return result, nil
+}
+
+// dialogueRe 匹配中文引号对话。
+var dialogueRe = regexp.MustCompile(`"[^"]*"`)
+
+// ExtractDialogue 从已提交章节中提取指定角色的对话片段。
+// 通过检查对话所在段落是否包含角色名/别名来关联。
+func (s *Store) ExtractDialogue(characterName string, aliases []string, maxSamples int) []string {
+	if maxSamples <= 0 {
+		maxSamples = 5
+	}
+	names := append([]string{characterName}, aliases...)
+
+	var samples []string
+	// 从最近的章节开始向前搜索
+	for ch := 99; ch >= 1 && len(samples) < maxSamples; ch-- {
+		text, err := s.LoadChapterText(ch)
+		if err != nil || text == "" {
+			continue
+		}
+		paragraphs := strings.Split(text, "\n")
+		for _, para := range paragraphs {
+			if len(samples) >= maxSamples {
+				break
+			}
+			// 段落中要包含角色名
+			found := false
+			for _, name := range names {
+				if strings.Contains(para, name) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+			// 提取该段落中的对话
+			matches := dialogueRe.FindAllString(para, -1)
+			for _, m := range matches {
+				if len(samples) >= maxSamples {
+					break
+				}
+				if utf8.RuneCountInString(m) > 5 { // 过滤太短的
+					samples = append(samples, characterName+": "+m)
+				}
+			}
+		}
+	}
+	return samples
+}
+
+// ExtractStyleAnchors 从已提交章节中提取代表性段落作为风格锚点。
+// 选取描写密度高（非对话、非短句）的段落。
+func (s *Store) ExtractStyleAnchors(maxAnchors int) []string {
+	if maxAnchors <= 0 {
+		maxAnchors = 5
+	}
+
+	var anchors []string
+	// 从第 1 章开始，均匀采样
+	for ch := 1; ch <= 99 && len(anchors) < maxAnchors; ch++ {
+		text, err := s.LoadChapterText(ch)
+		if err != nil || text == "" {
+			continue
+		}
+		paragraphs := strings.Split(text, "\n\n")
+		for _, para := range paragraphs {
+			if len(anchors) >= maxAnchors {
+				break
+			}
+			para = strings.TrimSpace(para)
+			runeCount := utf8.RuneCountInString(para)
+			// 选取 50-300 字的非对话段落
+			if runeCount < 50 || runeCount > 300 {
+				continue
+			}
+			// 跳过纯对话段落
+			if strings.Count(para, "\u201c") > 2 {
+				continue
+			}
+			anchors = append(anchors, para)
+		}
+	}
+	return anchors
 }

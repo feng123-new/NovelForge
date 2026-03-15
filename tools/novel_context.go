@@ -211,11 +211,10 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 			result["position"] = pos
 		}
 
-		// 加载场景级恢复状态 + 节奏追踪
+		// 加载进度状态和节奏追踪
 		if progress != nil {
 			checkpoint := map[string]any{
 				"in_progress_chapter": progress.InProgressChapter,
-				"completed_scenes":    progress.CompletedScenes,
 			}
 			if len(progress.StrandHistory) > 0 {
 				checkpoint["strand_history"] = progress.StrandHistory
@@ -225,11 +224,41 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 			}
 			result["checkpoint"] = checkpoint
 		}
-		// 加载已有的章节规划（支持场景恢复跳过已完成场景）
+		// 加载已有的章节构思
 		if plan, err := t.store.LoadChapterPlan(a.Chapter); err == nil && plan != nil {
 			result["chapter_plan"] = plan
 		} else {
 			warn("chapter_plan", err)
+		}
+
+		// 风格锚点：从前文提取代表性段落
+		if anchors := t.store.ExtractStyleAnchors(3); len(anchors) > 0 {
+			result["style_anchors"] = anchors
+		}
+
+		// 角色声纹：提取出场角色的对话原文片段
+		if entry, err := t.store.GetChapterOutline(a.Chapter); err == nil && entry != nil {
+			var voiceSamples []map[string]any
+			chars, _ := t.store.LoadCharacters()
+			for _, c := range chars {
+				// 只为 core/important 角色提取声纹
+				if c.Tier == "secondary" || c.Tier == "decorative" {
+					continue
+				}
+				samples := t.store.ExtractDialogue(c.Name, c.Aliases, 3)
+				if len(samples) > 0 {
+					voiceSamples = append(voiceSamples, map[string]any{
+						"character": c.Name,
+						"samples":   samples,
+					})
+				}
+				if len(voiceSamples) >= 5 {
+					break
+				}
+			}
+			if len(voiceSamples) > 0 {
+				result["voice_samples"] = voiceSamples
+			}
 		}
 
 		// 写作参考资料分阶段加载

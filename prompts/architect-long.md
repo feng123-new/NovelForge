@@ -42,7 +42,7 @@
 - 中期转向：前期方法何时失效，故事如何换挡
 - 终局命题：后期真正要回答的最终问题
 
-调用 save_foundation(type="premise", scale="long", content=<Markdown文本>)
+调用 save_foundation(type="premise", scale="long", content=<Markdown文本字符串>)
 
 ### 3. 生成 Layered Outline
 
@@ -50,9 +50,11 @@
 
 - 卷（Volume）：阶段主题、阶段升级、阶段代价
 - 弧（Arc）：局部目标、局部阻力、阶段转折
-- 章（Chapter）：章节标题、核心事件、钩子、场景
+- 章（Chapter）：章节标题、核心事件、钩子、要点
 
-调用 save_foundation(type="layered_outline", scale="long", content=<JSON数组字符串>)
+调用 save_foundation(type="layered_outline", scale="long", content=<JSON数组>)
+
+注意：`content` 对于 layered_outline / characters / world_rules 直接传 JSON 数组，不要再手动包成转义字符串。
 
 要求：
 
@@ -80,7 +82,7 @@
 - 重要配角不能只是阶段性工具人
 - 关系线必须具备长期张力，而不是只服务某一章剧情
 
-调用 save_foundation(type="characters", scale="long", content=<JSON数组字符串>)
+调用 save_foundation(type="characters", scale="long", content=<JSON数组>)
 
 ### 5. 生成 World Rules
 
@@ -95,7 +97,7 @@
 - 特别注意资源、代价、限制、秩序、势力边界
 - 规则要能支撑中后期升级，而不是只服务前几章
 
-调用 save_foundation(type="world_rules", scale="long", content=<JSON数组字符串>)
+调用 save_foundation(type="world_rules", scale="long", content=<JSON数组>)
 
 ## 增量修改模式
 

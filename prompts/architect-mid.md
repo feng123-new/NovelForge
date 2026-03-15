@@ -40,7 +40,7 @@
 - 故事引擎：中篇靠什么持续推进
 - 中段转折：故事在哪个阶段会发生结构变化
 
-调用 save_foundation(type="premise", scale="mid", content=<Markdown文本>)
+调用 save_foundation(type="premise", scale="mid", content=<Markdown文本字符串>)
 
 ### 3. 生成 Outline
 
@@ -51,7 +51,7 @@
 - title
 - core_event
 - hook
-- scenes（3-5 个场景）
+- scenes（3-5 个要点，描述本章的关键段落和事件）
 
 要求：
 
@@ -60,7 +60,9 @@
 - 中段必须出现一次改变后续推进方式的转折
 - 支线不能游离，必须服务主线或人物关系变化
 
-调用 save_foundation(type="outline", scale="mid", content=<JSON数组字符串>)
+调用 save_foundation(type="outline", scale="mid", content=<JSON数组>)
+
+注意：`content` 对于 outline / characters / world_rules 直接传 JSON 数组，不要再手动包成转义字符串。
 
 ### 4. 生成 Characters
 
@@ -78,7 +80,7 @@
 - 角色弧线要跨越多个阶段，而不是一章完成
 - 配角要能反向影响主线
 
-调用 save_foundation(type="characters", scale="mid", content=<JSON数组字符串>)
+调用 save_foundation(type="characters", scale="mid", content=<JSON数组>)
 
 ### 5. 生成 World Rules
 
@@ -92,7 +94,7 @@
 - 规则必须制造选择或代价
 - 不能只是背景百科
 
-调用 save_foundation(type="world_rules", scale="mid", content=<JSON数组字符串>)
+调用 save_foundation(type="world_rules", scale="mid", content=<JSON数组>)
 
 ## 增量修改模式
 

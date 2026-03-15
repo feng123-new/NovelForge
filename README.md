@@ -6,9 +6,9 @@
 
 - **多智能体协作** — Coordinator 调度 Architect / Writer / Editor 三个专职智能体，各司其职
 - **确定性控制面** — 宿主程序通过信号文件驱动流程，不依赖 LLM 判断控制流
-- **场景级断点恢复** — 中断后从上次写到的场景精确续写，不丢失进度
+- **章节级断点恢复** — 中断后从上次写到的章节续写，不丢失进度
 - **自适应上下文策略** — 根据总章节数自动切换全量 / 滑窗 / 分层摘要，支持 500+ 章长篇
-- **六维质量评审** — Editor 从设定一致性、角色行为、节奏、叙事连贯、伏笔、钩子六个维度评审
+- **七维质量评审** — Editor 从设定一致性、角色行为、节奏、叙事连贯、伏笔、钩子、审美品质七个维度评审，审美维度必须引用原文举证
 - **用户实时干预** — 写作过程中可随时注入修改意见，系统自动评估影响范围并重写
 - **双模式运行** — CLI 一行命令直接跑，TUI 交互界面实时观察进度
 - **多 LLM 支持** — OpenRouter / Anthropic / Gemini / OpenAI 随意切换
@@ -38,10 +38,10 @@
 |--------|------|------|
 | **Coordinator** | 调度全局，处理评审裁定和用户干预 | `subagent` `novel_context` `ask_user` |
 | **Architect** | 生成前提、大纲、角色档案、世界规则 | `novel_context` `save_foundation` |
-| **Writer** | 逐场景写作 → 打磨 → 一致性检查 → 提交 | `novel_context` `plan_chapter` `write_scene` `polish_chapter` `check_consistency` `commit_chapter` |
-| **Editor** | 跨章节六维评审，弧/卷级摘要生成 | `novel_context` `save_review` `save_arc_summary` `save_volume_summary` |
+| **Writer** | 自主完成一章的构思、写作、自审和提交 | `novel_context` `read_chapter` `plan_chapter` `draft_chapter` `check_consistency` `commit_chapter` |
+| **Editor** | 阅读原文，从结构和审美两个层面审阅 | `novel_context` `read_chapter` `save_review` `save_arc_summary` `save_volume_summary` |
 
-### 写作流水线
+### 写作流程
 
 ```
 用户需求 → Architect 建基 → Writer 逐章写作 → Editor 评审
@@ -49,14 +49,14 @@
                                     └── 重写/打磨 ◄───┘
 ```
 
-每章写作严格按序执行：
+Writer 自主决定每章的创作流程，建议路径：
 
-1. `novel_context` — 加载上下文（前情摘要、时间线、伏笔、角色状态）
-2. `plan_chapter` — 规划 3-5 个场景
-3. `write_scene` × N — 逐场景创作（800-1500 字/场景）
-4. `polish_chapter` — 合并打磨，去除 AI 腔
-5. `check_consistency` — 校验时间线、角色、世界规则
-6. `commit_chapter` — 提交终稿，更新全局状态
+1. `novel_context` — 加载上下文（前情摘要、时间线、伏笔、角色状态、风格锚点、声纹）
+2. `read_chapter` — 回读前一章结尾和角色对话，找回语气和节奏
+3. `plan_chapter` — 构思本章目标、冲突、情绪弧线
+4. `draft_chapter` — 写入整章正文
+5. `read_chapter` + `check_consistency` — 自审：回读草稿，对照状态数据检查一致性
+6. `commit_chapter` — 提交终稿，更新全局状态（可选附带大纲偏离反馈）
 
 ### 长篇分层架构
 
@@ -133,6 +133,20 @@ output/{novel_name}/
 ```
 
 ## 设计理念
+
+### Agent 驱动原则
+
+**工具负责 IO，Agent 负责思考。不要用流水线绑住 Agent 的手脚。**
+
+这是本项目所有设计决策的最高优先级准则。具体要求：
+
+1. **工具只做数据读写** — 工具不包含业务逻辑判断，不强制执行顺序。工具是 Agent 的手和眼，不是 Agent 的脑。
+2. **决策权归 Agent** — 规划、写作、打磨、自审都是 Agent 的思考行为，不是工具调用节点。Agent 自主决定何时读、何时写、何时审。
+3. **不用流水线约束创作** — 不强制"先规划→再按场景写→再打磨→再检查"的固定流程。Writer 可以先写完整章，回读后修改，自审后提交，顺序自定。
+4. **给 Agent 感知能力** — Agent 能回读自己写的文字和前文原文，而非只看结构化摘要。风格保持靠阅读原文，不靠字段描述。
+5. **Host 只兜底控制流** — 确定性状态机只负责"下一步该做什么"的流程判断，不干预创作内容。
+
+任何新增功能或工具设计，都必须先问：**这是 IO 操作还是思考行为？** 如果是思考，交给 Agent；如果是 IO，才做成工具。
 
 ### 全自动闭环
 

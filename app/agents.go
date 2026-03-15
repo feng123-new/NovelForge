@@ -18,6 +18,7 @@ func BuildCoordinator(
 ) (*agentcore.Agent, *tools.AskUserTool) {
 	// 共享工具
 	contextTool := tools.NewContextTool(store, refs, cfg.Style)
+	readChapter := tools.NewReadChapterTool(store)
 	askUser := tools.NewAskUserTool()
 
 	// Architect SubAgent 工具
@@ -26,19 +27,20 @@ func BuildCoordinator(
 		tools.NewSaveFoundationTool(store),
 	}
 
-	// Writer SubAgent 工具（V1: +polish_chapter +check_consistency）
+	// Writer SubAgent 工具：读写 + 规划 + 一致性检查 + 提交
 	writerTools := []agentcore.Tool{
 		contextTool,
+		readChapter,
 		tools.NewPlanChapterTool(store),
-		tools.NewWriteSceneTool(store),
-		tools.NewPolishChapterTool(store),
+		tools.NewDraftChapterTool(store),
 		tools.NewCheckConsistencyTool(store),
 		tools.NewCommitChapterTool(store),
 	}
 
-	// Editor SubAgent 工具
+	// Editor SubAgent 工具：读原文 + 审阅 + 摘要
 	editorTools := []agentcore.Tool{
 		contextTool,
+		readChapter,
 		tools.NewSaveReviewTool(store),
 		tools.NewSaveArcSummaryTool(store),
 		tools.NewSaveVolumeSummaryTool(store),
@@ -79,16 +81,16 @@ func BuildCoordinator(
 
 	writer := agentcore.SubAgentConfig{
 		Name:         "writer",
-		Description:  "场景写作者：逐场景完成一章的创作，包含打磨和一致性检查",
+		Description:  "创作者：自主完成一章的构思、写作、自审和提交",
 		Model:        model,
 		SystemPrompt: writerPrompt,
 		Tools:        writerTools,
-		MaxTurns:     25,
+		MaxTurns:     20,
 	}
 
 	editor := agentcore.SubAgentConfig{
 		Name:         "editor",
-		Description:  "全局审阅者：发现跨章结构问题，输出审阅结果",
+		Description:  "审阅者：阅读原文，从结构和审美两个层面发现问题",
 		Model:        model,
 		SystemPrompt: prompts.Editor,
 		Tools:        editorTools,
