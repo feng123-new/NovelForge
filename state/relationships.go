@@ -30,26 +30,32 @@ func (s *Store) LoadRelationships() ([]domain.RelationshipEntry, error) {
 
 // UpdateRelationships 合并关系变化。相同人物对的关系会被更新为最新值。
 func (s *Store) UpdateRelationships(changes []domain.RelationshipEntry) error {
-	existing, err := s.LoadRelationships()
-	if err != nil {
-		return err
-	}
-	// 用 pair key 索引
-	idx := make(map[string]int, len(existing))
-	for i, e := range existing {
-		idx[pairKey(e.CharacterA, e.CharacterB)] = i
-	}
-	for _, c := range changes {
-		key := pairKey(c.CharacterA, c.CharacterB)
-		if i, ok := idx[key]; ok {
-			existing[i].Relation = c.Relation
-			existing[i].Chapter = c.Chapter
-		} else {
-			idx[key] = len(existing)
-			existing = append(existing, c)
+	return s.withWriteLock(func() error {
+		var existing []domain.RelationshipEntry
+		if err := s.readJSONUnlocked("relationship_state.json", &existing); err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
 		}
-	}
-	return s.SaveRelationships(existing)
+		idx := make(map[string]int, len(existing))
+		for i, e := range existing {
+			idx[pairKey(e.CharacterA, e.CharacterB)] = i
+		}
+		for _, c := range changes {
+			key := pairKey(c.CharacterA, c.CharacterB)
+			if i, ok := idx[key]; ok {
+				existing[i].Relation = c.Relation
+				existing[i].Chapter = c.Chapter
+			} else {
+				idx[key] = len(existing)
+				existing = append(existing, c)
+			}
+		}
+		if err := s.writeJSONUnlocked("relationship_state.json", existing); err != nil {
+			return err
+		}
+		return s.writeFileUnlocked("relationship_state.md", []byte(renderRelationships(existing)))
+	})
 }
 
 func pairKey(a, b string) string {

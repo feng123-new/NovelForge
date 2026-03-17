@@ -8,9 +8,15 @@ import (
 
 // AppendStateChanges 追加角色状态变化到 meta/state_changes.json。
 func (s *Store) AppendStateChanges(changes []domain.StateChange) error {
-	existing, _ := s.LoadStateChanges()
-	existing = append(existing, changes...)
-	return s.writeJSON("meta/state_changes.json", existing)
+	return s.withWriteLock(func() error {
+		var existing []domain.StateChange
+		if err := s.readJSONUnlocked("meta/state_changes.json", &existing); err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
+		}
+		return s.writeJSONUnlocked("meta/state_changes.json", append(existing, changes...))
+	})
 }
 
 // LoadStateChanges 读取全部状态变化记录。

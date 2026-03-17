@@ -43,12 +43,6 @@ func (s *Store) readFile(rel string) ([]byte, error) {
 	return s.readFileUnlocked(rel)
 }
 
-func (s *Store) writeFile(rel string, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.writeFileUnlocked(rel, data)
-}
-
 func (s *Store) readFileUnlocked(rel string) ([]byte, error) {
 	return os.ReadFile(s.path(rel))
 }

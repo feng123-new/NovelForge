@@ -6,8 +6,8 @@ require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/voocel/agentcore v1.5.3
-	github.com/voocel/litellm v1.6.2
+	github.com/voocel/agentcore v1.5.4
+	github.com/voocel/litellm v1.6.3
 )
 
 require (

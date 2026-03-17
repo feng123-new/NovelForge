@@ -30,11 +30,19 @@ func (s *Store) LoadTimeline() ([]domain.TimelineEvent, error) {
 
 // AppendTimelineEvents 追加时间线事件。
 func (s *Store) AppendTimelineEvents(newEvents []domain.TimelineEvent) error {
-	existing, err := s.LoadTimeline()
-	if err != nil {
-		return err
-	}
-	return s.SaveTimeline(append(existing, newEvents...))
+	return s.withWriteLock(func() error {
+		var existing []domain.TimelineEvent
+		if err := s.readJSONUnlocked("timeline.json", &existing); err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
+		}
+		all := append(existing, newEvents...)
+		if err := s.writeJSONUnlocked("timeline.json", all); err != nil {
+			return err
+		}
+		return s.writeFileUnlocked("timeline.md", []byte(renderTimeline(all)))
+	})
 }
 
 // LoadRecentTimeline 返回最近 window 章内的时间线事件（chapter >= current-window）。

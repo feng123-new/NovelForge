@@ -114,6 +114,22 @@ func (s *Store) LoadChapterRange(from, to, maxRunes int) (map[int]string, error)
 // dialogueRe 匹配中文引号对话。
 var dialogueRe = regexp.MustCompile(`"[^"]*"`)
 
+// maxCompletedChapter 返回已完成的最大章节号，用于对话提取和风格锚点采样。
+// 无进度时回退到 99 作为安全上限。
+func (s *Store) maxCompletedChapter() int {
+	p, err := s.LoadProgress()
+	if err != nil || p == nil || len(p.CompletedChapters) == 0 {
+		return 99
+	}
+	m := 0
+	for _, ch := range p.CompletedChapters {
+		if ch > m {
+			m = ch
+		}
+	}
+	return m
+}
+
 // ExtractDialogue 从已提交章节中提取指定角色的对话片段。
 // 通过检查对话所在段落是否包含角色名/别名来关联。
 func (s *Store) ExtractDialogue(characterName string, aliases []string, maxSamples int) []string {
@@ -122,9 +138,10 @@ func (s *Store) ExtractDialogue(characterName string, aliases []string, maxSampl
 	}
 	names := append([]string{characterName}, aliases...)
 
+	maxCh := s.maxCompletedChapter()
 	var samples []string
 	// 从最近的章节开始向前搜索
-	for ch := 99; ch >= 1 && len(samples) < maxSamples; ch-- {
+	for ch := maxCh; ch >= 1 && len(samples) < maxSamples; ch-- {
 		text, err := s.LoadChapterText(ch)
 		if err != nil || text == "" {
 			continue
@@ -167,9 +184,10 @@ func (s *Store) ExtractStyleAnchors(maxAnchors int) []string {
 		maxAnchors = 5
 	}
 
+	maxCh := s.maxCompletedChapter()
 	var anchors []string
 	// 从第 1 章开始，均匀采样
-	for ch := 1; ch <= 99 && len(anchors) < maxAnchors; ch++ {
+	for ch := 1; ch <= maxCh && len(anchors) < maxAnchors; ch++ {
 		text, err := s.LoadChapterText(ch)
 		if err != nil || text == "" {
 			continue

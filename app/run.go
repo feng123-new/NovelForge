@@ -412,12 +412,9 @@ func handleFoundationCheck(coordinator *agentcore.Agent, store *state.Store, emi
 // handleSubAgentDone 在每次 SubAgent 调用完成后读取文件系统信号，注入确定性任务。
 // 返回 true 表示检测到 commit 信号（Writer 正常完成）。
 func handleSubAgentDone(coordinator *agentcore.Agent, store *state.Store, emit emitFn) bool {
-	result, err := store.LoadLastCommit()
+	result, err := store.LoadAndClearLastCommit()
 	if err != nil || result == nil {
 		return false
-	}
-	if err := store.ClearLastCommit(); err != nil {
-		log.Printf("[host] 清除 commit 信号失败: %v", err)
 	}
 
 	log.Printf("[host] 章节提交信号：第 %d 章，%d 字",
@@ -563,6 +560,9 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *state.Store, emit e
 		coordinator.FollowUp(agentcore.UserMsg(fmt.Sprintf(
 			"[系统] review_required=true，%s。请调用 editor 对已完成章节进行全局审阅，然后根据审阅结果决定继续写第 %d 章还是修正已有章节。",
 			result.ReviewReason, result.NextChapter)))
+		clearHandledSteer(store)
+		saveCheckpoint(store, fmt.Sprintf("ch%02d-commit", result.Chapter))
+		return true
 	}
 	clearHandledSteer(store)
 	saveCheckpoint(store, fmt.Sprintf("ch%02d-commit", result.Chapter))
@@ -601,16 +601,13 @@ func handleUncommittedDraft(coordinator *agentcore.Agent, store *state.Store, em
 
 // handleEditorDone 在 Editor SubAgent 完成后读取审阅信号。
 func handleEditorDone(coordinator *agentcore.Agent, store *state.Store, emit emitFn) {
-	review, err := store.LoadLastReviewSignal()
+	review, err := store.LoadAndClearLastReview()
 	if err != nil {
 		log.Printf("[host] 加载审阅信号失败: %v", err)
 		return
 	}
 	if review == nil {
 		return
-	}
-	if err := store.ClearLastReview(); err != nil {
-		log.Printf("[host] 清除审阅信号失败: %v", err)
 	}
 
 	criticalN := review.CriticalCount()

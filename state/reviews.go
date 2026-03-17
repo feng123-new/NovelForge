@@ -50,6 +50,21 @@ func (s *Store) ClearLastReview() error {
 	return s.removeFile("meta/last_review.json")
 }
 
+// LoadAndClearLastReview 原子性读取并清除审阅信号，防止 TOCTOU 竞态。
+func (s *Store) LoadAndClearLastReview() (*domain.ReviewEntry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var r domain.ReviewEntry
+	if err := s.readJSONUnlocked("meta/last_review.json", &r); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	_ = s.removeFileUnlocked("meta/last_review.json")
+	return &r, nil
+}
+
 // LoadLastReview 读取最近一次全局审阅。从 chapter 往前搜索。
 func (s *Store) LoadLastReview(fromChapter int) (*domain.ReviewEntry, error) {
 	for ch := fromChapter; ch >= 1; ch-- {

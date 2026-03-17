@@ -30,36 +30,43 @@ func (s *Store) LoadForeshadowLedger() ([]domain.ForeshadowEntry, error) {
 
 // UpdateForeshadow 批量应用伏笔增量操作。
 func (s *Store) UpdateForeshadow(chapter int, updates []domain.ForeshadowUpdate) error {
-	entries, err := s.LoadForeshadowLedger()
-	if err != nil {
-		return err
-	}
-	idx := make(map[string]int, len(entries))
-	for i, e := range entries {
-		idx[e.ID] = i
-	}
-	for _, u := range updates {
-		switch u.Action {
-		case "plant":
-			idx[u.ID] = len(entries)
-			entries = append(entries, domain.ForeshadowEntry{
-				ID:          u.ID,
-				Description: u.Description,
-				PlantedAt:   chapter,
-				Status:      "planted",
-			})
-		case "advance":
-			if i, ok := idx[u.ID]; ok {
-				entries[i].Status = "advanced"
-			}
-		case "resolve":
-			if i, ok := idx[u.ID]; ok {
-				entries[i].Status = "resolved"
-				entries[i].ResolvedAt = chapter
+	return s.withWriteLock(func() error {
+		var entries []domain.ForeshadowEntry
+		if err := s.readJSONUnlocked("foreshadow_ledger.json", &entries); err != nil {
+			if !os.IsNotExist(err) {
+				return err
 			}
 		}
-	}
-	return s.SaveForeshadowLedger(entries)
+		idx := make(map[string]int, len(entries))
+		for i, e := range entries {
+			idx[e.ID] = i
+		}
+		for _, u := range updates {
+			switch u.Action {
+			case "plant":
+				idx[u.ID] = len(entries)
+				entries = append(entries, domain.ForeshadowEntry{
+					ID:          u.ID,
+					Description: u.Description,
+					PlantedAt:   chapter,
+					Status:      "planted",
+				})
+			case "advance":
+				if i, ok := idx[u.ID]; ok {
+					entries[i].Status = "advanced"
+				}
+			case "resolve":
+				if i, ok := idx[u.ID]; ok {
+					entries[i].Status = "resolved"
+					entries[i].ResolvedAt = chapter
+				}
+			}
+		}
+		if err := s.writeJSONUnlocked("foreshadow_ledger.json", entries); err != nil {
+			return err
+		}
+		return s.writeFileUnlocked("foreshadow_ledger.md", []byte(renderForeshadow(entries)))
+	})
 }
 
 // LoadActiveForeshadow 返回未回收的伏笔条目（status != "resolved"）。

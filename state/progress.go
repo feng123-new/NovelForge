@@ -157,6 +157,21 @@ func (s *Store) LoadLastCommit() (*domain.CommitResult, error) {
 	return &r, nil
 }
 
+// LoadAndClearLastCommit 原子性读取并清除 commit 信号，防止 TOCTOU 竞态。
+func (s *Store) LoadAndClearLastCommit() (*domain.CommitResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var r domain.CommitResult
+	if err := s.readJSONUnlocked("meta/last_commit.json", &r); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	_ = s.removeFileUnlocked("meta/last_commit.json")
+	return &r, nil
+}
+
 // ClearInProgress 清除进度中间状态（章节提交后调用）。
 func (s *Store) ClearInProgress() error {
 	return s.withWriteLock(func() error {
