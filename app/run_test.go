@@ -104,18 +104,20 @@ func TestParseProgressSummaryKeepsToolProgress(t *testing.T) {
 	}
 }
 
-func TestCreateModelUsesOpenRouterProvider(t *testing.T) {
-	model, err := createModel(Config{
+func TestNewModelSetUsesOpenRouterProvider(t *testing.T) {
+	cfg := Config{
 		Provider:  "openrouter",
 		ModelName: "stepfun/step-3.5-flash:free",
-		APIKey:    "test-key",
-		BaseURL:   "https://openrouter.ai/api/v1",
-	})
+		Providers: map[string]ProviderConfig{
+			"openrouter": {APIKey: "test-key", BaseURL: "https://openrouter.ai/api/v1"},
+		},
+	}
+	ms, err := NewModelSet(cfg)
 	if err != nil {
-		t.Fatalf("createModel: %v", err)
+		t.Fatalf("NewModelSet: %v", err)
 	}
 
-	providerModel, ok := model.(interface{ ProviderName() string })
+	providerModel, ok := ms.Default.(interface{ ProviderName() string })
 	if !ok {
 		t.Fatalf("model does not expose provider name")
 	}

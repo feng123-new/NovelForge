@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/voocel/ainovel-cli/app"
+	"github.com/voocel/ainovel-cli/tools"
 )
 
 const maxEvents = 500
@@ -551,6 +552,19 @@ func (m Model) handleAskUserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.Type {
+	case tea.KeyEsc:
+		// 关闭弹窗，返回空答案
+		state.request.resultCh <- askUserResult{
+			resp: &tools.AskUserResponse{
+				Answers: make(map[string]string),
+				Notes:   make(map[string]string),
+			},
+		}
+		m.askState = nil
+		if m.mode != modeDone {
+			m.textarea.Focus()
+		}
+		return m, nil
 	case tea.KeyUp:
 		state.moveCursor(-1)
 	case tea.KeyDown:

@@ -16,11 +16,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/voocel/agentcore"
-	"github.com/voocel/agentcore/llm"
 	"github.com/voocel/ainovel-cli/domain"
 	"github.com/voocel/ainovel-cli/state"
 	"github.com/voocel/ainovel-cli/tools"
-	"github.com/voocel/litellm"
 )
 
 // emitFn 是可选的 UIEvent 发射回调，用于向 TUI 转发结构化事件。
@@ -39,7 +37,7 @@ func Run(cfg Config, refs tools.References, prompts Prompts, styles map[string]s
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	log.Printf("[boot] provider=%s model=%s base_url=%s output=%s", cfg.Provider, cfg.ModelName, cfg.BaseURL, cfg.OutputDir)
+	log.Printf("[boot] provider=%s model=%s output=%s", cfg.Provider, cfg.ModelName, cfg.OutputDir)
 
 	// 1. 初始化状态
 	store := state.NewStore(cfg.OutputDir)
@@ -52,14 +50,15 @@ func Run(cfg Config, refs tools.References, prompts Prompts, styles map[string]s
 		defer cleanup()
 	}
 
-	// 2. 创建模型
-	model, err := createModel(cfg)
+	// 2. 创建模型集合
+	models, err := NewModelSet(cfg)
 	if err != nil {
-		return fmt.Errorf("create model: %w", err)
+		return fmt.Errorf("create models: %w", err)
 	}
+	log.Printf("[boot] models: %s", models.Summary())
 
 	// 3. 组装 Coordinator
-	coordinator, askUser := BuildCoordinator(cfg, store, model, refs, prompts, styles)
+	coordinator, askUser := BuildCoordinator(cfg, store, models, refs, prompts, styles)
 	askUser.SetHandler(cliAskUserHandler)
 
 	// 4. 确定性控制面：事件监听 + FollowUp 注入
@@ -877,36 +876,6 @@ func setupFileLogger(outputDir string) func() {
 		log.SetOutput(os.Stderr)
 		_ = f.Close()
 	}
-}
-
-// createModel 根据 provider 创建对应的 LLM 模型。
-func createModel(cfg Config) (agentcore.ChatModel, error) {
-	var baseURL []string
-	if cfg.BaseURL != "" {
-		baseURL = append(baseURL, cfg.BaseURL)
-	}
-	switch cfg.Provider {
-	case "anthropic":
-		return llm.NewAnthropicModel(cfg.ModelName, cfg.APIKey, baseURL...)
-	case "gemini":
-		return llm.NewGeminiModel(cfg.ModelName, cfg.APIKey, baseURL...)
-	case "openrouter":
-		return newOpenRouterModel(cfg.ModelName, cfg.APIKey, baseURL...)
-	default: // openai 及其他 OpenAI 兼容服务
-		return llm.NewOpenAIModel(cfg.ModelName, cfg.APIKey, baseURL...)
-	}
-}
-
-func newOpenRouterModel(model, apiKey string, baseURL ...string) (agentcore.ChatModel, error) {
-	cfg := litellm.ProviderConfig{APIKey: apiKey}
-	if len(baseURL) > 0 {
-		cfg.BaseURL = baseURL[0]
-	}
-	client, err := litellm.NewWithProvider("openrouter", cfg)
-	if err != nil {
-		return nil, fmt.Errorf("openrouter: %w", err)
-	}
-	return llm.NewLiteLLMAdapter(model, client), nil
 }
 
 // cliAskUserHandler 是 CLI 模式下的交互式选择器，上下键选择，回车确认。

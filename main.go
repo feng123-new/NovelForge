@@ -21,13 +21,36 @@ var referencesFS embed.FS
 var stylesFS embed.FS
 
 func main() {
-	style := envOr("NOVEL_STYLE", "default")
-	refs := loadReferences(style)
+	configPath, args := parseFlags()
+
+	// 首次引导
+	if app.NeedsSetup(configPath) {
+		setupCfg, err := app.RunSetup()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "setup: %v\n", err)
+			os.Exit(1)
+		}
+		// 引导完成后使用生成的配置继续
+		runWithConfig(setupCfg, args)
+		return
+	}
+
+	// 加载配置
+	cfg, err := app.LoadConfig(configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "config: %v\n", err)
+		os.Exit(1)
+	}
+
+	runWithConfig(cfg, args)
+}
+
+func runWithConfig(cfg app.Config, args []string) {
+	refs := loadReferences(cfg.Style)
 	prompts := loadPrompts()
 	styles := loadStyles()
-	cfg := buildConfig(style)
 
-	prompt := parsePrompt()
+	prompt := strings.Join(args, " ")
 	if prompt != "" {
 		// CLI 模式：有命令行参数，直接运行
 		cfg.Prompt = prompt
@@ -45,41 +68,23 @@ func main() {
 	}
 }
 
-func buildConfig(style string) app.Config {
-	provider := envOr("LLM_PROVIDER", "openrouter")
-	apiKey := os.Getenv("Z_OPENAI_API_KEY")
-	baseURL := os.Getenv("Z_OPENAI_BASE_URL")
-	switch provider {
-	case "anthropic":
-		apiKey = envOr("ANTHROPIC_API_KEY", apiKey)
-		baseURL = envOr("ANTHROPIC_BASE_URL", baseURL)
-	case "gemini":
-		apiKey = envOr("GEMINI_API_KEY", apiKey)
-		baseURL = envOr("GEMINI_BASE_URL", baseURL)
-	case "openrouter":
-		apiKey = envOr("OPENROUTER_API_KEY", apiKey)
-		baseURL = envOr("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+// parseFlags 提取 --config 参数，返回配置路径和剩余参数。
+func parseFlags() (configPath string, args []string) {
+	for i := 1; i < len(os.Args); i++ {
+		if os.Args[i] == "--config" && i+1 < len(os.Args) {
+			configPath = os.Args[i+1]
+			i++
+			continue
+		}
+		args = append(args, os.Args[i])
 	}
-
-	cfg := app.Config{
-		NovelName: "novel",
-		Provider:  provider,
-		APIKey:    apiKey,
-		BaseURL:   baseURL,
-		ModelName: "stepfun/step-3.5-flash:free",
-		Style:     style,
-	}
-	return cfg
-}
-
-func parsePrompt() string {
-	if len(os.Args) < 2 {
-		return ""
-	}
-	return strings.Join(os.Args[1:], " ")
+	return
 }
 
 func loadReferences(style string) tools.References {
+	if style == "" {
+		style = "default"
+	}
 	refs := tools.References{
 		ChapterGuide:      mustRead(referencesFS, "references/chapter-guide.md"),
 		HookTechniques:    mustRead(referencesFS, "references/hook-techniques.md"),
@@ -139,11 +144,4 @@ func loadStyles() map[string]string {
 		styles[name] = string(data)
 	}
 	return styles
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

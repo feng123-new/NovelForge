@@ -84,32 +84,84 @@ Writer 自主决定每章的创作流程，建议路径：
 # 安装
 go install github.com/voocel/ainovel-cli@latest
 
-# 配置 API Key（任选一个 Provider）
-export LLM_PROVIDER=openrouter
-export OPENROUTER_API_KEY=sk-xxx
+# 首次运行，自动进入引导流程（选择 Provider → 输入 API Key → Base URL → 模型名）
+ainovel-cli
 
 # CLI 模式：一行启动
 ainovel-cli "写一部12章都市悬疑小说，主角是刑警，暗线是家族秘密"
-
-# TUI 模式：交互界面
-ainovel-cli
 ```
 
-### 环境变量
+### 配置文件
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `LLM_PROVIDER` | LLM 提供商（`openrouter` / `anthropic` / `gemini` / `openai`） | `openrouter` |
-| `OPENROUTER_API_KEY` | OpenRouter API Key | — |
-| `ANTHROPIC_API_KEY` | Anthropic API Key | — |
-| `GEMINI_API_KEY` | Gemini API Key | — |
-| `Z_OPENAI_API_KEY` | OpenAI 兼容接口 API Key（通用） | — |
-| `Z_OPENAI_BASE_URL` | OpenAI 兼容接口 Base URL | — |
-| `NOVEL_STYLE` | 写作风格 | `default` |
+首次运行时自动引导生成配置文件 `~/.ainovel/config.json`，后续可直接编辑该文件调整设置。删除配置文件后重新运行会再次进入引导流程。
+
+也可以手动创建配置文件，参考 `~/.ainovel/config.example.jsonc`（引导时自动生成）。
+
+```jsonc
+{
+  "provider": "openrouter",
+  "model": "google/gemini-2.5-flash",
+  "providers": {
+    "openrouter": {
+      "api_key": "sk-or-v1-xxx",
+      "base_url": "https://openrouter.ai/api/v1"
+    }
+  },
+  "style": "default",
+  "context_window": 128000
+}
+```
+
+#### 配置文件查找顺序（后者覆盖前者）
+
+1. `~/.ainovel/config.json` — 全局配置
+2. `./ainovel.json` — 项目级覆盖（可选）
+3. `--config path/to/config.json` — 命令行指定
+
+#### 按角色使用不同模型
+
+通过 `roles` 字段为不同智能体分配不同的模型，未配置的角色使用默认模型：
+
+```jsonc
+{
+  "provider": "openrouter",
+  "model": "google/gemini-2.5-flash",
+  "providers": {
+    "openrouter": { "api_key": "sk-or-v1-xxx", "base_url": "https://openrouter.ai/api/v1" },
+    "anthropic": { "api_key": "sk-ant-xxx" }
+  },
+  "roles": {
+    "writer": { "provider": "anthropic", "model": "claude-sonnet-4" },
+    "architect": { "provider": "openrouter", "model": "google/gemini-2.5-pro" }
+  }
+}
+```
+
+可配置的角色：`coordinator` / `architect` / `writer` / `editor`
+
+#### 自定义代理
+
+选择任意 Provider 后填写代理地址即可，或使用 Custom Proxy 并指定 API 协议类型：
+
+```jsonc
+{
+  "provider": "my-proxy",
+  "model": "gpt-4o",
+  "providers": {
+    "my-proxy": {
+      "type": "openai",
+      "api_key": "sk-xxx",
+      "base_url": "https://proxy.example.com/v1"
+    }
+  }
+}
+```
+
+支持的 Provider：`openrouter` / `anthropic` / `gemini` / `openai` / `deepseek` / `qwen` / `glm` / `grok` / `ollama` / `bedrock` 及任意自定义代理。
 
 ### 写作风格
 
-通过 `NOVEL_STYLE` 环境变量切换：
+通过配置文件的 `style` 字段切换：
 
 - `default` — 通用风格
 - `suspense` — 悬疑推理
@@ -117,6 +169,8 @@ ainovel-cli
 - `romance` — 言情
 
 ## 输出结构
+
+所有创作数据（章节、大纲、角色、进度等）保存在output目录中。中断后重新运行会自动从上次进度续写。删除output目录将重新开始创作。
 
 ```
 output/{novel_name}/
@@ -196,10 +250,9 @@ Editor 评审裁定同理：`accept` → 继续，`polish/rewrite` → 注入修
 ## 技术栈
 
 - **Go 1.25** — 主语言
-- **[agentcore](https://github.com/voocel/agentcore)** — 多智能体编排框架（tool-calling + streaming）
+- **[agentcore](https://github.com/voocel/agentcore)** — 极简 Agent 内核（tool-calling + streaming）
 - **[litellm](https://github.com/voocel/litellm)** — 统一 LLM 接口适配
 - **[Bubble Tea](https://github.com/charmbracelet/bubbletea)** — 终端 TUI 框架
-- **[Lip Gloss](https://github.com/charmbracelet/lipgloss)** — 终端样式
 
 ## License
 

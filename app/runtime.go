@@ -94,19 +94,20 @@ func NewRuntime(cfg Config, refs tools.References, prompts Prompts, styles map[s
 	if err := cfg.ValidateBase(); err != nil {
 		return nil, err
 	}
-	log.Printf("[boot] provider=%s model=%s base_url=%s output=%s", cfg.Provider, cfg.ModelName, cfg.BaseURL, cfg.OutputDir)
+	log.Printf("[boot] provider=%s model=%s output=%s", cfg.Provider, cfg.ModelName, cfg.OutputDir)
 
 	store := state.NewStore(cfg.OutputDir)
 	if err := store.Init(); err != nil {
 		return nil, fmt.Errorf("init store: %w", err)
 	}
 
-	model, err := createModel(cfg)
+	models, err := NewModelSet(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("create model: %w", err)
+		return nil, fmt.Errorf("create models: %w", err)
 	}
+	log.Printf("[boot] models: %s", models.Summary())
 
-	coordinator, askUser := BuildCoordinator(cfg, store, model, refs, prompts, styles)
+	coordinator, askUser := BuildCoordinator(cfg, store, models, refs, prompts, styles)
 
 	rt := &Runtime{
 		cfg:         cfg,

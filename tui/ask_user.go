@@ -241,9 +241,9 @@ func renderAskUserModal(width, height int, state *askUserState) string {
 		b.WriteString("\n")
 	}
 
-	hint := "↑↓ 选择 · Enter 确认"
+	hint := "↑↓ 选择 · Enter 确认 · Esc 关闭"
 	if q.MultiSelect {
-		hint = "↑↓ 选择 · Space 勾选 · Enter 提交"
+		hint = "↑↓ 选择 · Space 勾选 · Enter 提交 · Esc 关闭"
 	}
 	if state.typing {
 		hint = "输入补充内容 · Enter 确认 · Esc 返回选项"
@@ -257,7 +257,6 @@ func renderAskUserModal(width, height int, state *askUserState) string {
 		Border(baseBorder).
 		BorderForeground(colorAccent).
 		Padding(1, 2).
-		Background(lipgloss.Color("#2a2520")).
 		Render(b.String())
 
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
