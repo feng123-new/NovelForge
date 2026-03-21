@@ -12,6 +12,22 @@ type ProviderConfig struct {
 	BaseURL string `json:"base_url,omitempty"` // API Base URL
 }
 
+// RequiresAPIKey 返回该 provider 是否必须显式配置 api_key。
+// 约定：
+// 1. ollama / bedrock 允许无 key；
+// 2. 显式指定 Type 的配置视为自定义代理，允许无 key；
+// 3. 其他 provider 默认要求 key，保持对官方托管接口的保守校验。
+func (pc ProviderConfig) RequiresAPIKey(name string) bool {
+	switch name {
+	case "ollama", "bedrock":
+		return false
+	}
+	if pc.Type != "" {
+		return false
+	}
+	return true
+}
+
 // ProviderType 返回有效的 API 协议类型。
 // 优先使用显式 Type，否则从 provider 名称推断，最终回退到 openai。
 func (pc ProviderConfig) ProviderType(name string) string {
@@ -93,7 +109,10 @@ func (c *Config) ValidateBase() error {
 
 	// 默认 provider 必须有凭证
 	pc, ok := c.Providers[c.Provider]
-	if !ok || pc.APIKey == "" {
+	if !ok {
+		return fmt.Errorf("provider %q is not configured in providers", c.Provider)
+	}
+	if pc.RequiresAPIKey(c.Provider) && pc.APIKey == "" {
 		return fmt.Errorf("provider %q has no api_key configured", c.Provider)
 	}
 
@@ -106,7 +125,10 @@ func (c *Config) ValidateBase() error {
 			return fmt.Errorf("role %q must have both provider and model", role)
 		}
 		rpc, ok := c.Providers[rc.Provider]
-		if !ok || rpc.APIKey == "" {
+		if !ok {
+			return fmt.Errorf("role %q references provider %q which is not configured", role, rc.Provider)
+		}
+		if rpc.RequiresAPIKey(rc.Provider) && rpc.APIKey == "" {
 			return fmt.Errorf("role %q references provider %q which has no api_key", role, rc.Provider)
 		}
 	}

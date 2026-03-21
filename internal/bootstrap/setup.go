@@ -28,10 +28,11 @@ func NeedsSetup(flagPath string) bool {
 }
 
 type setupProvider struct {
-	name     string
-	label    string
-	baseURL  string // 预填的 base_url
-	needType bool   // 自定义代理需要额外问 type 和 base_url
+	name           string
+	label          string
+	baseURL        string // 预填的 base_url
+	needType       bool   // 自定义代理需要额外问 type 和 base_url
+	apiKeyOptional bool   // true 表示 API Key 允许留空
 }
 
 var setupProviders = []setupProvider{
@@ -43,9 +44,9 @@ var setupProviders = []setupProvider{
 	{name: "qwen", label: "Qwen"},
 	{name: "glm", label: "GLM"},
 	{name: "grok", label: "Grok"},
-	{name: "ollama", label: "Ollama", baseURL: "http://localhost:11434"},
-	{name: "bedrock", label: "Bedrock"},
-	{name: "custom", label: "Custom Proxy", needType: true},
+	{name: "ollama", label: "Ollama", baseURL: "http://localhost:11434", apiKeyOptional: true},
+	{name: "bedrock", label: "Bedrock", apiKeyOptional: true},
+	{name: "custom", label: "Custom Proxy", needType: true, apiKeyOptional: true},
 }
 
 // RunSetup 运行首次引导，返回生成的配置。
@@ -81,12 +82,21 @@ func RunSetup() (Config, error) {
 	}
 
 	// Step 2: 输入 API Key
-	apiKey, err := runTextInput("[2/4] API Key", "sk-xxx")
+	var apiKey string
+	if sp.apiKeyOptional {
+		apiKey, err = runOptionalTextInput("[2/4] API Key（可留空）", "留空表示不使用 API Key")
+	} else {
+		apiKey, err = runTextInput("[2/4] API Key", "sk-xxx")
+	}
 	if err != nil {
 		return Config{}, err
 	}
 	pc.APIKey = apiKey
-	printStepDone("API Key", maskKey(apiKey))
+	if apiKey == "" {
+		printStepDone("API Key", "未设置")
+	} else {
+		printStepDone("API Key", maskKey(apiKey))
+	}
 
 	// Step 3: Base URL（直接回车使用官方默认地址）
 	baseDefault := sp.baseURL
@@ -161,11 +171,17 @@ func saveExampleConfig() {
     },
     "gemini": {
       "api_key": ""
+    },
+    "ollama": {
+      "base_url": "http://localhost:11434"
+    },
+    "bedrock": {
+      "base_url": ""
     }
     // 自定义代理示例：
     // "my-proxy": {
     //   "type": "openai",
-    //   "api_key": "sk-xxx",
+    //   "api_key": "sk-xxx", // 可选：若代理不需要认证可省略
     //   "base_url": "https://proxy.example.com/v1"
     // }
   },
@@ -258,6 +274,20 @@ func runTextInput(label, placeholder string) (string, error) {
 	return runTextInputWithDefault(label, placeholder, "")
 }
 
+func runOptionalTextInput(label, placeholder string) (string, error) {
+	m := setupInputModel{label: label, placeholder: placeholder, allowEmpty: true}
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+	final, err := p.Run()
+	if err != nil {
+		return "", err
+	}
+	result := final.(setupInputModel)
+	if result.cancelled {
+		return "", fmt.Errorf("setup cancelled")
+	}
+	return result.value, nil
+}
+
 func runTextInputWithDefault(label, placeholder, defaultValue string) (string, error) {
 	m := setupInputModel{label: label, placeholder: placeholder, defaultValue: defaultValue}
 	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
@@ -337,6 +367,7 @@ type setupInputModel struct {
 	label        string
 	placeholder  string
 	defaultValue string // 直接回车时使用的默认值
+	allowEmpty   bool   // 允许直接输入空值
 	value        string
 	cancelled    bool
 }
@@ -347,7 +378,7 @@ func (m setupInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.KeyMsg); ok {
 		switch msg.String() {
 		case "enter":
-			if strings.TrimSpace(m.value) != "" || m.defaultValue != "" {
+			if strings.TrimSpace(m.value) != "" || m.defaultValue != "" || m.allowEmpty {
 				return m, tea.Quit
 			}
 		case "ctrl+c", "esc":

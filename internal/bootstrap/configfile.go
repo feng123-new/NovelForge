@@ -98,7 +98,17 @@ func mergeConfig(base, overlay Config) Config {
 			base.Providers = make(map[string]ProviderConfig)
 		}
 		for k, v := range overlay.Providers {
-			base.Providers[k] = v
+			existing := base.Providers[k]
+			if v.Type != "" {
+				existing.Type = v.Type
+			}
+			if v.APIKey != "" {
+				existing.APIKey = v.APIKey
+			}
+			if v.BaseURL != "" {
+				existing.BaseURL = v.BaseURL
+			}
+			base.Providers[k] = existing
 		}
 	}
 
@@ -108,7 +118,14 @@ func mergeConfig(base, overlay Config) Config {
 			base.Roles = make(map[string]RoleConfig)
 		}
 		for k, v := range overlay.Roles {
-			base.Roles[k] = v
+			existing := base.Roles[k]
+			if v.Provider != "" {
+				existing.Provider = v.Provider
+			}
+			if v.Model != "" {
+				existing.Model = v.Model
+			}
+			base.Roles[k] = existing
 		}
 	}
 

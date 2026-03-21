@@ -11,6 +11,12 @@ import (
 	"github.com/voocel/ainovel-cli/internal/ui/tui"
 )
 
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
 func main() {
 	configPath, args := parseFlags()
 
