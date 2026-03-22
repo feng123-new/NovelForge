@@ -72,7 +72,8 @@ func renderStatePanel(snap orchestrator.UISnapshot, width, height int) string {
 	var b strings.Builder
 
 	if snap.RecoveryLabel != "" {
-		b.WriteString(highlightValueStyle.Render("~ 恢复: " + truncate(snap.RecoveryLabel, width-6)))
+		b.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Italic(true).
+			Render(truncate(snap.RecoveryLabel, width-4)))
 		b.WriteString("\n\n")
 	}
 
@@ -160,12 +161,29 @@ func renderEventContent(events []orchestrator.UIEvent, width int) string {
 			color = colorText
 		}
 
-		catStyle := lipgloss.NewStyle().Foreground(color).Width(7)
+		catStyle := lipgloss.NewStyle().Foreground(color).Bold(true).Width(7)
 		tsStyle := lipgloss.NewStyle().Foreground(colorDim)
-		sumStyle := lipgloss.NewStyle().Foreground(color)
+		sumStyle := lipgloss.NewStyle().Foreground(colorText)
+		// SYSTEM 和 ERROR 的摘要用自身颜色高亮
+		if cat == "SYSTEM" || cat == "ERROR" || cat == "REVIEW" {
+			sumStyle = lipgloss.NewStyle().Foreground(color)
+		}
 
-		line := tsStyle.Render(ts) + " " + catStyle.Render(cat) + " " + sumStyle.Render(truncate(ev.Summary, width-20))
-		b.WriteString(line)
+		maxSumW := width - 20
+		summary := ev.Summary
+		if cat == "ERROR" {
+			// 错误信息不截断，自动换行
+			lines := wrapStreamText(summary, maxSumW)
+			first := tsStyle.Render(ts) + " " + catStyle.Render(cat) + " " + sumStyle.Render(lines[0])
+			b.WriteString(first)
+			indent := strings.Repeat(" ", 16) // 对齐到摘要起始位置
+			for _, l := range lines[1:] {
+				b.WriteString("\n" + indent + sumStyle.Render(l))
+			}
+		} else {
+			line := tsStyle.Render(ts) + " " + catStyle.Render(cat) + " " + sumStyle.Render(truncate(summary, maxSumW))
+			b.WriteString(line)
+		}
 		if i < len(events)-1 {
 			b.WriteString("\n")
 		}
@@ -461,16 +479,26 @@ func renderDetailContent(snap orchestrator.UISnapshot, contentW int) string {
 		b.WriteString("\n")
 		for _, e := range snap.Outline {
 			ch := fmt.Sprintf("%2d", e.Chapter)
-			// 已完成的章节用绿色标记
-			marker := lipgloss.NewStyle().Foreground(colorDim).Render("○")
+			var marker, chStyle string
 			if snap.CompletedCount >= e.Chapter {
+				// 已完成：绿点 + 柔色章节号
 				marker = lipgloss.NewStyle().Foreground(colorSuccess).Render("●")
+				chStyle = lipgloss.NewStyle().Foreground(colorDim).Render(ch)
 			} else if snap.InProgressChapter == e.Chapter {
-				marker = lipgloss.NewStyle().Foreground(colorAccent).Render("◐")
+				// 进行中：金色箭头 + 高亮章节号
+				marker = lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("▸")
+				chStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(ch)
+			} else {
+				// 未开始：暗圆 + 暗章节号
+				marker = lipgloss.NewStyle().Foreground(colorDim).Render("○")
+				chStyle = lipgloss.NewStyle().Foreground(colorDim).Render(ch)
 			}
 			title := truncate(e.Title, contentW-6)
-			line := marker + lipgloss.NewStyle().Foreground(colorDim).Render(ch) + " " +
-				cardContentStyle.Render(title)
+			titleStyle := cardContentStyle
+			if snap.CompletedCount < e.Chapter && snap.InProgressChapter != e.Chapter {
+				titleStyle = lipgloss.NewStyle().Foreground(colorMuted)
+			}
+			line := marker + chStyle + " " + titleStyle.Render(title)
 			b.WriteString(line)
 			b.WriteString("\n")
 		}

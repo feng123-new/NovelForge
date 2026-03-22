@@ -2,7 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -35,7 +35,7 @@ func handleFoundationCheck(coordinator *agentcore.Agent, store *storepkg.Store, 
 	if len(missing) == 0 {
 		return
 	}
-	log.Printf("[host] 基础设定不完整，缺失: %v", missing)
+	slog.Warn("基础设定不完整", "module", "host", "missing", missing)
 	if emit != nil {
 		emit(UIEvent{Time: time.Now(), Category: "SYSTEM",
 			Summary: fmt.Sprintf("基础设定不完整，缺失: %v", missing), Level: "warn"})
@@ -59,8 +59,7 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *storepkg.Store, emi
 		return false
 	}
 
-	log.Printf("[host] 章节提交信号：第 %d 章，%d 字",
-		result.Chapter, result.WordCount)
+	slog.Info("章节提交信号", "module", "host", "chapter", result.Chapter, "words", result.WordCount)
 	if emit != nil {
 		emit(UIEvent{
 			Time:     time.Now(),
@@ -72,7 +71,7 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *storepkg.Store, emi
 
 	// outline_feedback 处理：Writer 反馈大纲偏离
 	if result.Feedback != nil && result.Feedback.Deviation != "" {
-		log.Printf("[host] outline_feedback: %s", result.Feedback.Deviation)
+		slog.Info("outline_feedback", "module", "host", "deviation", result.Feedback.Deviation)
 		if emit != nil {
 			emit(UIEvent{Time: time.Now(), Category: "SYSTEM",
 				Summary: "Writer 反馈大纲偏离: " + truncateLog(result.Feedback.Deviation, 60), Level: "info"})
@@ -86,26 +85,26 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *storepkg.Store, emi
 	progress, _ := store.LoadProgress()
 	if progress != nil && (progress.Flow == domain.FlowRewriting || progress.Flow == domain.FlowPolishing) {
 		if !slices.Contains(progress.PendingRewrites, result.Chapter) {
-			log.Printf("[host] 警告：重写期间提交了非队列章节 %d，拒绝并提醒", result.Chapter)
+			slog.Warn("重写期间提交了非队列章节", "module", "host", "chapter", result.Chapter)
 			coordinator.FollowUp(agentcore.UserMsg(fmt.Sprintf(
 				"[系统] 当前处于重写流程，但提交了非队列章节（第 %d 章）。请先完成待重写章节 %v 后再继续新章节。",
 				result.Chapter, progress.PendingRewrites)))
 			return true
 		}
 		if err := store.CompleteRewrite(result.Chapter); err != nil {
-			log.Printf("[host] 完成重写标记失败: %v", err)
+			slog.Error("完成重写标记失败", "module", "host", "err", err)
 		}
 		flushPendingSteer(store, coordinator, emit)
 		updated, _ := store.LoadProgress()
 		if updated != nil && len(updated.PendingRewrites) == 0 {
-			log.Printf("[host] 所有重写/打磨已完成，恢复正常写作")
+			slog.Info("所有重写/打磨已完成，恢复正常写作", "module", "host")
 			saveCheckpoint(store, fmt.Sprintf("ch%02d-commit", result.Chapter))
 			saveCheckpoint(store, "rewrite-done")
 			if emit != nil {
 				emit(UIEvent{Time: time.Now(), Category: "SYSTEM", Summary: "所有重写/打磨已完成", Level: "success"})
 			}
 		} else if updated != nil {
-			log.Printf("[host] 还有 %d 章待处理：%v", len(updated.PendingRewrites), updated.PendingRewrites)
+			slog.Info("还有待处理章节", "module", "host", "remaining", updated.PendingRewrites)
 			saveCheckpoint(store, fmt.Sprintf("ch%02d-commit", result.Chapter))
 		}
 		return true
@@ -113,13 +112,12 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *storepkg.Store, emi
 
 	// 确定性判断 1.5：长篇弧/卷边界处理
 	if progress != nil && progress.Layered && result.ArcEnd {
-		// 判断是否全书最后一弧
 		isBookEnd := progress.TotalChapters > 0 && result.NextChapter > progress.TotalChapters
 
 		if result.VolumeEnd {
-			log.Printf("[host] 第 %d 卷第 %d 弧结束（卷结束），注入弧级+卷级评审指令", result.Volume, result.Arc)
+			slog.Info("弧结束（卷结束），注入评审指令", "module", "host", "volume", result.Volume, "arc", result.Arc)
 			if err := store.SetFlow(domain.FlowReviewing); err != nil {
-				log.Printf("[host] 设置审阅流程失败: %v", err)
+				slog.Error("设置审阅流程失败", "module", "host", "err", err)
 			}
 			if emit != nil {
 				emit(UIEvent{Time: time.Now(), Category: "SYSTEM",
@@ -138,9 +136,9 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *storepkg.Store, emi
 					"%s",
 				result.Volume, result.Arc, result.Chapter, result.Volume, result.Arc, result.Volume, tail)))
 		} else {
-			log.Printf("[host] 第 %d 卷第 %d 弧结束，注入弧级评审指令", result.Volume, result.Arc)
+			slog.Info("弧结束，注入弧级评审指令", "module", "host", "volume", result.Volume, "arc", result.Arc)
 			if err := store.SetFlow(domain.FlowReviewing); err != nil {
-				log.Printf("[host] 设置审阅流程失败: %v", err)
+				slog.Error("设置审阅流程失败", "module", "host", "err", err)
 			}
 			if emit != nil {
 				emit(UIEvent{Time: time.Now(), Category: "SYSTEM",
@@ -155,9 +153,9 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *storepkg.Store, emi
 		}
 
 		if isBookEnd {
-			log.Printf("[host] 全书最后一弧，评审完成后将结束")
+			slog.Info("全书最后一弧，评审完成后将结束", "module", "host")
 			if err := store.MarkComplete(); err != nil {
-				log.Printf("[host] 标记完成失败: %v", err)
+				slog.Error("标记完成失败", "module", "host", "err", err)
 			}
 			if emit != nil {
 				emit(UIEvent{Time: time.Now(), Category: "SYSTEM",
@@ -169,15 +167,15 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *storepkg.Store, emi
 		return true
 	}
 
-	// 确定性判断 1：全书完成（TotalChapters 由大纲自动设定）
+	// 确定性判断 1：全书完成
 	totalChapters := 0
 	if progress != nil {
 		totalChapters = progress.TotalChapters
 	}
 	if totalChapters > 0 && result.NextChapter > totalChapters {
-		log.Printf("[host] 所有 %d 章已完成，注入完成指令", totalChapters)
+		slog.Info("全书完成", "module", "host", "total", totalChapters)
 		if err := store.MarkComplete(); err != nil {
-			log.Printf("[host] 标记完成失败: %v", err)
+			slog.Error("标记完成失败", "module", "host", "err", err)
 		}
 		flushPendingSteer(store, coordinator, emit)
 		saveCheckpoint(store, fmt.Sprintf("ch%02d-commit", result.Chapter))
@@ -192,9 +190,9 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *storepkg.Store, emi
 
 	// 确定性判断 2：需要全局审阅
 	if result.ReviewRequired {
-		log.Printf("[host] review_required=true（%s），注入审阅指令", result.ReviewReason)
+		slog.Info("触发全局审阅", "module", "host", "reason", result.ReviewReason)
 		if err := store.SetFlow(domain.FlowReviewing); err != nil {
-			log.Printf("[host] 设置审阅流程失败: %v", err)
+			slog.Error("设置审阅流程失败", "module", "host", "err", err)
 		}
 		if emit != nil {
 			emit(UIEvent{Time: time.Now(), Category: "SYSTEM", Summary: "review_required=true " + result.ReviewReason, Level: "warn"})
@@ -212,26 +210,22 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *storepkg.Store, emi
 }
 
 // handleUncommittedDraft 在 Writer 结束但没有 commit 时检测是否存在未提交的草稿。
-// 如果存在，提醒 Coordinator 重新调用 writer 完成提交。
 func handleUncommittedDraft(coordinator *agentcore.Agent, store *storepkg.Store, emit emitFn) {
 	progress, _ := store.LoadProgress()
 	if progress == nil || progress.Phase == domain.PhaseComplete {
 		return
 	}
-	// 确定下一个应该写的章节
 	next := 1
 	if progress.InProgressChapter > 0 {
 		next = progress.InProgressChapter
 	} else if len(progress.CompletedChapters) > 0 {
 		next = progress.NextChapter()
 	}
-	// 检查该章节是否有草稿但未提交
 	draft, _ := store.LoadDraft(next)
 	if draft == "" {
 		return
 	}
-	// 有草稿但没有 commit 信号
-	log.Printf("[host] Writer 结束但第 %d 章草稿未提交", next)
+	slog.Warn("Writer 结束但草稿未提交", "module", "host", "chapter", next)
 	if emit != nil {
 		emit(UIEvent{Time: time.Now(), Category: "SYSTEM",
 			Summary: fmt.Sprintf("第 %d 章有草稿但未提交", next), Level: "warn"})
@@ -245,7 +239,7 @@ func handleUncommittedDraft(coordinator *agentcore.Agent, store *storepkg.Store,
 func handleEditorDone(coordinator *agentcore.Agent, store *storepkg.Store, emit emitFn) {
 	review, err := store.LoadAndClearLastReview()
 	if err != nil {
-		log.Printf("[host] 加载审阅信号失败: %v", err)
+		slog.Error("加载审阅信号失败", "module", "host", "err", err)
 		return
 	}
 	if review == nil {
@@ -253,12 +247,13 @@ func handleEditorDone(coordinator *agentcore.Agent, store *storepkg.Store, emit 
 	}
 
 	criticalN := review.CriticalCount()
-	log.Printf("[host] 审阅信号：verdict=%s，%d 个问题（critical=%d，error=%d）",
-		review.Verdict, len(review.Issues), criticalN, review.ErrorCount())
+	slog.Info("审阅信号", "module", "host",
+		"verdict", review.Verdict, "issues", len(review.Issues),
+		"critical", criticalN, "errors", review.ErrorCount())
 
 	// 宿主兜底：如果 LLM 给了 accept 但存在 critical 问题，强制升级为 rewrite
 	if review.Verdict == "accept" && criticalN > 0 {
-		log.Printf("[host] 检测到 %d 个 critical 问题但 verdict=accept，强制升级为 rewrite", criticalN)
+		slog.Warn("critical 问题但 verdict=accept，强制升级为 rewrite", "module", "host", "critical", criticalN)
 		review.Verdict = "rewrite"
 	}
 
@@ -270,10 +265,10 @@ func handleEditorDone(coordinator *agentcore.Agent, store *storepkg.Store, emit 
 	switch review.Verdict {
 	case "rewrite":
 		if err := store.SetPendingRewrites(review.AffectedChapters, review.Summary); err != nil {
-			log.Printf("[host] 设置重写队列失败: %v", err)
+			slog.Error("设置重写队列失败", "module", "host", "err", err)
 		}
 		if err := store.SetFlow(domain.FlowRewriting); err != nil {
-			log.Printf("[host] 设置流程状态失败: %v", err)
+			slog.Error("设置流程状态失败", "module", "host", "err", err)
 		}
 		if emit != nil {
 			emit(UIEvent{Time: time.Now(), Category: "REVIEW",
@@ -284,10 +279,10 @@ func handleEditorDone(coordinator *agentcore.Agent, store *storepkg.Store, emit 
 			review.Summary, chaptersInfo)))
 	case "polish":
 		if err := store.SetPendingRewrites(review.AffectedChapters, review.Summary); err != nil {
-			log.Printf("[host] 设置打磨队列失败: %v", err)
+			slog.Error("设置打磨队列失败", "module", "host", "err", err)
 		}
 		if err := store.SetFlow(domain.FlowPolishing); err != nil {
-			log.Printf("[host] 设置流程状态失败: %v", err)
+			slog.Error("设置流程状态失败", "module", "host", "err", err)
 		}
 		if emit != nil {
 			emit(UIEvent{Time: time.Now(), Category: "REVIEW",
@@ -298,7 +293,7 @@ func handleEditorDone(coordinator *agentcore.Agent, store *storepkg.Store, emit 
 			review.Summary, chaptersInfo)))
 	default:
 		if err := store.SetFlow(domain.FlowWriting); err != nil {
-			log.Printf("[host] 清除审阅状态失败: %v", err)
+			slog.Error("清除审阅状态失败", "module", "host", "err", err)
 		}
 		if emit != nil {
 			emit(UIEvent{Time: time.Now(), Category: "REVIEW", Summary: "verdict=accept 审阅通过", Level: "success"})
@@ -314,6 +309,6 @@ func handleEditorDone(coordinator *agentcore.Agent, store *storepkg.Store, emit 
 
 func saveCheckpoint(store *storepkg.Store, label string) {
 	if err := store.SaveCheckpoint(label); err != nil {
-		log.Printf("[host] 保存检查点失败: %v", err)
+		slog.Error("保存检查点失败", "module", "host", "label", label, "err", err)
 	}
 }

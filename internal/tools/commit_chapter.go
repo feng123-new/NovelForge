@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/voocel/agentcore/schema"
 	"github.com/voocel/ainovel-cli/internal/domain"
@@ -169,7 +169,7 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 	if progress != nil && progress.Layered {
 		boundary, bErr := t.store.CheckArcBoundary(a.Chapter)
 		if bErr != nil {
-			log.Printf("[commit] 弧边界检测失败（chapter=%d）: %v", a.Chapter, bErr)
+			slog.Warn("弧边界检测失败", "module", "commit", "chapter", a.Chapter, "err", bErr)
 		} else if boundary != nil {
 			arcEnd = boundary.IsArcEnd
 			volumeEnd = boundary.IsVolumeEnd

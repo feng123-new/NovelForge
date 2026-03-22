@@ -2,7 +2,7 @@ package bootstrap
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/voocel/agentcore"
@@ -71,7 +71,7 @@ func NewModelSet(cfg Config) (*ModelSet, error) {
 			return nil, fmt.Errorf("role %s model: %w", role, err)
 		}
 		ms.models[role] = m
-		log.Printf("[config] role %s → provider=%s model=%s", role, rc.Provider, rc.Model)
+		slog.Info("角色模型分配", "module", "config", "role", role, "provider", rc.Provider, "model", rc.Model)
 	}
 
 	return ms, nil

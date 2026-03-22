@@ -3,32 +3,18 @@ package orchestrator
 import (
 	"context"
 	"fmt"
-	"io"
-	"log"
 	"os"
-	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/voocel/ainovel-cli/internal/logger"
 	"github.com/voocel/ainovel-cli/internal/tools"
 )
 
 // setupFileLogger 设置 CLI 模式日志，同时输出到 stderr 和日志文件。
 func setupFileLogger(outputDir string) func() {
-	logPath := filepath.Join(outputDir, "meta", "cli.log")
-	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
-		return nil
-	}
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return nil
-	}
-	log.SetOutput(io.MultiWriter(os.Stderr, f))
-	return func() {
-		log.SetOutput(os.Stderr)
-		_ = f.Close()
-	}
+	return logger.SetupFile(outputDir, "cli.log", true)
 }
 
 // cliAskUserHandler 是 CLI 模式下的交互式选择器，上下键选择，回车确认。

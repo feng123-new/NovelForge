@@ -3,20 +3,22 @@ package tui
 import "github.com/charmbracelet/lipgloss"
 
 // 主题色板 — 暖调书卷气
+// AdaptiveColor: Light = 亮底色值, Dark = 暗底色值
 var (
-	colorText    = lipgloss.Color("#e8e0d0") // 羊皮纸白（略暖）
-	colorDim     = lipgloss.Color("#5c5545") // 墨灰（偏暖）
-	colorMuted   = lipgloss.Color("#a09880") // 柔和但可读（介于 dim 和 text 之间）
-	colorAccent  = lipgloss.Color("#c9953c") // 古金（比琥珀黄更沉稳）
-	colorAccent2 = lipgloss.Color("#7a9e7e") // 青竹（辅助色，用于装饰）
-	colorSuccess = lipgloss.Color("#7a9e7e") // 竹绿（与 accent2 统一）
-	colorError   = lipgloss.Color("#c45c4a") // 砖红（比朱红柔和）
-	colorReview  = lipgloss.Color("#cc8844") // 赭橙
-	colorContext = lipgloss.Color("#8b7bb5") // 藤紫（偏暖）
+	colorText    = lipgloss.AdaptiveColor{Light: "#3d3529", Dark: "#e8e0d0"}
+	colorDim     = lipgloss.AdaptiveColor{Light: "#8a7e6b", Dark: "#6b6355"}
+	colorMuted   = lipgloss.AdaptiveColor{Light: "#7a7060", Dark: "#a09880"}
+	colorAccent  = lipgloss.AdaptiveColor{Light: "#b8860b", Dark: "#c9953c"}
+	colorAccent2 = lipgloss.AdaptiveColor{Light: "#3d7a42", Dark: "#7a9e7e"}
+	colorSuccess = lipgloss.AdaptiveColor{Light: "#3d7a42", Dark: "#7a9e7e"}
+	colorError   = lipgloss.AdaptiveColor{Light: "#b5433a", Dark: "#c45c4a"}
+	colorReview  = lipgloss.AdaptiveColor{Light: "#b07530", Dark: "#cc8844"}
+	colorContext = lipgloss.AdaptiveColor{Light: "#6b5a9e", Dark: "#8b7bb5"}
+	colorTool    = lipgloss.AdaptiveColor{Light: "#3a7a8a", Dark: "#6b9dad"}
 )
 
 // 状态标签颜色映射
-var statusColors = map[string]lipgloss.Color{
+var statusColors = map[string]lipgloss.AdaptiveColor{
 	"READY":    colorDim,
 	"RUNNING":  colorSuccess,
 	"REVIEW":   colorReview,
@@ -26,13 +28,13 @@ var statusColors = map[string]lipgloss.Color{
 }
 
 // 事件分类颜色映射
-var categoryColors = map[string]lipgloss.Color{
-	"TOOL":    colorText,
+var categoryColors = map[string]lipgloss.AdaptiveColor{
+	"TOOL":    colorTool,
 	"SYSTEM":  colorAccent,
 	"REVIEW":  colorReview,
 	"CHECK":   colorSuccess,
 	"ERROR":   colorError,
-	"AGENT":   colorDim,
+	"AGENT":   colorMuted,
 	"CONTEXT": colorContext,
 }
 
@@ -53,7 +55,7 @@ var (
 			Bold(true)
 
 	fieldLabelStyle = lipgloss.NewStyle().
-			Foreground(colorDim).
+			Foreground(colorMuted).
 			Width(10)
 
 	fieldValueStyle = lipgloss.NewStyle().
@@ -64,7 +66,7 @@ var (
 				Bold(true)
 
 	cardTitleStyle = lipgloss.NewStyle().
-			Foreground(colorDim).
+			Foreground(colorMuted).
 			Italic(true)
 
 	cardContentStyle = lipgloss.NewStyle().

@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -32,7 +32,7 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	log.Printf("[boot] provider=%s model=%s output=%s", cfg.Provider, cfg.ModelName, cfg.OutputDir)
+	slog.Info("启动", "module", "boot", "provider", cfg.Provider, "model", cfg.ModelName, "output", cfg.OutputDir)
 
 	// 1. 初始化状态
 	store := storepkg.NewStore(cfg.OutputDir)
@@ -53,7 +53,7 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle) error {
 	if err != nil {
 		return fmt.Errorf("create models: %w", err)
 	}
-	log.Printf("[boot] models: %s", models.Summary())
+	slog.Info("模型就绪", "module", "boot", "summary", models.Summary())
 
 	// 3. 组装 Coordinator
 	coordinator, askUser := BuildCoordinator(cfg, store, models, bundle)
@@ -64,7 +64,7 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle) error {
 
 	// 5. 初始化运行元信息（保留已有 SteerHistory）
 	if err := store.InitRunMeta(cfg.Style, cfg.Provider, cfg.ModelName); err != nil {
-		log.Printf("[warn] 初始化运行元信息失败: %v", err)
+		slog.Error("初始化运行元信息失败", "module", "boot", "err", err)
 	}
 
 	// 6. Steer 协程：stdin 读取用户干预
@@ -88,7 +88,7 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle) error {
 		if err := store.InitProgress(cfg.NovelName, 0); err != nil {
 			return fmt.Errorf("init progress: %w", err)
 		}
-		log.Printf("新建模式：%s", cfg.NovelName)
+		slog.Info("新建模式", "module", "boot", "novel", cfg.NovelName)
 		promptText := fmt.Sprintf(
 			"请创作一部小说，章节数量由你根据故事需要自行决定。若题材与冲突天然适合长篇连载，请优先规划为分层长篇结构，而不是压缩成短篇式梗概。要求如下：\n\n%s",
 			cfg.Prompt,
@@ -97,7 +97,7 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle) error {
 			return fmt.Errorf("prompt: %w", err)
 		}
 	} else {
-		log.Printf("%s", recovery.Label)
+		slog.Info("恢复模式", "module", "boot", "label", recovery.Label)
 		if err := coordinator.Prompt(recovery.PromptText); err != nil {
 			return fmt.Errorf("prompt: %w", err)
 		}
@@ -110,8 +110,10 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle) error {
 	// 9. 输出结果
 	finalProgress, _ := store.LoadProgress()
 	if finalProgress != nil {
-		log.Printf("创作完成：%d 章，共 %d 字，输出目录：%s",
-			len(finalProgress.CompletedChapters), finalProgress.TotalWordCount, store.Dir())
+		slog.Info("创作完成", "module", "boot",
+			"chapters", len(finalProgress.CompletedChapters),
+			"words", finalProgress.TotalWordCount,
+			"output", store.Dir())
 	}
 	return nil
 }
@@ -126,13 +128,12 @@ func registerSubscription(coordinator *agentcore.Agent, store *storepkg.Store, p
 	coordinator.Subscribe(func(ev agentcore.Event) {
 		switch ev.Type {
 		case agentcore.EventToolExecStart:
-			log.Printf("[tool:start] %s", ev.Tool)
+			slog.Debug("工具开始", "module", "tool", "name", ev.Tool)
 			if emit != nil {
 				emit(UIEvent{Time: time.Now(), Category: "TOOL", Summary: ev.Tool + ".start", Level: "info"})
 			}
 
 		case agentcore.EventToolExecUpdate:
-			// 区分流式 delta 和进度摘要
 			if delta, ok := parseStreamDelta(ev); ok {
 				if onDelta != nil {
 					if text := subFilter.Feed(delta); text != "" {
@@ -149,13 +150,12 @@ func registerSubscription(coordinator *agentcore.Agent, store *storepkg.Store, p
 				return
 			}
 			lastProgressSummary = summary
-			log.Printf("[progress] %s", summary)
+			slog.Debug("进度", "module", "tool", "summary", summary)
 			if emit != nil {
 				emit(UIEvent{Time: time.Now(), Category: "TOOL", Summary: summary, Level: "info"})
 			}
 
 		case agentcore.EventMessageStart:
-			// 新一轮 LLM 输出开始，重置提取器 + 清空流式缓冲
 			agentExt.Reset()
 			taskExt.Reset()
 			subFilter.Reset()
@@ -164,7 +164,6 @@ func registerSubscription(coordinator *agentcore.Agent, store *storepkg.Store, p
 			}
 
 		case agentcore.EventMessageUpdate:
-			// Coordinator 的流式 token：先提取 agent 名称做标题，再提取 task 内容
 			if ev.Delta != "" && onDelta != nil {
 				if name := agentExt.Feed(ev.Delta); name != "" {
 					onDelta("\n▸ " + agentLabel(name) + "\n")
@@ -178,22 +177,17 @@ func registerSubscription(coordinator *agentcore.Agent, store *storepkg.Store, p
 			lastProgressSummary = ""
 			if ev.IsError {
 				detail := extractToolErrorText(ev.Result)
-				if detail != "" {
-					log.Printf("[tool:error] %s → %s", ev.Tool, detail)
-				} else {
-					log.Printf("[tool:error] %s", ev.Tool)
-				}
+				slog.Error("工具执行失败", "module", "tool", "name", ev.Tool, "detail", truncateLog(detail, 120))
 				if emit != nil {
 					summary := ev.Tool + " 执行失败"
 					if detail != "" {
-						summary += "： " + truncateLog(detail, 80)
+						summary += ": " + truncateLog(detail, 80)
 					}
 					emit(UIEvent{Time: time.Now(), Category: "ERROR", Summary: summary, Level: "error"})
 				}
 				return
 			}
 
-			// subagent 结果：提取 usage 和 error，单独记录
 			if ev.Tool == "subagent" {
 				logSubAgentResult(ev.Result, emit)
 				handleFoundationCheck(coordinator, store, emit)
@@ -205,15 +199,14 @@ func registerSubscription(coordinator *agentcore.Agent, store *storepkg.Store, p
 				break
 			}
 
-			// novel_context：提取加载摘要替代原始 JSON
 			if ev.Tool == "novel_context" {
 				if summary := extractLoadingSummary(ev.Result); summary != "" {
-					log.Printf("[tool:done] novel_context → %s", summary)
+					slog.Info("上下文加载", "module", "tool", "summary", summary)
 					if emit != nil {
 						emit(UIEvent{Time: time.Now(), Category: "CONTEXT", Summary: summary, Level: "info"})
 					}
 				} else {
-					log.Printf("[tool:done] novel_context → %s", truncateLog(string(ev.Result), 200))
+					slog.Debug("上下文加载", "module", "tool", "result", truncateLog(string(ev.Result), 200))
 				}
 				if emit != nil {
 					emit(UIEvent{Time: time.Now(), Category: "TOOL", Summary: "novel_context.done", Level: "info"})
@@ -221,23 +214,21 @@ func registerSubscription(coordinator *agentcore.Agent, store *storepkg.Store, p
 				break
 			}
 
-			// 其他工具：保持原样
-			log.Printf("[tool:done] %s → %s", ev.Tool, truncateLog(string(ev.Result), 200))
+			slog.Debug("工具完成", "module", "tool", "name", ev.Tool, "result", truncateLog(string(ev.Result), 200))
 			if emit != nil {
 				emit(UIEvent{Time: time.Now(), Category: "TOOL", Summary: ev.Tool + ".done", Level: "info"})
 			}
 
 		case agentcore.EventMessageEnd:
 			if ev.Message != nil && ev.Message.GetRole() == agentcore.RoleAssistant {
-				text := truncateLog(ev.Message.TextContent(), 300)
-				log.Printf("[assistant] %s", text)
+				slog.Debug("assistant", "module", "agent", "text", truncateLog(ev.Message.TextContent(), 100))
 				if emit != nil {
 					emit(UIEvent{Time: time.Now(), Category: "AGENT", Summary: truncateLog(ev.Message.TextContent(), 80), Level: "info"})
 				}
 			}
 
 		case agentcore.EventError:
-			log.Printf("[error][provider=%s] %v", provider, ev.Err)
+			slog.Error("provider 错误", "module", "agent", "provider", provider, "err", ev.Err)
 			if emit != nil {
 				emit(UIEvent{Time: time.Now(), Category: "ERROR", Summary: fmt.Sprintf("[%s] %v", provider, ev.Err), Level: "error"})
 			}
@@ -263,41 +254,39 @@ func planningTierGuidance(runMeta *domain.RunMeta) string {
 
 // submitSteer 提交用户干预（CLI 和 Runtime 共用）。
 func submitSteer(store *storepkg.Store, coordinator *agentcore.Agent, text string) {
-	log.Printf("[steer] 用户干预: %s", text)
+	slog.Info("用户干预", "module", "steer", "text", text)
 	if err := store.AppendSteerEntry(domain.SteerEntry{
 		Input:     text,
 		Timestamp: time.Now().Format(time.RFC3339),
 	}); err != nil {
-		log.Printf("[warn] 追加干预记录失败: %v", err)
+		slog.Error("追加干预记录失败", "module", "steer", "err", err)
 	}
 	if err := store.SetPendingSteer(text); err != nil {
-		log.Printf("[warn] 设置待处理干预失败: %v", err)
+		slog.Error("设置待处理干预失败", "module", "steer", "err", err)
 	}
 	if err := store.SetFlow(domain.FlowSteering); err != nil {
-		log.Printf("[warn] 设置流程状态失败: %v", err)
+		slog.Error("设置流程状态失败", "module", "steer", "err", err)
 	}
 	runMeta, err := store.LoadRunMeta()
 	if err != nil {
-		log.Printf("[warn] 读取运行元信息失败: %v", err)
+		slog.Warn("读取运行元信息失败", "module", "steer", "err", err)
 	}
 	guidance := planningTierGuidance(runMeta)
 	message := fmt.Sprintf("[用户干预] %s\n请评估影响范围，决定是否需要修改设定或重写已有章节。", text)
 	if guidance != "" {
 		message += "\n" + guidance
 	}
-	coordinator.Steer(agentcore.UserMsg(fmt.Sprintf(
-		"%s", message)))
+	coordinator.Steer(agentcore.UserMsg(message))
 }
 
 // recoveryResult 恢复链的判断结果。
 type recoveryResult struct {
-	PromptText string // 恢复时的 Prompt 文本
-	Label      string // 恢复类型描述（供日志和 TUI 显示）
-	IsNew      bool   // true 表示新建模式
+	PromptText string
+	Label      string
+	IsNew      bool
 }
 
 // determineRecovery 根据 Progress 和 RunMeta 判断恢复类型和 Prompt 文本。
-// 章节总数完全来自 Progress.TotalChapters（由大纲自动设定），不再由外部传入。
 func determineRecovery(progress *domain.Progress, runMeta *domain.RunMeta) recoveryResult {
 	if progress == nil {
 		return recoveryResult{IsNew: true}
@@ -310,7 +299,6 @@ func determineRecovery(progress *domain.Progress, runMeta *domain.RunMeta) recov
 		return prompt + "\n" + guidance
 	}
 
-	// 规划阶段崩溃：premise 或 outline 已保存但基础设定未完成
 	if progress.Phase == domain.PhasePremise || progress.Phase == domain.PhaseOutline {
 		return recoveryResult{
 			PromptText: withGuidance(
@@ -354,7 +342,6 @@ func determineRecovery(progress *domain.Progress, runMeta *domain.RunMeta) recov
 		}
 	}
 
-	// FlowSteering 但 PendingSteer 已丢失（崩溃导致不一致），重置为正常写作
 	if progress.Flow == domain.FlowSteering && (runMeta == nil || runMeta.PendingSteer == "") {
 		if progress.IsResumable() {
 			next := progress.NextChapter()
@@ -391,9 +378,7 @@ func determineRecovery(progress *domain.Progress, runMeta *domain.RunMeta) recov
 	return recoveryResult{IsNew: true}
 }
 
-
 // parseStreamDelta 从 EventToolExecUpdate 中提取流式 delta 文本。
-// 如果事件是 SubAgent 转发的 token delta（含 "delta" 字段），返回文本和 true。
 func parseStreamDelta(ev agentcore.Event) (string, bool) {
 	if len(ev.Result) == 0 {
 		return "", false
@@ -426,7 +411,6 @@ func parseProgressSummary(ev agentcore.Event) string {
 	if err := json.Unmarshal(ev.Result, &data); err != nil {
 		return truncateLog(string(ev.Result), 60)
 	}
-	// subagent 的 thinking 更新属于高频内部推理，不适合刷到事件流面板。
 	if data.Thinking != "" && data.Tool == "" {
 		return ""
 	}
@@ -462,7 +446,7 @@ func extractLoadingSummary(result json.RawMessage) string {
 // logSubAgentResult 从 subagent 结果中提取 usage 和 error，分别记录结构化日志。
 func logSubAgentResult(result json.RawMessage, emit emitFn) {
 	if len(result) == 0 {
-		log.Printf("[tool:done] subagent → (empty)")
+		slog.Debug("subagent 返回空结果", "module", "tool")
 		return
 	}
 	var data struct {
@@ -479,17 +463,17 @@ func logSubAgentResult(result json.RawMessage, emit emitFn) {
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(result, &data); err != nil {
-		log.Printf("[tool:done] subagent → %s", truncateLog(string(result), 200))
+		slog.Debug("subagent 结果解析失败", "module", "tool", "raw", truncateLog(string(result), 200))
 		return
 	}
 
-	// 记录 usage
 	u := data.Usage
-	log.Printf("[usage] input=%d output=%d cache_read=%d turns=%d tools=%d",
-		u.Input, u.Output, u.CacheRead, u.Turns, u.Tools)
+	slog.Info("subagent usage", "module", "tool",
+		"input", u.Input, "output", u.Output,
+		"cache_read", u.CacheRead, "turns", u.Turns, "tools", u.Tools)
 
 	if data.Error != "" {
-		log.Printf("[subagent:error] %s", data.Error)
+		slog.Error("subagent 错误", "module", "tool", "err", data.Error)
 		if emit != nil {
 			emit(UIEvent{Time: time.Now(), Category: "ERROR",
 				Summary: "subagent: " + truncateLog(data.Error, 80), Level: "error"})
@@ -497,7 +481,7 @@ func logSubAgentResult(result json.RawMessage, emit emitFn) {
 		return
 	}
 
-	log.Printf("[tool:done] subagent → %s", truncateLog(data.Output, 200))
+	slog.Debug("subagent 完成", "module", "tool", "output", truncateLog(data.Output, 200))
 	if emit != nil {
 		emit(UIEvent{Time: time.Now(), Category: "TOOL", Summary: "subagent.done", Level: "info"})
 	}
@@ -507,12 +491,10 @@ func extractToolErrorText(result json.RawMessage) string {
 	if len(result) == 0 {
 		return ""
 	}
-
 	var plain string
 	if err := json.Unmarshal(result, &plain); err == nil {
 		return plain
 	}
-
 	var obj struct {
 		Error   string `json:"error"`
 		Message string `json:"message"`
@@ -528,11 +510,9 @@ func extractToolErrorText(result json.RawMessage) string {
 			return obj.Detail
 		}
 	}
-
 	return truncateLog(string(result), 160)
 }
 
-// agentLabel 将内部 agent 名称映射为用户友好的标签。
 func agentLabel(name string) string {
 	switch name {
 	case "architect_short", "architect_mid", "architect_long":
@@ -556,16 +536,15 @@ func truncateLog(s string, maxRunes int) string {
 
 func clearHandledSteer(store *storepkg.Store) {
 	if err := store.ClearHandledSteer(); err != nil {
-		log.Printf("[host] 清除干预状态失败: %v", err)
+		slog.Error("清除干预状态失败", "module", "host", "err", err)
 	}
 }
 
 // flushPendingSteer 清除干预状态，如果有未处理的干预则追加 FollowUp 提醒 Coordinator。
-// 用于 SubAgent 完成后，确保用户干预不会被 Host 的系统 FollowUp 淹没。
 func flushPendingSteer(store *storepkg.Store, coordinator *agentcore.Agent, emit emitFn) {
 	meta, _ := store.LoadRunMeta()
 	if meta != nil && meta.PendingSteer != "" {
-		log.Printf("[host] 检测到未处理的用户干预，追加提醒：%s", meta.PendingSteer)
+		slog.Info("检测到未处理的用户干预，追加提醒", "module", "host", "steer", meta.PendingSteer)
 		if emit != nil {
 			emit(UIEvent{Time: time.Now(), Category: "SYSTEM",
 				Summary: "提醒 Coordinator 处理用户干预", Level: "info"})
@@ -588,4 +567,3 @@ func finalizeSteerIfIdle(store *storepkg.Store) {
 	}
 	clearHandledSteer(store)
 }
-

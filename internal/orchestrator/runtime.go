@@ -2,7 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -96,7 +96,7 @@ func NewRuntime(cfg bootstrap.Config, bundle assets.Bundle) (*Runtime, error) {
 	if err := cfg.ValidateBase(); err != nil {
 		return nil, err
 	}
-	log.Printf("[boot] provider=%s model=%s output=%s", cfg.Provider, cfg.ModelName, cfg.OutputDir)
+	slog.Info("启动", "module", "boot", "provider", cfg.Provider, "model", cfg.ModelName, "output", cfg.OutputDir)
 
 	store := storepkg.NewStore(cfg.OutputDir)
 	if err := store.Init(); err != nil {
@@ -107,7 +107,7 @@ func NewRuntime(cfg bootstrap.Config, bundle assets.Bundle) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create models: %w", err)
 	}
-	log.Printf("[boot] models: %s", models.Summary())
+	slog.Info("模型就绪", "module", "boot", "summary", models.Summary())
 
 	coordinator, askUser := BuildCoordinator(cfg, store, models, bundle)
 
@@ -130,7 +130,7 @@ func NewRuntime(cfg bootstrap.Config, bundle assets.Bundle) (*Runtime, error) {
 
 	// 初始化运行元信息
 	if err := store.InitRunMeta(cfg.Style, cfg.Provider, cfg.ModelName); err != nil {
-		log.Printf("[warn] 初始化运行元信息失败: %v", err)
+		slog.Error("初始化运行元信息失败", "module", "boot", "err", err)
 	}
 
 	return rt, nil
