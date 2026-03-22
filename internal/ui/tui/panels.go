@@ -17,14 +17,14 @@ func renderTopBar(snap orchestrator.UISnapshot, width int, spinnerFrame string) 
 	// 第一行：小说名居中
 	novelName := snap.NovelName
 	if novelName == "" {
-		novelName = "Novel Agent"
+		novelName = "AiNovel"
 	}
 	line1 := lipgloss.NewStyle().
 		Width(width - 2).
 		AlignHorizontal(lipgloss.Center).
 		Foreground(colorText).
 		Bold(true).
-		Render("✦ " + novelName + " ✦")
+		Render("~ " + novelName + " ~")
 
 	// 第二行左侧：模型 + 风格
 	var infoParts []string
@@ -48,7 +48,7 @@ func renderTopBar(snap orchestrator.UISnapshot, width int, spinnerFrame string) 
 	if !ok {
 		color = colorDim
 	}
-	capsule := statusCapsule.Foreground(lipgloss.Color("#1a1a2e")).Background(color).Render(label)
+	capsule := statusCapsule.Foreground(lipgloss.Color("#1c1a14")).Background(color).Render(label)
 
 	if snap.IsRunning && spinnerFrame != "" {
 		capsule = lipgloss.NewStyle().Foreground(colorAccent).Render(spinnerFrame) + " " + capsule
@@ -72,11 +72,11 @@ func renderStatePanel(snap orchestrator.UISnapshot, width, height int) string {
 	var b strings.Builder
 
 	if snap.RecoveryLabel != "" {
-		b.WriteString(highlightValueStyle.Render("恢复: " + truncate(snap.RecoveryLabel, width-4)))
+		b.WriteString(highlightValueStyle.Render("~ 恢复: " + truncate(snap.RecoveryLabel, width-6)))
 		b.WriteString("\n\n")
 	}
 
-	b.WriteString(panelTitleStyle.Render("状态"))
+	b.WriteString(panelTitleStyle.Render(":: 状态"))
 	b.WriteString("\n")
 	b.WriteString(renderField("Phase", snap.Phase))
 	b.WriteString(renderFlowField(snap.Flow))
@@ -89,7 +89,7 @@ func renderStatePanel(snap orchestrator.UISnapshot, width, height int) string {
 
 	if len(snap.PendingRewrites) > 0 {
 		b.WriteString("\n")
-		b.WriteString(panelTitleStyle.Render("返工"))
+		b.WriteString(panelTitleStyle.Render(":: 返工"))
 		b.WriteString("\n")
 		b.WriteString(renderHighlightField("Pending", fmt.Sprintf("%v", snap.PendingRewrites)))
 		if snap.RewriteReason != "" {
@@ -99,7 +99,7 @@ func renderStatePanel(snap orchestrator.UISnapshot, width, height int) string {
 
 	if snap.PendingSteer != "" {
 		b.WriteString("\n")
-		b.WriteString(panelTitleStyle.Render("干预"))
+		b.WriteString(panelTitleStyle.Render(":: 干预"))
 		b.WriteString("\n")
 		b.WriteString(renderHighlightField("Steer", truncate(snap.PendingSteer, width-12)))
 	}
@@ -137,14 +137,14 @@ func renderSparkle(frame int) string {
 		case '✦':
 			b.WriteString(lipgloss.NewStyle().Foreground(colorAccent).Render("✦"))
 		case '✧':
-			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#887730")).Render("✧"))
+			b.WriteString(lipgloss.NewStyle().Foreground(colorAccent2).Render("✧"))
 		case '·':
 			b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("·"))
 		default:
 			b.WriteRune(ch)
 		}
 	}
-	label := lipgloss.NewStyle().Foreground(lipgloss.Color("#887730")).Render("  AI 生成中…")
+	label := lipgloss.NewStyle().Foreground(colorMuted).Render("  AI 生成中...")
 	return "\n" + b.String() + "\n" + label
 }
 
@@ -180,7 +180,7 @@ func renderEventFlowViewport(vp viewport.Model, width, height int, focused bool)
 	if focused {
 		titleColor = colorAccent
 	}
-	title := lipgloss.NewStyle().Foreground(titleColor).Render("✦ 事件流")
+	title := lipgloss.NewStyle().Foreground(titleColor).Render(":: 事件流")
 	lineW := width - lipgloss.Width(title) - 4
 	if lineW < 0 {
 		lineW = 0
@@ -203,7 +203,7 @@ func renderEventFlowViewport(vp viewport.Model, width, height int, focused bool)
 // renderStreamPanel 渲染流式输出面板（中间列下半部分）。
 func renderStreamPanel(vp viewport.Model, width, height int, focused bool) string {
 	// 分隔标题栏（始终醒目）
-	title := lipgloss.NewStyle().Foreground(colorAccent).Bold(focused).Render("✦ 实时输出")
+	title := lipgloss.NewStyle().Foreground(colorAccent).Bold(focused).Render(":: 实时输出")
 	lineW := width - lipgloss.Width(title) - 4
 	if lineW < 0 {
 		lineW = 0
@@ -457,7 +457,7 @@ func renderDetailContent(snap orchestrator.UISnapshot, contentW int) string {
 
 	// 大纲
 	if len(snap.Outline) > 0 {
-		b.WriteString(panelTitleStyle.Render("大纲"))
+		b.WriteString(panelTitleStyle.Render(":: 大纲"))
 		b.WriteString("\n")
 		for _, e := range snap.Outline {
 			ch := fmt.Sprintf("%2d", e.Chapter)
@@ -479,7 +479,7 @@ func renderDetailContent(snap orchestrator.UISnapshot, contentW int) string {
 
 	// 角色
 	if len(snap.Characters) > 0 {
-		b.WriteString(panelTitleStyle.Render("角色"))
+		b.WriteString(panelTitleStyle.Render(":: 角色"))
 		b.WriteString("\n")
 		for _, c := range snap.Characters {
 			b.WriteString(cardContentStyle.Render("· " + truncate(c, contentW-2)))
@@ -490,7 +490,7 @@ func renderDetailContent(snap orchestrator.UISnapshot, contentW int) string {
 
 	// 前提
 	if snap.Premise != "" {
-		b.WriteString(panelTitleStyle.Render("前提"))
+		b.WriteString(panelTitleStyle.Render(":: 前提"))
 		b.WriteString("\n")
 		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render(truncate(snap.Premise, contentW*3)))
 		b.WriteString("\n\n")
@@ -498,21 +498,21 @@ func renderDetailContent(snap orchestrator.UISnapshot, contentW int) string {
 
 	// 运行时信息
 	if snap.LastCommitSummary != "" {
-		b.WriteString(cardTitleStyle.Render("─ 最近提交 ─"))
+		b.WriteString(cardTitleStyle.Render("~ 最近提交 ~"))
 		b.WriteString("\n")
 		b.WriteString(cardContentStyle.Render(snap.LastCommitSummary))
 		b.WriteString("\n\n")
 	}
 
 	if snap.LastReviewSummary != "" {
-		b.WriteString(cardTitleStyle.Render("─ 最近审阅 ─"))
+		b.WriteString(cardTitleStyle.Render("~ 最近审阅 ~"))
 		b.WriteString("\n")
 		b.WriteString(cardContentStyle.Render(snap.LastReviewSummary))
 		b.WriteString("\n\n")
 	}
 
 	if len(snap.RecentSummaries) > 0 {
-		b.WriteString(cardTitleStyle.Render("─ 摘要 ─"))
+		b.WriteString(cardTitleStyle.Render("~ 摘要 ~"))
 		b.WriteString("\n")
 		for _, s := range snap.RecentSummaries {
 			b.WriteString(cardContentStyle.Render(truncate(s, contentW)))
@@ -541,12 +541,83 @@ func renderDetailPanel(vp viewport.Model, width, height int, focused bool) strin
 
 // renderWelcome 渲染新建态首屏。
 func renderWelcome(width, height int, errMsg string) string {
-	content := lipgloss.NewStyle().Foreground(colorText).Render("还没有开始创作。") + "\n\n" +
-		lipgloss.NewStyle().Foreground(colorDim).Render("请输入你的小说需求，系统会先进入设定与大纲阶段。") + "\n\n" +
-		lipgloss.NewStyle().Foreground(colorAccent).Render("示例：写一部 12 章都市悬疑小说，主角是一名女法医")
+	// 简洁标题
+	title := lipgloss.NewStyle().
+		Foreground(colorAccent).
+		Bold(true).
+		Render("A I N O V E L")
+
+	// 副标题
+	subtitle := lipgloss.NewStyle().
+		Foreground(colorMuted).
+		Italic(true).
+		Render("AI-Powered Novel Creation Engine")
+
+	// 分隔线
+	divW := 44
+	if divW > width-8 {
+		divW = width - 8
+	}
+	divider := lipgloss.NewStyle().Foreground(colorDim).
+		Render(strings.Repeat("~", divW))
+
+	// 功能亮点
+	features := []struct{ icon, label, desc string }{
+		{">>", "多模型协作", "Architect 规划 / Writer 创作 / Editor 审阅"},
+		{"::", "断点恢复", "崩溃或中断后从上次进度自动续写"},
+		{"<>", "实时干预", "创作过程中随时调整剧情走向"},
+		{"##", "分层长篇", "支持卷-弧-章分层结构的长篇创作"},
+	}
+	iconStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
+	featLabelStyle := lipgloss.NewStyle().Foreground(colorText)
+	descStyle := lipgloss.NewStyle().Foreground(colorDim)
+	var featLines []string
+	for _, f := range features {
+		line := iconStyle.Render(f.icon) + " " +
+			featLabelStyle.Render(f.label) + "  " +
+			descStyle.Render(f.desc)
+		featLines = append(featLines, line)
+	}
+	feats := strings.Join(featLines, "\n")
+
+	// 输入提示
+	prompt := lipgloss.NewStyle().Foreground(colorText).
+		Render("在下方输入你的小说需求开始创作")
+
+	// 示例
+	examples := []string{
+		"写一部 12 章都市悬疑小说，主角是一名女法医",
+		"创作一部仙侠长篇，主角从凡人修炼至飞升",
+		"写一个科幻短篇，讲述 AI 觉醒后的伦理困境",
+	}
+	exStyle := lipgloss.NewStyle().Foreground(colorAccent)
+	dotStyle := lipgloss.NewStyle().Foreground(colorDim)
+	var exLines []string
+	for _, ex := range examples {
+		exLines = append(exLines, dotStyle.Render("  . ")+exStyle.Render(ex))
+	}
+	exBlock := strings.Join(exLines, "\n")
+
+	// 组装
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(title)
+	b.WriteString("\n")
+	b.WriteString(subtitle)
+	b.WriteString("\n\n")
+	b.WriteString(divider)
+	b.WriteString("\n\n")
+	b.WriteString(feats)
+	b.WriteString("\n\n")
+	b.WriteString(divider)
+	b.WriteString("\n\n")
+	b.WriteString(prompt)
+	b.WriteString("\n\n")
+	b.WriteString(exBlock)
 
 	if errMsg != "" {
-		content += "\n\n" + lipgloss.NewStyle().Foreground(colorError).Bold(true).Render("错误: "+errMsg)
+		b.WriteString("\n\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(colorError).Bold(true).Render("! " + errMsg))
 	}
 
 	return lipgloss.NewStyle().
@@ -554,5 +625,5 @@ func renderWelcome(width, height int, errMsg string) string {
 		Height(height).
 		AlignHorizontal(lipgloss.Center).
 		AlignVertical(lipgloss.Center).
-		Render(content)
+		Render(b.String())
 }

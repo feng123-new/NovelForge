@@ -208,6 +208,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		// 普通字符输入 → 转发给 textarea（过滤鼠标 SGR 序列残片）
+		if msg.Type == tea.KeyRunes && containsSGRFragment(string(msg.Runes)) {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.textarea, cmd = m.textarea.Update(msg)
+		return m, cmd
 
 	case tea.MouseMsg:
 		if pane, ok := m.paneAtMouse(msg.X, msg.Y); ok {
@@ -321,7 +328,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, listenStreamClear(m.runtime)
 	}
 
-	// 更新 textarea 组件
+	// 非键盘消息（光标闪烁等 textarea 内部消息）转发
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
 	cmds = append(cmds, cmd)
@@ -604,4 +611,24 @@ func (m Model) handleAskUserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// containsSGRFragment 检测文本是否包含 SGR 鼠标序列残片（"<数字;数字;" 模式）。
+func containsSGRFragment(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] != '<' {
+			continue
+		}
+		j := i + 1
+		if j >= len(s) || s[j] < '0' || s[j] > '9' {
+			continue
+		}
+		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			j++
+		}
+		if j < len(s) && s[j] == ';' {
+			return true
+		}
+	}
+	return false
 }

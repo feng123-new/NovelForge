@@ -2,16 +2,17 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
-// 主题色板
+// 主题色板 — 暖调书卷气
 var (
-	colorText    = lipgloss.Color("#e0d8c8")
-	colorDim     = lipgloss.Color("#666666")
+	colorText    = lipgloss.Color("#e8e0d0") // 羊皮纸白（略暖）
+	colorDim     = lipgloss.Color("#5c5545") // 墨灰（偏暖）
 	colorMuted   = lipgloss.Color("#a09880") // 柔和但可读（介于 dim 和 text 之间）
-	colorAccent  = lipgloss.Color("#d4a017") // 琥珀黄
-	colorSuccess = lipgloss.Color("#2ecc71") // 冷绿
-	colorError   = lipgloss.Color("#e74c3c") // 朱红
-	colorReview  = lipgloss.Color("#e67e22") // 橙色
-	colorContext = lipgloss.Color("#9b59b6") // 紫色
+	colorAccent  = lipgloss.Color("#c9953c") // 古金（比琥珀黄更沉稳）
+	colorAccent2 = lipgloss.Color("#7a9e7e") // 青竹（辅助色，用于装饰）
+	colorSuccess = lipgloss.Color("#7a9e7e") // 竹绿（与 accent2 统一）
+	colorError   = lipgloss.Color("#c45c4a") // 砖红（比朱红柔和）
+	colorReview  = lipgloss.Color("#cc8844") // 赭橙
+	colorContext = lipgloss.Color("#8b7bb5") // 藤紫（偏暖）
 )
 
 // 状态标签颜色映射

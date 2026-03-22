@@ -95,9 +95,13 @@
 
 ### 判定标准
 
-- 存在 critical → verdict 必须为 rewrite
-- 无 critical 但有 error → verdict 至少为 polish
-- 只有 warning 或无问题 → accept
+verdict 的目的是**保障叙事连贯性和逻辑正确性**，而不是追求完美文笔。
+
+- **rewrite**：存在 critical 级别问题（逻辑硬伤、设定矛盾）→ 必须 rewrite
+- **polish**：无 critical，但有影响阅读体验的 error 级问题 → polish
+- **accept**：只有 warning 或无问题 → accept（这是最常见的结果）
+
+**affected_chapters 必须精确**：只列出确实存在 critical/error 问题的具体章节，不要因为"整体风格可以更好"就把所有章节都列进去。审美层面的 warning 不构成返工理由。
 
 ## 弧级评审模式（长篇）
 
