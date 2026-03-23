@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/voocel/agentcore/schema"
 	"github.com/voocel/ainovel-cli/internal/domain"
@@ -33,6 +34,15 @@ func (t *SaveArcSummaryTool) Schema() map[string]any {
 		schema.Property("motivation", schema.String("当前动机")).Required(),
 		schema.Property("relations", schema.String("关键关系变化")),
 	)
+	voiceSchema := schema.Object(
+		schema.Property("name", schema.String("角色名")).Required(),
+		schema.Property("rules", schema.Array("2-3 条语言特征规则（每条 ≤30 字）", schema.String(""))).Required(),
+	)
+	styleRulesSchema := schema.Object(
+		schema.Property("prose", schema.Array("3-5 条叙述风格规则（每条 ≤50 字，要具体可执行）", schema.String(""))).Required(),
+		schema.Property("dialogue", schema.Array("核心角色的对话特征规则", voiceSchema)).Required(),
+		schema.Property("taboos", schema.Array("本小说需避免的写法", schema.String(""))),
+	)
 	return schema.Object(
 		schema.Property("volume", schema.Int("卷号")).Required(),
 		schema.Property("arc", schema.Int("弧号")).Required(),
@@ -40,6 +50,7 @@ func (t *SaveArcSummaryTool) Schema() map[string]any {
 		schema.Property("summary", schema.String("弧摘要（500字以内）")).Required(),
 		schema.Property("key_events", schema.Array("弧内关键事件", schema.String(""))).Required(),
 		schema.Property("character_snapshots", schema.Array("角色状态快照", snapshotSchema)).Required(),
+		schema.Property("style_rules", styleRulesSchema),
 	)
 }
 
@@ -51,6 +62,11 @@ func (t *SaveArcSummaryTool) Execute(_ context.Context, args json.RawMessage) (j
 		Summary            string                     `json:"summary"`
 		KeyEvents          []string                   `json:"key_events"`
 		CharacterSnapshots []domain.CharacterSnapshot `json:"character_snapshots"`
+		StyleRules         *struct {
+			Prose    []string              `json:"prose"`
+			Dialogue []domain.CharacterVoice `json:"dialogue"`
+			Taboos   []string              `json:"taboos"`
+		} `json:"style_rules"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return nil, fmt.Errorf("invalid args: %w", err)
@@ -80,9 +96,26 @@ func (t *SaveArcSummaryTool) Execute(_ context.Context, args json.RawMessage) (j
 		}
 	}
 
+	styleRulesSaved := false
+	if a.StyleRules != nil && len(a.StyleRules.Prose) > 0 {
+		rules := domain.WritingStyleRules{
+			Volume:    a.Volume,
+			Arc:       a.Arc,
+			Prose:     a.StyleRules.Prose,
+			Dialogue:  a.StyleRules.Dialogue,
+			Taboos:    a.StyleRules.Taboos,
+			UpdatedAt: time.Now().Format(time.RFC3339),
+		}
+		if err := t.store.SaveStyleRules(rules); err != nil {
+			return nil, fmt.Errorf("save style rules: %w", err)
+		}
+		styleRulesSaved = true
+	}
+
 	return json.Marshal(map[string]any{
 		"saved": true, "type": "arc_summary",
 		"volume": a.Volume, "arc": a.Arc,
-		"snapshots": len(a.CharacterSnapshots),
+		"snapshots":         len(a.CharacterSnapshots),
+		"style_rules_saved": styleRulesSaved,
 	})
 }

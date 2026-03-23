@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/voocel/agentcore"
+	"github.com/voocel/agentcore/memory"
 	"github.com/voocel/ainovel-cli/assets"
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
 	"github.com/voocel/ainovel-cli/internal/domain"
@@ -56,7 +57,7 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle) error {
 	slog.Info("模型就绪", "module", "boot", "summary", models.Summary())
 
 	// 3. 组装 Coordinator
-	coordinator, askUser := BuildCoordinator(cfg, store, models, bundle)
+	coordinator, askUser := BuildCoordinator(cfg, store, models, bundle, nil)
 	askUser.SetHandler(cliAskUserHandler)
 
 	// 4. 确定性控制面：事件监听 + FollowUp 注入
@@ -231,6 +232,17 @@ func registerSubscription(coordinator *agentcore.Agent, store *storepkg.Store, p
 			slog.Error("provider 错误", "module", "agent", "provider", provider, "err", ev.Err)
 			if emit != nil {
 				emit(UIEvent{Time: time.Now(), Category: "ERROR", Summary: fmt.Sprintf("[%s] %v", provider, ev.Err), Level: "error"})
+			}
+
+		case agentcore.EventRetry:
+			if ev.RetryInfo != nil {
+				slog.Warn("重试", "module", "agent", "attempt", ev.RetryInfo.Attempt,
+					"max", ev.RetryInfo.MaxRetries, "err", ev.RetryInfo.Err)
+				if emit != nil {
+					emit(UIEvent{Time: time.Now(), Category: "SYSTEM",
+						Summary: fmt.Sprintf("重试 (%d/%d): %v", ev.RetryInfo.Attempt, ev.RetryInfo.MaxRetries, ev.RetryInfo.Err),
+						Level:   "warn"})
+				}
 			}
 		}
 	})
@@ -566,4 +578,35 @@ func finalizeSteerIfIdle(store *storepkg.Store) {
 		return
 	}
 	clearHandledSteer(store)
+}
+
+// compactionCallback 创建上下文压缩的可观测回调，用于 slog 日志和 TUI 事件。
+func compactionCallback(agent string, emit emitFn) func(memory.CompactionInfo) {
+	return func(info memory.CompactionInfo) {
+		slog.Warn("上下文压缩", "module", "compaction", "agent", agent,
+			"tokens_before", info.TokensBefore, "tokens_after", info.TokensAfter,
+			"msgs_before", info.MessagesBefore, "msgs_after", info.MessagesAfter,
+			"compacted", info.CompactedCount, "kept", info.KeptCount,
+			"split_turn", info.IsSplitTurn, "incremental", info.IsIncremental,
+			"summary_runes", info.SummaryLen, "duration_ms", info.Duration.Milliseconds())
+
+		if emit == nil {
+			return
+		}
+		ratio := 0
+		if info.TokensBefore > 0 {
+			ratio = info.TokensAfter * 100 / info.TokensBefore
+		}
+		summary := fmt.Sprintf("%s 压缩: %d→%d tok (%d%%) %d→%d msgs 摘要%d字 耗时%s",
+			agent, info.TokensBefore, info.TokensAfter, ratio,
+			info.MessagesBefore, info.MessagesAfter,
+			info.SummaryLen, info.Duration.Round(time.Millisecond))
+		if info.IsSplitTurn {
+			summary += " [split]"
+		}
+		if info.IsIncremental {
+			summary += " [增量]"
+		}
+		emit(UIEvent{Time: time.Now(), Category: "COMPACT", Summary: summary, Level: "warn"})
+	}
 }

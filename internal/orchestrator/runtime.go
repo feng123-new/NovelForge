@@ -109,7 +109,13 @@ func NewRuntime(cfg bootstrap.Config, bundle assets.Bundle) (*Runtime, error) {
 	}
 	slog.Info("模型就绪", "module", "boot", "summary", models.Summary())
 
-	coordinator, askUser := BuildCoordinator(cfg, store, models, bundle)
+	// 压缩回调需要 emit，但 rt 尚未创建，用闭包延迟绑定
+	var compactEmit emitFn
+	coordinator, askUser := BuildCoordinator(cfg, store, models, bundle, func(ev UIEvent) {
+		if compactEmit != nil {
+			compactEmit(ev)
+		}
+	})
 
 	// 清理上次崩溃可能遗留的信号文件
 	store.ClearStaleSignals()
@@ -124,6 +130,7 @@ func NewRuntime(cfg bootstrap.Config, bundle assets.Bundle) (*Runtime, error) {
 		clearCh:     make(chan struct{}, 4),
 		done:        make(chan struct{}),
 	}
+	compactEmit = rt.emit
 
 	// 注册事件订阅：确定性控制 + UIEvent 转发 + 流式 delta 转发
 	registerSubscription(coordinator, store, cfg.Provider, rt.emit, rt.emitDelta, rt.emitClear)

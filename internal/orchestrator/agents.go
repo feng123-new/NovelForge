@@ -16,6 +16,7 @@ func BuildCoordinator(
 	store *store.Store,
 	models *bootstrap.ModelSet,
 	bundle assets.Bundle,
+	emit emitFn,
 ) (*agentcore.Agent, *tools.AskUserTool) {
 	// 共享工具
 	contextTool := tools.NewContextTool(store, bundle.References, cfg.Style)
@@ -97,6 +98,7 @@ func BuildCoordinator(
 			ContextWindow:    cfg.ContextWindow,
 			ReserveTokens:    16384,
 			KeepRecentTokens: 20000,
+			OnCompaction:     compactionCallback("writer", emit),
 		}),
 		ConvertToLLM: memory.CompactionConvertToLLM,
 	}
@@ -123,6 +125,7 @@ func BuildCoordinator(
 				ContextWindow:    cfg.ContextWindow,
 				ReserveTokens:    32000,
 				KeepRecentTokens: 30000,
+				OnCompaction:     compactionCallback("coordinator", emit),
 			}),
 			memory.CompactionConvertToLLM,
 		),

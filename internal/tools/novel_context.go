@@ -220,33 +220,40 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 			}
 		}
 
-		// 风格锚点：从前文提取代表性段落
-		if anchors := t.store.ExtractStyleAnchors(3); len(anchors) > 0 {
-			result["style_anchors"] = anchors
-		}
-
-		// 角色声纹：提取出场角色的对话原文片段
-		if entry, err := t.store.GetChapterOutline(a.Chapter); err == nil && entry != nil {
-			var voiceSamples []map[string]any
-			chars, _ := t.store.LoadCharacters()
-			for _, c := range chars {
-				// 只为 core/important 角色提取声纹
-				if c.Tier == "secondary" || c.Tier == "decorative" {
-					continue
-				}
-				samples := t.store.ExtractDialogue(c.Name, c.Aliases, 3)
-				if len(samples) > 0 {
-					voiceSamples = append(voiceSamples, map[string]any{
-						"character": c.Name,
-						"samples":   samples,
-					})
-				}
-				if len(voiceSamples) >= 5 {
-					break
-				}
+		// 写作风格：规则优先，无规则时回退到原文片段
+		styleRules, styleErr := t.store.LoadStyleRules()
+		warn("style_rules", styleErr)
+		if styleRules != nil {
+			result["style_rules"] = styleRules
+		} else {
+			// 风格锚点：从前文提取代表性段落
+			if anchors := t.store.ExtractStyleAnchors(3); len(anchors) > 0 {
+				result["style_anchors"] = anchors
 			}
-			if len(voiceSamples) > 0 {
-				result["voice_samples"] = voiceSamples
+
+			// 角色声纹：提取出场角色的对话原文片段
+			if entry, err := t.store.GetChapterOutline(a.Chapter); err == nil && entry != nil {
+				var voiceSamples []map[string]any
+				chars, _ := t.store.LoadCharacters()
+				for _, c := range chars {
+					// 只为 core/important 角色提取声纹
+					if c.Tier == "secondary" || c.Tier == "decorative" {
+						continue
+					}
+					samples := t.store.ExtractDialogue(c.Name, c.Aliases, 3)
+					if len(samples) > 0 {
+						voiceSamples = append(voiceSamples, map[string]any{
+							"character": c.Name,
+							"samples":   samples,
+						})
+					}
+					if len(voiceSamples) >= 5 {
+						break
+					}
+				}
+				if len(voiceSamples) > 0 {
+					result["voice_samples"] = voiceSamples
+				}
 			}
 		}
 
@@ -363,6 +370,9 @@ func buildLoadingSummary(result map[string]any, chapter int) string {
 	}
 	if _, ok := result["previous_tail"]; ok {
 		items = append(items, "前章尾部:ok")
+	}
+	if _, ok := result["style_rules"]; ok {
+		items = append(items, "风格规则:ok")
 	}
 
 	// 参考资料
@@ -616,6 +626,7 @@ func trimByBudget(result map[string]any, budget int) {
 		"references",
 		"voice_samples",
 		"style_anchors",
+		"style_rules",
 		"previous_tail",
 		"timeline",
 		"recent_state_changes",

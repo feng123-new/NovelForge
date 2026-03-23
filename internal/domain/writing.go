@@ -54,6 +54,23 @@ type OutlineFeedback struct {
 	Suggestion string `json:"suggestion"` // 调整建议
 }
 
+// WritingStyleRules 从已写章节中提炼的写作规则，弧边界时由 Editor 生成。
+// 取代原文片段（style_anchors / voice_samples），用规则替代搬运原文。
+type WritingStyleRules struct {
+	Volume    int              `json:"volume"`
+	Arc       int              `json:"arc"`
+	Prose     []string         `json:"prose"`      // 3-5 条叙述风格规则，每条 ≤50 字
+	Dialogue  []CharacterVoice `json:"dialogue"`   // 角色对话风格规则
+	Taboos    []string         `json:"taboos"`     // 禁忌清单
+	UpdatedAt string           `json:"updated_at"` // ISO8601 时间戳
+}
+
+// CharacterVoice 单个角色的对话风格规则。
+type CharacterVoice struct {
+	Name  string   `json:"name"`
+	Rules []string `json:"rules"` // 2-3 条语言特征规则，每条 ≤30 字
+}
+
 // CommitResult 是 commit_chapter 工具的结构化返回值。
 // 宿主程序和 Coordinator 读取此信号做控制决策。
 type CommitResult struct {
