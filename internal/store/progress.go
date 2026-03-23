@@ -71,6 +71,9 @@ func (s *Store) UpdatePhase(phase domain.Phase) error {
 		if p == nil {
 			p = &domain.Progress{}
 		}
+		if err := domain.ValidatePhaseTransition(p.Phase, phase); err != nil {
+			return err
+		}
 		p.Phase = phase
 		return s.saveProgressUnlocked(p)
 	})
@@ -106,6 +109,9 @@ func (s *Store) MarkChapterComplete(chapter, wordCount int, hookType, dominantSt
 		}
 		p.InProgressChapter = 0
 		p.CompletedScenes = nil
+		if err := domain.ValidatePhaseTransition(p.Phase, domain.PhaseWriting); err != nil {
+			return err
+		}
 		p.Phase = domain.PhaseWriting
 
 		// 节奏追踪：按章节顺序填充 history（确保索引对齐）
@@ -241,6 +247,9 @@ func (s *Store) SetFlow(flow domain.FlowState) error {
 		if p == nil {
 			return nil
 		}
+		if err := domain.ValidateFlowTransition(p.Flow, flow); err != nil {
+			return err
+		}
 		p.Flow = flow
 		return s.saveProgressUnlocked(p)
 	})
@@ -281,6 +290,9 @@ func (s *Store) CompleteRewrite(chapter int) error {
 		}
 		p.PendingRewrites = remaining
 		if len(remaining) == 0 {
+			if err := domain.ValidateFlowTransition(p.Flow, domain.FlowWriting); err != nil {
+				return err
+			}
 			p.Flow = domain.FlowWriting
 			p.RewriteReason = ""
 		}
@@ -300,6 +312,9 @@ func (s *Store) ClearPendingRewrites() error {
 		}
 		p.PendingRewrites = nil
 		p.RewriteReason = ""
+		if err := domain.ValidateFlowTransition(p.Flow, domain.FlowWriting); err != nil {
+			return err
+		}
 		p.Flow = domain.FlowWriting
 		return s.saveProgressUnlocked(p)
 	})

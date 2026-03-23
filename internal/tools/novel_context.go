@@ -342,6 +342,12 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 		} else {
 			warn("character_snapshots", err)
 		}
+		// 加载活跃伏笔（展开时安排回收时机）
+		if foreshadow, err := t.store.LoadActiveForeshadow(); err == nil && len(foreshadow) > 0 {
+			result["foreshadow_ledger"] = foreshadow
+		} else {
+			warn("foreshadow_ledger", err)
+		}
 		// 加载风格规则（展开时保持风格一致性）
 		if styleRules, err := t.store.LoadStyleRules(); err == nil && styleRules != nil {
 			result["style_rules"] = styleRules

@@ -123,6 +123,9 @@ func (s *Store) ClearHandledSteer() error {
 			return err
 		}
 		if p != nil && p.Flow == domain.FlowSteering {
+			if err := domain.ValidateFlowTransition(p.Flow, domain.FlowWriting); err != nil {
+				return err
+			}
 			p.Flow = domain.FlowWriting
 			if err := s.saveProgressUnlocked(p); err != nil {
 				return err

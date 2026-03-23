@@ -67,6 +67,66 @@ Writer 自主决定每章的创作流程，建议路径：
 5. `read_chapter` + `check_consistency` — 自审：回读草稿，对照状态数据检查一致性
 6. `commit_chapter` — 提交终稿，更新全局状态（可选附带大纲偏离反馈）
 
+### 状态迁移规则
+
+系统内部把运行状态拆成两层：
+
+- **Phase** — 大阶段，表示作品目前处于设定期、写作期还是已完成
+- **Flow** — 当前活跃流程，表示系统此刻是在正常写作、审阅、重写、打磨还是处理用户干预
+
+#### Phase
+
+`Phase` 采用“只前进不回退”的规则：
+
+```text
+init -> premise -> outline -> writing -> complete
+  \-------> outline ------^
+  \--------------> writing
+```
+
+含义：
+
+- `init` — 任务已创建，尚未形成稳定设定
+- `premise` — 已保存故事前提
+- `outline` — 已保存大纲，可以进入正式写作
+- `writing` — 已进入章节创作期
+- `complete` — 全书流程结束
+
+规则说明：
+
+- 允许同态更新，例如 `writing -> writing`
+- 允许前进，例如 `outline -> writing`
+- 不允许回退，例如 `writing -> premise`、`complete -> writing`
+
+#### Flow
+
+`Flow` 只描述写作期内的活跃流程，允许在几个工作流之间切换：
+
+```text
+writing   -> reviewing / rewriting / polishing / steering / writing
+reviewing -> writing / rewriting / polishing / steering / reviewing
+rewriting -> writing / steering / rewriting
+polishing -> writing / steering / polishing
+steering  -> writing / reviewing / rewriting / polishing / steering
+```
+
+含义：
+
+- `writing` — 正常推进下一章
+- `reviewing` — Editor 正在评审
+- `rewriting` — 处理必须重写的章节
+- `polishing` — 处理只需打磨的章节
+- `steering` — 正在评估并处理用户干预
+
+规则说明：
+
+- 允许 `writing -> reviewing`，例如章节提交后触发评审
+- 允许 `reviewing -> rewriting/polishing/writing`，由评审结果决定
+- 允许 `steering -> writing/reviewing/rewriting/polishing`，由干预影响范围决定
+- 不允许明显反常的跳转，例如 `rewriting -> reviewing`
+
+这些规则现在由代码中的轻量校验统一约束，避免状态回退或跳到不合理的流程分支。
+
 ### 长篇滚动规划
 
 传统方案一次规划所有章节，300+ 章时大纲空洞、节奏像赶进度。本系统采用**卷弧双层滚动规划**，模拟网文作者的真实创作流程：

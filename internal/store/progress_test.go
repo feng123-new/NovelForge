@@ -21,6 +21,32 @@ func TestSetFlow(t *testing.T) {
 	}
 }
 
+func TestSetFlowRejectsInvalidTransition(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.InitProgress("test", 10)
+
+	if err := store.SetFlow(domain.FlowRewriting); err != nil {
+		t.Fatalf("SetFlow rewriting: %v", err)
+	}
+	if err := store.SetFlow(domain.FlowReviewing); err == nil {
+		t.Fatal("expected invalid flow transition to be rejected")
+	}
+}
+
+func TestUpdatePhaseRejectsRegression(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.InitProgress("test", 10)
+
+	if err := store.UpdatePhase(domain.PhaseOutline); err != nil {
+		t.Fatalf("UpdatePhase outline: %v", err)
+	}
+	if err := store.UpdatePhase(domain.PhasePremise); err == nil {
+		t.Fatal("expected phase regression to be rejected")
+	}
+}
+
 func TestSetPendingRewrites(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
