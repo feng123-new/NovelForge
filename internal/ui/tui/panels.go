@@ -475,7 +475,11 @@ func renderDetailContent(snap orchestrator.UISnapshot, contentW int) string {
 
 	// 大纲
 	if len(snap.Outline) > 0 {
-		b.WriteString(panelTitleStyle.Render(":: 大纲"))
+		outlineHeader := ":: 大纲"
+		if snap.Layered {
+			outlineHeader = fmt.Sprintf(":: 大纲（%s / 共约%d章）", snap.CurrentVolumeArc, snap.TotalChapters)
+		}
+		b.WriteString(panelTitleStyle.Render(outlineHeader))
 		b.WriteString("\n")
 		for _, e := range snap.Outline {
 			ch := fmt.Sprintf("%2d", e.Chapter)
@@ -500,6 +504,17 @@ func renderDetailContent(snap orchestrator.UISnapshot, contentW int) string {
 			}
 			line := marker + chStyle + " " + titleStyle.Render(title)
 			b.WriteString(line)
+			b.WriteString("\n")
+		}
+		// 当前卷骨架弧 + 后续卷摘要
+		skeletonStyle := lipgloss.NewStyle().Foreground(colorDim).Italic(true)
+		for _, sk := range snap.SkeletonEntries {
+			label := fmt.Sprintf("  ┄ %s（~%d章）", sk.Label, sk.EstimatedChapters)
+			b.WriteString(skeletonStyle.Render(truncate(label, contentW)))
+			b.WriteString("\n")
+		}
+		if snap.SkeletonRemaining != "" {
+			b.WriteString(skeletonStyle.Render("  ┄ " + snap.SkeletonRemaining))
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")

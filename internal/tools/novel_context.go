@@ -184,25 +184,29 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 			warn("timeline", err)
 		}
 
-		// Layered 模式：注入当前卷弧位置 + 弧目标/卷主题
+		// Layered 模式：注入当前卷弧位置 + 弧目标/卷主题 + 弧内进度
 		if profile.Layered && progress != nil {
 			pos := map[string]any{
 				"volume": progress.CurrentVolume,
 				"arc":    progress.CurrentArc,
 			}
 			if volumes, err := t.store.LoadLayeredOutline(); err == nil {
+				globalCh := 1
 				for _, v := range volumes {
 					if v.Index == progress.CurrentVolume {
 						pos["volume_title"] = v.Title
 						pos["volume_theme"] = v.Theme
-						for _, arc := range v.Arcs {
-							if arc.Index == progress.CurrentArc {
-								pos["arc_title"] = arc.Title
-								pos["arc_goal"] = arc.Goal
-								break
+					}
+					for _, arc := range v.Arcs {
+						if v.Index == progress.CurrentVolume && arc.Index == progress.CurrentArc {
+							pos["arc_title"] = arc.Title
+							pos["arc_goal"] = arc.Goal
+							if n := len(arc.Chapters); n > 0 {
+								pos["arc_total_chapters"] = n
+								pos["arc_chapter_index"] = a.Chapter - globalCh + 1
 							}
 						}
-						break
+						globalCh += len(arc.Chapters)
 					}
 				}
 			} else {
