@@ -94,8 +94,8 @@ type CommitResult struct {
 	VolumeEnd      bool `json:"volume_end,omitempty"`
 	Volume         int  `json:"volume,omitempty"`
 	Arc            int  `json:"arc,omitempty"`
-	NeedsExpansion       bool `json:"needs_expansion,omitempty"`        // 下一弧是骨架，需要展开章节
-	NeedsVolumeExpansion bool `json:"needs_volume_expansion,omitempty"` // 下一卷是骨架，需要展开弧结构
-	NextVolume           int  `json:"next_volume,omitempty"`            // 下一弧/卷序号
-	NextArc              int  `json:"next_arc,omitempty"`               // 下一弧序号
+	NeedsExpansion bool `json:"needs_expansion,omitempty"` // 下一弧是骨架，需要展开章节
+	NeedsNewVolume bool `json:"needs_new_volume,omitempty"` // 需要 Architect 创建下一卷
+	NextVolume     int  `json:"next_volume,omitempty"`      // 下一弧/卷序号
+	NextArc        int  `json:"next_arc,omitempty"`         // 下一弧序号
 }

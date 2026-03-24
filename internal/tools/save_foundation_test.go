@@ -112,6 +112,159 @@ func TestSaveFoundationOutlineClearsLayeredStateWhenDowngrading(t *testing.T) {
 	}
 }
 
+func TestSaveFoundationAppendVolume(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := s.InitProgress("test", 0); err != nil {
+		t.Fatalf("InitProgress: %v", err)
+	}
+
+	tool := NewSaveFoundationTool(s)
+
+	// 先创建初始 layered_outline（卷1）
+	layeredArgs, _ := json.Marshal(map[string]any{
+		"type": "layered_outline",
+		"content": []map[string]any{{
+			"index": 1, "title": "第一卷", "theme": "起步",
+			"arcs": []map[string]any{{
+				"index": 1, "title": "首弧", "goal": "目标",
+				"chapters": []map[string]any{{"title": "第一章", "core_event": "开局", "hook": "继续"}},
+			}},
+		}},
+		"scale": "long",
+	})
+	if _, err := tool.Execute(context.Background(), layeredArgs); err != nil {
+		t.Fatalf("Execute layered: %v", err)
+	}
+
+	// append_volume：追加卷2
+	appendArgs, _ := json.Marshal(map[string]any{
+		"type": "append_volume",
+		"content": map[string]any{
+			"index": 2, "title": "第二卷", "theme": "升级",
+			"arcs": []map[string]any{{
+				"index": 1, "title": "弧一", "goal": "目标",
+				"chapters": []map[string]any{{"title": "新章", "core_event": "推进", "hook": "钩子"}},
+			}},
+		},
+	})
+	res, err := tool.Execute(context.Background(), appendArgs)
+	if err != nil {
+		t.Fatalf("Execute append_volume: %v", err)
+	}
+	var result map[string]any
+	json.Unmarshal(res, &result)
+	if result["volume"] != float64(2) {
+		t.Fatalf("expected volume=2, got %v", result["volume"])
+	}
+
+	// 验证大纲有 2 卷
+	volumes, _ := s.LoadLayeredOutline()
+	if len(volumes) != 2 {
+		t.Fatalf("expected 2 volumes, got %d", len(volumes))
+	}
+	if volumes[1].Title != "第二卷" {
+		t.Fatalf("expected title '第二卷', got %q", volumes[1].Title)
+	}
+}
+
+func TestSaveFoundationAppendVolumeValidation(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := s.InitProgress("test", 0); err != nil {
+		t.Fatalf("InitProgress: %v", err)
+	}
+
+	tool := NewSaveFoundationTool(s)
+
+	// 初始卷
+	layeredArgs, _ := json.Marshal(map[string]any{
+		"type": "layered_outline",
+		"content": []map[string]any{{
+			"index": 1, "title": "第一卷", "theme": "起步", "final": true,
+			"arcs": []map[string]any{{
+				"index": 1, "title": "首弧", "goal": "目标",
+				"chapters": []map[string]any{{"title": "第一章", "core_event": "开局", "hook": "继续"}},
+			}},
+		}},
+		"scale": "long",
+	})
+	tool.Execute(context.Background(), layeredArgs)
+
+	// 尝试在 Final 卷后追加 → 应失败
+	appendArgs, _ := json.Marshal(map[string]any{
+		"type": "append_volume",
+		"content": map[string]any{
+			"index": 2, "title": "第二卷", "theme": "不应存在",
+			"arcs": []map[string]any{{
+				"index": 1, "title": "弧一", "goal": "目标",
+				"chapters": []map[string]any{{"title": "章", "core_event": "事件", "hook": "钩子"}},
+			}},
+		},
+	})
+	_, err := tool.Execute(context.Background(), appendArgs)
+	if err == nil {
+		t.Fatal("expected error when appending after Final volume")
+	}
+}
+
+func TestSaveFoundationUpdateCompass(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	tool := NewSaveFoundationTool(s)
+	args, _ := json.Marshal(map[string]any{
+		"type": "update_compass",
+		"content": map[string]any{
+			"ending_direction": "主角面对最终抉择",
+			"open_threads":     []string{"线索A", "关系B"},
+			"estimated_scale":  "预计 4-6 卷",
+		},
+	})
+	_, err := tool.Execute(context.Background(), args)
+	if err != nil {
+		t.Fatalf("Execute update_compass: %v", err)
+	}
+
+	compass, err := s.LoadCompass()
+	if err != nil {
+		t.Fatalf("LoadCompass: %v", err)
+	}
+	if compass == nil || compass.EndingDirection != "主角面对最终抉择" {
+		t.Fatalf("unexpected compass: %+v", compass)
+	}
+	if len(compass.OpenThreads) != 2 {
+		t.Fatalf("expected 2 open threads, got %d", len(compass.OpenThreads))
+	}
+}
+
+func TestSaveFoundationUpdateCompassRequiresDirection(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	tool := NewSaveFoundationTool(s)
+	args, _ := json.Marshal(map[string]any{
+		"type":    "update_compass",
+		"content": map[string]any{"estimated_scale": "3 卷"},
+	})
+	_, err := tool.Execute(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected error when ending_direction is empty")
+	}
+}
+
 func TestSaveFoundationAcceptsDirectJSONArrayContent(t *testing.T) {
 	dir := t.TempDir()
 	store := store.NewStore(dir)

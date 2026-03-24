@@ -109,29 +109,36 @@ func determineRecovery(progress *domain.Progress, runMeta *domain.RunMeta, store
 		}
 	}
 
-	// 骨架展开恢复：评审已完成但下一卷/弧尚未展开
+	// 滚动规划恢复：评审已完成但下一弧/卷尚未就绪
 	if progress.IsResumable() && progress.Layered && len(store) > 0 && store[0] != nil {
 		s := store[0]
 		next := progress.NextChapter()
-		// 检查下一章是否在大纲中，如果不在说明下一卷或弧还是骨架。
+		// 检查下一章是否在大纲中，如果不在说明需要展开弧或创建新卷
 		if _, err := s.GetChapterOutline(next); err != nil {
 			volumes := mustLoadLayered(s)
-			for _, v := range volumes {
-				if v.Index > progress.CurrentVolume && !v.IsExpanded() {
-					return recoveryResult{
-						PromptText: withGuidance(fmt.Sprintf(
-							"上次卷级评审已完成，但第 %d 卷尚未展开弧结构。请调用 architect_long 为该卷展开弧级规划（save_foundation type=expand_volume, volume=%d），然后继续写作。已完成 %d 章，共 %d 字。",
-							v.Index, v.Index, len(progress.CompletedChapters), progress.TotalWordCount)),
-						Label: fmt.Sprintf("恢复模式：展开第 %d 卷", v.Index),
-					}
-				}
-			}
+			// 先检查是否有骨架弧需要展开
 			if vol, arc := domain.NextSkeletonArc(volumes, progress.CurrentVolume, progress.CurrentArc); vol > 0 {
 				return recoveryResult{
 					PromptText: withGuidance(fmt.Sprintf(
 						"上次弧级评审已完成，但第 %d 卷第 %d 弧尚未展开章节。请调用 architect_long 为该弧展开详细章节规划（save_foundation type=expand_arc, volume=%d, arc=%d），然后继续写作。已完成 %d 章，共 %d 字。",
 						vol, arc, vol, arc, len(progress.CompletedChapters), progress.TotalWordCount)),
 					Label: fmt.Sprintf("恢复模式：展开第 %d 卷第 %d 弧", vol, arc),
+				}
+			}
+			// 无骨架弧且当前卷非 Final → 需要创建下一卷
+			currentFinal := false
+			for _, v := range volumes {
+				if v.Index == progress.CurrentVolume {
+					currentFinal = v.Final
+					break
+				}
+			}
+			if !currentFinal {
+				return recoveryResult{
+					PromptText: withGuidance(fmt.Sprintf(
+						"上次卷级评审已完成，需要创建下一卷。请调用 architect_long 自主规划下一卷（save_foundation type=append_volume），参考终局方向和已写内容决定方向，同时更新指南针（save_foundation type=update_compass），然后继续写作。已完成 %d 章，共 %d 字。",
+						len(progress.CompletedChapters), progress.TotalWordCount)),
+					Label: "恢复模式：创建下一卷",
 				}
 			}
 		}

@@ -21,13 +21,13 @@ func NewSaveFoundationTool(store *store.Store) *SaveFoundationTool {
 
 func (t *SaveFoundationTool) Name() string { return "save_foundation" }
 func (t *SaveFoundationTool) Description() string {
-	return "保存小说基础设定。参数固定为 {type, content, scale?, volume?, arc?}。type 可选 premise / outline / layered_outline / characters / world_rules / expand_arc / expand_volume。premise 时 content 必须是 Markdown 字符串；其他类型 content 优先直接传 JSON 数组或对象。expand_arc 展开骨架弧的详细章节（需 volume + arc）；expand_volume 展开骨架卷的弧结构（需 volume，content 为弧数组，首弧可包含详细章节）。scale 可选，仅允许 short / mid / long。"
+	return "保存小说基础设定。参数固定为 {type, content, scale?, volume?, arc?}。type 可选 premise / outline / layered_outline / characters / world_rules / expand_arc / append_volume / update_compass。premise 时 content 必须是 Markdown 字符串；其他类型 content 优先直接传 JSON 数组或对象。expand_arc 展开骨架弧的详细章节（需 volume + arc）；append_volume 追加新卷（content 为完整 VolumeOutline JSON，含弧结构）；update_compass 更新终局方向（content 为 StoryCompass JSON）。scale 可选，仅允许 short / mid / long。"
 }
 func (t *SaveFoundationTool) Label() string { return "保存设定" }
 
 func (t *SaveFoundationTool) Schema() map[string]any {
 	return schema.Object(
-		schema.Property("type", schema.Enum("设定类型", "premise", "outline", "layered_outline", "characters", "world_rules", "expand_arc", "expand_volume")).Required(),
+		schema.Property("type", schema.Enum("设定类型", "premise", "outline", "layered_outline", "characters", "world_rules", "expand_arc", "append_volume", "update_compass")).Required(),
 		schema.Property("content", map[string]any{
 			"description": "内容。premise 传 Markdown 字符串；其他类型直接传 JSON 数组或对象即可，也兼容传 JSON 字符串。expand_arc 时传章节数组。",
 		}).Required(),
@@ -146,33 +146,36 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		result["arc"] = a.Arc
 		result["chapters"] = len(chapters)
 
-	case "expand_volume":
-		if a.Volume <= 0 {
-			return nil, fmt.Errorf("expand_volume requires volume parameter")
+	case "append_volume":
+		var vol domain.VolumeOutline
+		if err := json.Unmarshal([]byte(content), &vol); err != nil {
+			return nil, fmt.Errorf("parse append_volume JSON: %w", err)
 		}
-		var arcs []domain.ArcOutline
-		if err := json.Unmarshal([]byte(content), &arcs); err != nil {
-			return nil, fmt.Errorf("parse expand_volume arcs JSON: %w", err)
+		if err := t.store.AppendVolume(vol); err != nil {
+			return nil, fmt.Errorf("append volume: %w", err)
 		}
-		if len(arcs) == 0 {
-			return nil, fmt.Errorf("expand_volume requires at least one arc")
-		}
-		if err := t.store.ExpandVolume(a.Volume, arcs); err != nil {
-			return nil, fmt.Errorf("expand volume: %w", err)
-		}
-		result["volume"] = a.Volume
-		result["arcs"] = len(arcs)
-		// 统计展开弧中的章节数
+		result["volume"] = vol.Index
+		result["arcs"] = len(vol.Arcs)
 		chCount := 0
-		for _, arc := range arcs {
+		for _, arc := range vol.Arcs {
 			chCount += len(arc.Chapters)
 		}
 		if chCount > 0 {
 			result["chapters"] = chCount
 		}
 
+	case "update_compass":
+		var compass domain.StoryCompass
+		if err := json.Unmarshal([]byte(content), &compass); err != nil {
+			return nil, fmt.Errorf("parse compass JSON: %w", err)
+		}
+		if err := t.store.SaveCompass(compass); err != nil {
+			return nil, fmt.Errorf("save compass: %w", err)
+		}
+		result["ending_direction"] = compass.EndingDirection
+
 	default:
-		return nil, fmt.Errorf("unknown type %q, expected premise/outline/layered_outline/characters/world_rules/expand_arc/expand_volume", a.Type)
+		return nil, fmt.Errorf("unknown type %q, expected premise/outline/layered_outline/characters/world_rules/expand_arc/append_volume/update_compass", a.Type)
 	}
 
 	// 返回剩余未完成项，引导 Architect 继续
@@ -204,6 +207,12 @@ func (t *SaveFoundationTool) remaining() []string {
 	}
 	if o, _ := t.store.LoadOutline(); len(o) == 0 {
 		missing = append(missing, "outline")
+	}
+	// 长篇模式下 compass 也是必须项
+	if layered, _ := t.store.LoadLayeredOutline(); len(layered) > 0 {
+		if c, _ := t.store.LoadCompass(); c == nil {
+			missing = append(missing, "compass")
+		}
 	}
 	if c, _ := t.store.LoadCharacters(); len(c) == 0 {
 		missing = append(missing, "characters")

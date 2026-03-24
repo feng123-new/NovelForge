@@ -477,7 +477,7 @@ func renderDetailContent(snap orchestrator.UISnapshot, contentW int) string {
 	if len(snap.Outline) > 0 {
 		outlineHeader := ":: 大纲"
 		if snap.Layered {
-			outlineHeader = fmt.Sprintf(":: 大纲（%s / 共约%d章）", snap.CurrentVolumeArc, snap.TotalChapters)
+			outlineHeader = fmt.Sprintf(":: 大纲（%s · 动态续写）", snap.CurrentVolumeArc)
 		}
 		b.WriteString(panelTitleStyle.Render(outlineHeader))
 		b.WriteString("\n")
@@ -506,16 +506,23 @@ func renderDetailContent(snap orchestrator.UISnapshot, contentW int) string {
 			b.WriteString(line)
 			b.WriteString("\n")
 		}
-		// 当前卷骨架弧 + 后续卷摘要
-		skeletonStyle := lipgloss.NewStyle().Foreground(colorDim).Italic(true)
-		for _, sk := range snap.SkeletonEntries {
-			label := fmt.Sprintf("  ┄ %s（~%d章）", sk.Label, sk.EstimatedChapters)
-			b.WriteString(skeletonStyle.Render(truncate(label, contentW)))
+		// 滚动规划提示
+		compassStyle := lipgloss.NewStyle().Foreground(colorDim).Italic(true)
+		if snap.Layered {
+			if snap.NextVolumeTitle != "" {
+				b.WriteString(compassStyle.Render("  ┄ 下一卷：" + snap.NextVolumeTitle))
+				b.WriteString("\n")
+			}
+			b.WriteString(compassStyle.Render("  ··· 后续章节随创作推进自动生成"))
 			b.WriteString("\n")
-		}
-		if snap.SkeletonRemaining != "" {
-			b.WriteString(skeletonStyle.Render("  ┄ " + snap.SkeletonRemaining))
-			b.WriteString("\n")
+			if snap.CompassDirection != "" {
+				direction := fmt.Sprintf("  → 终局：%s", snap.CompassDirection)
+				if snap.CompassScale != "" {
+					direction += "（" + snap.CompassScale + "）"
+				}
+				b.WriteString(compassStyle.Render(truncate(direction, contentW)))
+				b.WriteString("\n")
+			}
 		}
 		b.WriteString("\n")
 	}

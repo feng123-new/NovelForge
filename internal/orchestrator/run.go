@@ -143,6 +143,14 @@ func registerSubscription(coordinator *agentcore.Agent, store *storepkg.Store, p
 				}
 				return
 			}
+			// SubAgent 重试事件：独立处理，用 warn 级别
+			if retry, ok := parseSubAgentRetry(ev); ok {
+				slog.Warn("SubAgent 重试", "module", "tool", "summary", retry)
+				if emit != nil {
+					emit(UIEvent{Time: time.Now(), Category: "SYSTEM", Summary: retry, Level: "warn"})
+				}
+				return
+			}
 			summary := parseProgressSummary(ev)
 			if summary == "" {
 				return
@@ -273,6 +281,25 @@ func submitSteer(store *storepkg.Store, coordinator *agentcore.Agent, text strin
 		message += "\n" + guidance
 	}
 	coordinator.Steer(agentcore.UserMsg(message))
+}
+
+// parseSubAgentRetry 从 EventToolExecUpdate 中提取 SubAgent 转发的重试信息。
+func parseSubAgentRetry(ev agentcore.Event) (string, bool) {
+	if len(ev.Result) == 0 {
+		return "", false
+	}
+	var data struct {
+		Agent      string `json:"agent"`
+		Retry      bool   `json:"retry"`
+		Attempt    int    `json:"attempt"`
+		MaxRetries int    `json:"max_retries"`
+		Error      string `json:"error"`
+	}
+	if err := json.Unmarshal(ev.Result, &data); err != nil || !data.Retry {
+		return "", false
+	}
+	msg := truncateLog(data.Error, 80)
+	return fmt.Sprintf("%s 重试 (%d/%d): %s", data.Agent, data.Attempt, data.MaxRetries, msg), true
 }
 
 // parseStreamDelta 从 EventToolExecUpdate 中提取流式 delta 文本。

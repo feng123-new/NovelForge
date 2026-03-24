@@ -103,13 +103,12 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *storepkg.Store, emi
 	}
 
 	if progress != nil && progress.Layered && result.ArcEnd {
-		isBookEnd := result.NextVolume == 0 && result.NextArc == 0
+		// 全书结束条件：无后续弧/卷 且 不需要创建新卷（即当前卷已标记 Final）
+		isBookEnd := result.NextVolume == 0 && result.NextArc == 0 && !result.NeedsNewVolume
 
 		var expansionTail string
-		if result.NeedsVolumeExpansion && !isBookEnd {
-			expansionTail = fmt.Sprintf(
-				"调用 architect_long 为第 %d 卷展开弧级结构和首弧章节（save_foundation type=expand_volume, volume=%d），然后继续写作。",
-				result.NextVolume, result.NextVolume)
+		if result.NeedsNewVolume {
+			expansionTail = "调用 architect_long 自主规划下一卷（save_foundation type=append_volume），参考终局方向和已写内容决定下一卷的方向和结构，同时更新指南针（save_foundation type=update_compass），然后继续写作。"
 		} else if result.NeedsExpansion && !isBookEnd {
 			expansionTail = fmt.Sprintf(
 				"调用 architect_long 为第 %d 卷第 %d 弧展开详细章节规划（save_foundation type=expand_arc），然后继续写作。",
@@ -118,7 +117,7 @@ func handleSubAgentDone(coordinator *agentcore.Agent, store *storepkg.Store, emi
 
 		if result.VolumeEnd {
 			slog.Info("弧结束（卷结束），注入评审指令", "module", "host", "volume", result.Volume, "arc", result.Arc,
-				"needs_expansion", result.NeedsExpansion)
+				"needs_new_volume", result.NeedsNewVolume)
 			if err := store.SetFlow(domain.FlowReviewing); err != nil {
 				slog.Error("设置审阅流程失败", "module", "host", "err", err)
 			}

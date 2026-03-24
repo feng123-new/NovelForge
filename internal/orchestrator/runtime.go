@@ -49,10 +49,11 @@ type UISnapshot struct {
 	Premise           string            // 前提概要
 	Outline           []OutlineSnapshot // 大纲（每章标题 + 核心事件）
 	Characters        []string          // 角色列表（名字 + 身份）
-	Layered           bool              // 是否分层模式（滚动规划）
-	CurrentVolumeArc  string            // 当前卷弧位置（如"第1卷·第1弧"）
-	SkeletonEntries   []SkeletonEntry   // 当前卷内的骨架弧（即将展开的部分）
-	SkeletonRemaining string            // 后续卷摘要（如"还有 8 卷待展开"）
+	Layered          bool   // 是否分层模式（滚动规划）
+	CurrentVolumeArc string // 当前卷弧位置（如"第1卷·第1弧"）
+	NextVolumeTitle  string // 下一卷预览标题（如有）
+	CompassDirection string // 终局方向
+	CompassScale     string // 预估规模
 
 	// 详情区
 	LastCommitSummary  string
@@ -68,11 +69,6 @@ type OutlineSnapshot struct {
 	CoreEvent string
 }
 
-// SkeletonEntry 是未展开的骨架弧/卷的展示摘要。
-type SkeletonEntry struct {
-	Label             string // 如"第1卷·第2弧：弧标题"
-	EstimatedChapters int
-}
 
 // Runtime 封装协调器生命周期，提供 TUI 所需的非阻塞接口。
 type Runtime struct {
@@ -392,39 +388,20 @@ func (rt *Runtime) fillDetails(snap *UISnapshot, progress *domain.Progress) {
 			})
 		}
 	}
-	// 分层模式：加载当前卷骨架弧 + 后续卷摘要
+	// 分层模式：加载指南针 + 下一卷预览
 	if progress != nil && progress.Layered {
 		snap.Layered = true
 		snap.CurrentVolumeArc = fmt.Sprintf("第%d卷·第%d弧", progress.CurrentVolume, progress.CurrentArc)
+		if compass, _ := rt.store.LoadCompass(); compass != nil {
+			snap.CompassDirection = compass.EndingDirection
+			snap.CompassScale = compass.EstimatedScale
+		}
 		if volumes, _ := rt.store.LoadLayeredOutline(); len(volumes) > 0 {
-			remainingVolumes := 0
 			for _, v := range volumes {
-				if !v.IsExpanded() {
-					remainingVolumes++
-					continue
+				if v.Index > progress.CurrentVolume {
+					snap.NextVolumeTitle = v.Title
+					break
 				}
-				// 当前卷：显示未展开的弧
-				if v.Index == progress.CurrentVolume {
-					for _, a := range v.Arcs {
-						if !a.IsExpanded() {
-							snap.SkeletonEntries = append(snap.SkeletonEntries, SkeletonEntry{
-								Label:             fmt.Sprintf("第%d弧：%s", a.Index, a.Title),
-								EstimatedChapters: a.EstimatedChapters,
-							})
-						}
-					}
-				} else {
-					// 非当前的已展开卷：统计其中未展开的弧数
-					for _, a := range v.Arcs {
-						if !a.IsExpanded() {
-							remainingVolumes++ // 近似：有未展开弧的卷也算待展开
-							break
-						}
-					}
-				}
-			}
-			if remainingVolumes > 0 {
-				snap.SkeletonRemaining = fmt.Sprintf("还有 %d 卷待展开", remainingVolumes)
 			}
 		}
 	}

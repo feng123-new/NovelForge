@@ -300,19 +300,9 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 		// Architect 模式下也加载分层大纲（弧级规划需要看全貌）
 		if layered, err := t.store.LoadLayeredOutline(); err == nil && len(layered) > 0 {
 			result["layered_outline"] = layered
-			// 标注骨架状态：哪些卷/弧未展开
-			var skeletonVolumes []map[string]any
+			// 标注骨架弧（未展开的弧）
 			var skeletonArcs []map[string]any
 			for _, v := range layered {
-				if !v.IsExpanded() {
-					skeletonVolumes = append(skeletonVolumes, map[string]any{
-						"volume":             v.Index,
-						"title":              v.Title,
-						"theme":              v.Theme,
-						"estimated_chapters": v.EstimatedChapters,
-					})
-					continue
-				}
 				for _, a := range v.Arcs {
 					if !a.IsExpanded() {
 						skeletonArcs = append(skeletonArcs, map[string]any{
@@ -325,14 +315,17 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 					}
 				}
 			}
-			if len(skeletonVolumes) > 0 {
-				result["skeleton_volumes"] = skeletonVolumes
-			}
 			if len(skeletonArcs) > 0 {
 				result["skeleton_arcs"] = skeletonArcs
 			}
 		} else {
 			warn("layered_outline", err)
+		}
+		// 加载终局方向指南针
+		if compass, err := t.store.LoadCompass(); err == nil && compass != nil {
+			result["compass"] = compass
+		} else {
+			warn("compass", err)
 		}
 		// 加载已有的弧摘要（弧级规划/展开时需要参考前续弧的内容）
 		if volSummaries, err := t.store.LoadAllVolumeSummaries(); err == nil && len(volSummaries) > 0 {

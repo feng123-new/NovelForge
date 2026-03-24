@@ -131,14 +131,14 @@ func (s *Store) LocateChapter(chapter int) (volume, arc int, err error) {
 
 // ArcBoundary 弧边界信息。
 type ArcBoundary struct {
-	IsArcEnd       bool // 是否为弧内最后一章
-	IsVolumeEnd    bool // 是否同时为卷内最后一章
-	Volume         int  // 当前章所在卷
-	Arc            int  // 当前章所在弧
-	NextVolume           int  // 下一弧所在卷（0 = 全书结束）
-	NextArc              int  // 下一弧序号（0 = 全书结束）
-	NeedsExpansion       bool // 下一弧是骨架（需要展开章节后才能写作）
-	NeedsVolumeExpansion bool // 下一卷是骨架（需要展开弧结构后才能写作）
+	IsArcEnd    bool // 是否为弧内最后一章
+	IsVolumeEnd bool // 是否同时为卷内最后一章
+	Volume      int  // 当前章所在卷
+	Arc         int  // 当前章所在弧
+	NextVolume     int  // 下一弧所在卷（0 = 无后续）
+	NextArc        int  // 下一弧序号（0 = 无后续）
+	NeedsExpansion bool // 下一弧是骨架（需要展开章节后才能写作）
+	NeedsNewVolume bool // 当前卷结束且无后续卷，需要 Architect 创建下一卷
 }
 
 // HasNextArc 是否还有后续弧（含骨架弧）。
@@ -201,20 +201,12 @@ func (s *Store) CheckArcBoundary(chapter int) (*ArcBoundary, error) {
 		}
 	}
 
-	// 找下一个弧（含骨架弧和骨架卷）
+	// 找下一个弧
 	found := false
 	for vi := cur.volIdx; vi < len(volumes); vi++ {
 		startArc := 0
 		if vi == cur.volIdx {
 			startArc = cur.arcIdx + 1
-		}
-		// 骨架卷：没有弧结构，需要先展开卷
-		if vi != cur.volIdx && !volumes[vi].IsExpanded() {
-			b.NextVolume = volumes[vi].Index
-			b.NextArc = 0
-			b.NeedsVolumeExpansion = true
-			found = true
-			break
 		}
 		for ai := startArc; ai < len(volumes[vi].Arcs); ai++ {
 			b.NextVolume = volumes[vi].Index
@@ -226,6 +218,11 @@ func (s *Store) CheckArcBoundary(chapter int) (*ArcBoundary, error) {
 		if found {
 			break
 		}
+	}
+
+	// 无后续弧且当前卷不是 Final → 需要 Architect 创建下一卷
+	if !found && b.IsVolumeEnd && !volumes[cur.volIdx].Final {
+		b.NeedsNewVolume = true
 	}
 
 	return b, nil
@@ -289,27 +286,17 @@ func (s *Store) ExpandArc(volumeIdx, arcIdx int, chapters []domain.OutlineEntry)
 	})
 }
 
-// ExpandVolume 将骨架卷展开为弧级结构。
-// arcs 中可包含骨架弧（只有 goal + estimated_chapters）和展开弧（有 chapters）。
-func (s *Store) ExpandVolume(volumeIdx int, arcs []domain.ArcOutline) error {
+// AppendVolume 追加新卷到分层大纲末尾（滚动规划：Architect 自主创建下一卷）。
+func (s *Store) AppendVolume(vol domain.VolumeOutline) error {
 	return s.withWriteLock(func() error {
 		var volumes []domain.VolumeOutline
 		if err := s.readJSONUnlocked("layered_outline.json", &volumes); err != nil {
 			return fmt.Errorf("load layered_outline: %w", err)
 		}
-		found := false
-		for vi := range volumes {
-			if volumes[vi].Index != volumeIdx {
-				continue
-			}
-			volumes[vi].Arcs = arcs
-			volumes[vi].EstimatedChapters = 0
-			found = true
-			break
+		if err := validateAppendVolume(volumes, vol); err != nil {
+			return err
 		}
-		if !found {
-			return fmt.Errorf("volume not found: %d", volumeIdx)
-		}
+		volumes = append(volumes, vol)
 		// 保存分层大纲
 		if err := s.writeJSONUnlocked("layered_outline.json", volumes); err != nil {
 			return err
@@ -338,6 +325,52 @@ func (s *Store) ExpandVolume(volumeIdx int, arcs []domain.ArcOutline) error {
 	})
 }
 
+// validateAppendVolume 校验追加卷的结构合法性。
+func validateAppendVolume(existing []domain.VolumeOutline, vol domain.VolumeOutline) error {
+	// 已有 Final 卷时不允许继续追加
+	for _, v := range existing {
+		if v.Final {
+			return fmt.Errorf("已有最终卷（第 %d 卷），不允许继续追加", v.Index)
+		}
+	}
+	// 卷 Index 必须大于现有最大值
+	if len(existing) > 0 {
+		maxIdx := existing[len(existing)-1].Index
+		if vol.Index <= maxIdx {
+			return fmt.Errorf("卷 Index %d 必须大于现有最大值 %d", vol.Index, maxIdx)
+		}
+	}
+	// 至少有一个弧
+	if len(vol.Arcs) == 0 {
+		return fmt.Errorf("新卷必须至少包含一个弧")
+	}
+	// 首弧必须有章节（展开状态）
+	if !vol.Arcs[0].IsExpanded() {
+		return fmt.Errorf("新卷的首弧必须包含详细章节")
+	}
+	return nil
+}
+
+// SaveCompass 保存终局方向指南针。
+func (s *Store) SaveCompass(compass domain.StoryCompass) error {
+	if compass.EndingDirection == "" {
+		return fmt.Errorf("ending_direction 不能为空")
+	}
+	return s.writeJSON("meta/compass.json", compass)
+}
+
+// LoadCompass 读取终局方向指南针。不存在时返回 nil。
+func (s *Store) LoadCompass() (*domain.StoryCompass, error) {
+	var c domain.StoryCompass
+	if err := s.readJSON("meta/compass.json", &c); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &c, nil
+}
+
 func renderLayeredOutline(volumes []domain.VolumeOutline) string {
 	var b strings.Builder
 	b.WriteString("# 分层大纲\n\n")
@@ -345,9 +378,8 @@ func renderLayeredOutline(volumes []domain.VolumeOutline) string {
 	for _, v := range volumes {
 		fmt.Fprintf(&b, "## 第 %d 卷：%s\n\n", v.Index, v.Title)
 		fmt.Fprintf(&b, "**主题**：%s\n\n", v.Theme)
-		if !v.IsExpanded() {
-			fmt.Fprintf(&b, "*（待展开，预估 %d 章）*\n\n", v.EstimatedChapters)
-			continue
+		if v.Final {
+			b.WriteString("*（最终卷）*\n\n")
 		}
 		for _, a := range v.Arcs {
 			fmt.Fprintf(&b, "### 第 %d 弧：%s\n\n", a.Index, a.Title)

@@ -28,15 +28,24 @@ type Character struct {
 
 // VolumeOutline 卷级大纲（长篇分层模式）。
 type VolumeOutline struct {
-	Index             int          `json:"index"`
-	Title             string       `json:"title"`
-	Theme             string       `json:"theme"`                        // 本卷核心冲突/主题
-	EstimatedChapters int          `json:"estimated_chapters,omitempty"` // 骨架卷的预估总章数（展开后清零）
-	Arcs              []ArcOutline `json:"arcs"`
+	Index int          `json:"index"`
+	Title string       `json:"title"`
+	Theme string       `json:"theme"`            // 本卷核心冲突/主题
+	Final bool         `json:"final,omitempty"`   // 标记为最终卷
+	Arcs  []ArcOutline `json:"arcs"`
 }
 
 // IsExpanded 判断卷是否已展开（有弧级结构）。
 func (v *VolumeOutline) IsExpanded() bool { return len(v.Arcs) > 0 }
+
+// StoryCompass 终局方向指南针，替代固定的骨架卷列表。
+// Architect 在每次卷边界时可更新，允许故事方向随创作演化。
+type StoryCompass struct {
+	EndingDirection string   `json:"ending_direction"`          // 终局方向（主题性描述）
+	OpenThreads     []string `json:"open_threads,omitempty"`    // 活跃长线（需收束才能结局）
+	EstimatedScale  string   `json:"estimated_scale,omitempty"` // 模糊规模（如"预计 4-6 卷"）
+	LastUpdated     int      `json:"last_updated,omitempty"`    // 更新时的已完成章节数
+}
 
 // ArcOutline 弧级大纲。
 type ArcOutline struct {
@@ -51,14 +60,10 @@ type ArcOutline struct {
 func (a *ArcOutline) IsExpanded() bool { return len(a.Chapters) > 0 }
 
 // TotalChapters 计算分层大纲的总章节数。
-// 骨架卷用卷级 EstimatedChapters；展开卷内，展开弧用实际章节数，骨架弧用弧级 EstimatedChapters。
+// 展开弧用实际章节数，骨架弧用弧级 EstimatedChapters。
 func TotalChapters(volumes []VolumeOutline) int {
 	n := 0
 	for _, v := range volumes {
-		if !v.IsExpanded() {
-			n += v.EstimatedChapters
-			continue
-		}
 		for _, a := range v.Arcs {
 			if a.IsExpanded() {
 				n += len(a.Chapters)
