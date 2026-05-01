@@ -103,8 +103,11 @@ func (t *EditChapterTool) Execute(ctx context.Context, args json.RawMessage) (js
 	// 委托 agentcore.EditTool 完成找-换
 	subArgs, _ := json.Marshal(map[string]any{
 		"path":        fmt.Sprintf("drafts/%02d.draft.md", a.Chapter),
+		"file_path":   fmt.Sprintf("drafts/%02d.draft.md", a.Chapter),
 		"old_text":    a.OldString,
+		"old_string":  a.OldString,
 		"new_text":    a.NewString,
+		"new_string":  a.NewString,
 		"replace_all": a.ReplaceAll,
 	})
 	result, err := t.edit.Execute(ctx, subArgs)

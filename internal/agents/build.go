@@ -148,6 +148,7 @@ func BuildCoordinator(
 		MaxTurns:           20,
 		MaxRetries:         subagentMaxRetries,
 		ToolsAreIdempotent: true,
+		StopAfterTools:     []string{"commit_chapter"},
 		OnMessage:          onMsg,
 		StopGuardFactory: func(_, _ string) agentcore.StopGuard {
 			return reminder.NewWriterStopGuard(store)
