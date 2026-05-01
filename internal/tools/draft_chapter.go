@@ -73,8 +73,8 @@ func (t *DraftChapterTool) Execute(_ context.Context, args json.RawMessage) (jso
 			return json.Marshal(map[string]any{
 				"chapter":   a.Chapter,
 				"skipped":   true,
+				"completed": true,
 				"reason":    fmt.Sprintf("第 %d 章已提交完成，不能覆盖", a.Chapter),
-				"next_step": "该章节已完成，请继续写下一章",
 			})
 		}
 	}

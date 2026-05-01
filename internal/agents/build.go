@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -116,7 +117,11 @@ func BuildCoordinator(
 		MaxRetries:         subagentMaxRetries,
 		ToolsAreIdempotent: true,
 		OnMessage:          onMsg,
-		StopGuardFactory:   architectStopGuardFactory,
+		StopAfterToolResult: func(toolName string, result json.RawMessage) bool {
+			r := decodeSaveFoundationResult(toolName, result)
+			return r.Type == "outline" && r.FoundationReady
+		},
+		StopGuardFactory: architectStopGuardFactory,
 	}
 	architectLong := agentcore.SubAgentConfig{
 		Name:               "architect_long",
@@ -128,7 +133,16 @@ func BuildCoordinator(
 		MaxRetries:         subagentMaxRetries,
 		ToolsAreIdempotent: true,
 		OnMessage:          onMsg,
-		StopGuardFactory:   architectStopGuardFactory,
+		StopAfterToolResult: func(toolName string, result json.RawMessage) bool {
+			r := decodeSaveFoundationResult(toolName, result)
+			switch r.Type {
+			case "update_compass", "expand_arc", "mark_final":
+				return true
+			default:
+				return false
+			}
+		},
+		StopGuardFactory: architectStopGuardFactory,
 	}
 
 	writerPrompt := bundle.Prompts.Writer
@@ -193,6 +207,7 @@ func BuildCoordinator(
 		MaxRetries:         subagentMaxRetries,
 		ToolsAreIdempotent: true,
 		OnMessage:          onMsg,
+		StopAfterTools:     []string{"save_review", "save_arc_summary", "save_volume_summary"},
 		StopGuardFactory: func(_, _ string) agentcore.StopGuard {
 			return reminder.NewEditorStopGuard(store)
 		},
@@ -220,6 +235,20 @@ func BuildCoordinator(
 		agentcore.WithStopGuard(reminder.NewStopGuard(store, nil)),
 	)
 	return agent, askUser, restore
+}
+
+type saveFoundationResult struct {
+	Type            string `json:"type"`
+	FoundationReady bool   `json:"foundation_ready"`
+}
+
+func decodeSaveFoundationResult(toolName string, result json.RawMessage) saveFoundationResult {
+	if toolName != "save_foundation" {
+		return saveFoundationResult{}
+	}
+	var r saveFoundationResult
+	_ = json.Unmarshal(result, &r)
+	return r
 }
 
 // logContextWindowChoice 打印某个角色的窗口决策。source=default 时发 Warn 提示用户显式配置。

@@ -62,8 +62,8 @@ func (t *PlanChapterTool) Execute(_ context.Context, args json.RawMessage) (json
 		return json.Marshal(map[string]any{
 			"chapter":   plan.Chapter,
 			"skipped":   true,
+			"completed": true,
 			"reason":    fmt.Sprintf("第 %d 章已提交完成，不能重新规划", plan.Chapter),
-			"next_step": "该章节已完成，请继续规划下一章",
 		})
 	}
 	if err := t.store.Progress.ValidateChapterWork(plan.Chapter); err != nil {
