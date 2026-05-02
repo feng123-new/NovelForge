@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/voocel/ainovel-cli/internal/utils"
 )
 
 // NeedsSetup 检查是否需要首次引导（配置文件不存在时触发）。
@@ -295,7 +296,7 @@ func runOptionalTextInput(label, placeholder string) (string, error) {
 	if result.cancelled {
 		return "", fmt.Errorf("setup cancelled")
 	}
-	return result.value, nil
+	return utils.CleanInputLine(result.value), nil
 }
 
 func runTextInputWithDefault(label, placeholder, defaultValue string) (string, error) {
@@ -312,7 +313,7 @@ func runTextInputWithDefault(label, placeholder, defaultValue string) (string, e
 	if result.value == "" && result.defaultValue != "" {
 		return result.defaultValue, nil
 	}
-	return result.value, nil
+	return utils.CleanInputLine(result.value), nil
 }
 
 // ---------- 选择器 ----------
@@ -388,7 +389,7 @@ func (m setupInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.KeyMsg); ok {
 		switch msg.String() {
 		case "enter":
-			if strings.TrimSpace(m.value) != "" || m.defaultValue != "" || m.allowEmpty {
+			if utils.CleanInputLine(m.value) != "" || m.defaultValue != "" || m.allowEmpty {
 				return m, tea.Quit
 			}
 		case "ctrl+c", "esc":
@@ -401,7 +402,7 @@ func (m setupInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
-				m.value += string(msg.Runes)
+				m.value += utils.CleanInputRunes(msg.Runes)
 			} else if msg.Type == tea.KeySpace {
 				m.value += " "
 			}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/voocel/ainovel-cli/internal/apperr"
 	"github.com/voocel/ainovel-cli/internal/models"
+	"github.com/voocel/ainovel-cli/internal/utils"
 )
 
 // DefaultContextWindow 未显式配置且模型未登记时的兜底窗口大小。
@@ -109,6 +110,13 @@ type Config struct {
 
 // ValidateBase 校验基础配置。
 func (c *Config) ValidateBase() error {
+	if err := validateConfigText("provider", c.Provider); err != nil {
+		return err
+	}
+	if err := validateConfigText("model", c.ModelName); err != nil {
+		return err
+	}
+
 	if c.Provider == "" {
 		return apperr.New(apperr.CodeConfigInvalid, "bootstrap.validate_base", "provider is required")
 	}
@@ -132,9 +140,29 @@ func (c *Config) ValidateBase() error {
 			fmt.Sprintf("provider %q has no api_key configured", c.Provider),
 		)
 	}
+	if err := validateProviderConfigText(c.Provider, pc); err != nil {
+		return err
+	}
+	for name, provider := range c.Providers {
+		if err := validateConfigText("provider name", name); err != nil {
+			return err
+		}
+		if err := validateProviderConfigText(name, provider); err != nil {
+			return err
+		}
+	}
 
 	// 校验角色覆盖
 	for role, rc := range c.Roles {
+		if err := validateConfigText("role name", role); err != nil {
+			return err
+		}
+		if err := validateConfigText(fmt.Sprintf("role %q provider", role), rc.Provider); err != nil {
+			return err
+		}
+		if err := validateConfigText(fmt.Sprintf("role %q model", role), rc.Model); err != nil {
+			return err
+		}
 		if !knownRoles[role] {
 			return apperr.New(
 				apperr.CodeConfigInvalid,
@@ -156,6 +184,12 @@ func (c *Config) ValidateBase() error {
 			return err
 		}
 		for i, fallback := range rc.Fallbacks {
+			if err := validateConfigText(fmt.Sprintf("role %q fallback[%d] provider", role, i), fallback.Provider); err != nil {
+				return err
+			}
+			if err := validateConfigText(fmt.Sprintf("role %q fallback[%d] model", role, i), fallback.Model); err != nil {
+				return err
+			}
 			if err := c.validateModelRef(
 				fmt.Sprintf("role %q fallback[%d]", role, i),
 				fallback,
@@ -165,6 +199,39 @@ func (c *Config) ValidateBase() error {
 		}
 	}
 
+	return nil
+}
+
+func validateProviderConfigText(name string, pc ProviderConfig) error {
+	fields := []struct {
+		label string
+		value string
+	}{
+		{label: fmt.Sprintf("provider %q type", name), value: pc.Type},
+		{label: fmt.Sprintf("provider %q api_key", name), value: pc.APIKey},
+		{label: fmt.Sprintf("provider %q base_url", name), value: pc.BaseURL},
+	}
+	for _, field := range fields {
+		if err := validateConfigText(field.label, field.value); err != nil {
+			return err
+		}
+	}
+	for i, model := range pc.Models {
+		if err := validateConfigText(fmt.Sprintf("provider %q models[%d]", name, i), model); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateConfigText(name, value string) error {
+	if utils.ContainsControl(value) {
+		return apperr.New(
+			apperr.CodeConfigInvalid,
+			"bootstrap.validate_base",
+			fmt.Sprintf("%s contains control character", name),
+		)
+	}
 	return nil
 }
 

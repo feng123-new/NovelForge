@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/voocel/ainovel-cli/internal/tools"
+	"github.com/voocel/ainovel-cli/internal/utils"
 )
 
 type terminalAskUser struct {
@@ -68,7 +69,7 @@ func (h *terminalAskUser) askOne(ctx context.Context, q tools.Question) (string,
 		if err != nil {
 			return "", "", err
 		}
-		line = strings.TrimSpace(line)
+		line = utils.CleanInputLine(line)
 		if line == "" {
 			fmt.Fprintln(h.out, "输入不能为空，请重试。")
 			continue
@@ -79,7 +80,7 @@ func (h *terminalAskUser) askOne(ctx context.Context, q tools.Question) (string,
 			if err != nil {
 				return "", "", err
 			}
-			note = strings.TrimSpace(note)
+			note = utils.CleanInputLine(note)
 			if note == "" {
 				fmt.Fprintln(h.out, "自定义内容不能为空，请重试。")
 				continue

@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/voocel/ainovel-cli/internal/tools"
+	"github.com/voocel/ainovel-cli/internal/utils"
 )
 
 type askUserRequest struct {
@@ -112,7 +113,7 @@ func (s *askUserState) toggleSelection() {
 func (s *askUserState) finishCurrentAnswer() bool {
 	q := s.currentQuestion()
 	if s.typing {
-		text := strings.TrimSpace(s.input)
+		text := utils.CleanInputLine(s.input)
 		if text == "" {
 			return false
 		}
@@ -132,7 +133,7 @@ func (s *askUserState) finishCurrentAnswer() bool {
 				values = append(values, q.Options[idx].Label)
 				continue
 			}
-			custom = strings.TrimSpace(s.input)
+			custom = utils.CleanInputLine(s.input)
 		}
 		if custom != "" {
 			values = append(values, custom)

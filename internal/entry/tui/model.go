@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/voocel/ainovel-cli/internal/host"
 	"github.com/voocel/ainovel-cli/internal/tools"
+	"github.com/voocel/ainovel-cli/internal/utils"
 )
 
 const maxEvents = 500
@@ -41,45 +42,45 @@ var toolSpinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯"
 
 // Model 是 TUI 的顶层状态。
 type Model struct {
-	runtime      *host.Host
-	askBridge    *askUserBridge
-	askState     *askUserState
-	cocreate     *cocreateState
-	help         *helpState
-	modelSwitch  *modelSwitchState
-	report       *reportState
-	importer     *importState
-	importSeq    int
-	compItems    []commandPaletteItem
-	compIdx      int
-	compActive   bool
-	snapshot     host.UISnapshot
-	events       []host.Event
-	eventIndex   map[string]int // event.ID → m.events 下标；调用类事件到达时原地更新
-	viewport     viewport.Model   // 事件流 viewport
-	streamVP     viewport.Model   // 流式输出 viewport
-	detailVP     viewport.Model   // 右侧详情 viewport
-	streamBuf    *strings.Builder // 流式文本累积缓冲
-	streamRounds []string
-	textarea     textarea.Model
-	width        int
-	height       int
-	autoScroll   bool
-	streamScroll bool // 流式面板自动跟随
-	focusPane    focusPane
-	hoverPane    focusPane
-	hoverActive  bool
-	mode         appMode
-	startupMode  startupMode
-	cocreateSeq  int
-	reportSeq    int
-	err          error
+	runtime        *host.Host
+	askBridge      *askUserBridge
+	askState       *askUserState
+	cocreate       *cocreateState
+	help           *helpState
+	modelSwitch    *modelSwitchState
+	report         *reportState
+	importer       *importState
+	importSeq      int
+	compItems      []commandPaletteItem
+	compIdx        int
+	compActive     bool
+	snapshot       host.UISnapshot
+	events         []host.Event
+	eventIndex     map[string]int   // event.ID → m.events 下标；调用类事件到达时原地更新
+	viewport       viewport.Model   // 事件流 viewport
+	streamVP       viewport.Model   // 流式输出 viewport
+	detailVP       viewport.Model   // 右侧详情 viewport
+	streamBuf      *strings.Builder // 流式文本累积缓冲
+	streamRounds   []string
+	textarea       textarea.Model
+	width          int
+	height         int
+	autoScroll     bool
+	streamScroll   bool // 流式面板自动跟随
+	focusPane      focusPane
+	hoverPane      focusPane
+	hoverActive    bool
+	mode           appMode
+	startupMode    startupMode
+	cocreateSeq    int
+	reportSeq      int
+	err            error
 	spinnerIdx     int
-	toolSpinnerIdx int // 事件流进行中行的独立帧索引（150ms tick，不影响顶栏/星星）
-	cursorIdx      int // 流式光标帧索引（独立 tick）
-	streamRound  int  // 流式输出轮次计数
-	quitPending  bool // 双次 Ctrl+C 退出确认
-	abortPending bool // 等待 Done 回来的手动暂停
+	toolSpinnerIdx int  // 事件流进行中行的独立帧索引（150ms tick，不影响顶栏/星星）
+	cursorIdx      int  // 流式光标帧索引（独立 tick）
+	streamRound    int  // 流式输出轮次计数
+	quitPending    bool // 双次 Ctrl+C 退出确认
+	abortPending   bool // 等待 Done 回来的手动暂停
 }
 
 // NewModel 创建 TUI Model。
@@ -503,7 +504,7 @@ func (m Model) handleCoCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyEnter:
-		text := strings.TrimSpace(m.textarea.Value())
+		text := utils.CleanInputLine(m.textarea.Value())
 		if text == "" {
 			return m, nil
 		}
@@ -516,6 +517,10 @@ func (m Model) handleCoCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// 常规输入转发给 textarea
 	if msg.Type == tea.KeyRunes && (containsSGRFragment(string(msg.Runes)) || isCSILeak(msg.Runes)) {
+		return m, nil
+	}
+	var ok bool
+	if msg, ok = cleanHumanKeyRunes(msg); !ok {
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -565,7 +570,7 @@ func (m Model) handleAskUserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		default:
 			if msg.Type == tea.KeyRunes {
-				state.input += string(msg.Runes)
+				state.input += utils.CleanInputRunes(msg.Runes)
 			}
 			return m, nil
 		}
@@ -679,4 +684,16 @@ func containsSGRFragment(s string) bool {
 		}
 	}
 	return false
+}
+
+func cleanHumanKeyRunes(msg tea.KeyMsg) (tea.KeyMsg, bool) {
+	if msg.Type != tea.KeyRunes {
+		return msg, true
+	}
+	cleaned := utils.CleanInputRunes(msg.Runes)
+	if cleaned == "" {
+		return msg, false
+	}
+	msg.Runes = []rune(cleaned)
+	return msg, true
 }

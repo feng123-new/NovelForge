@@ -9,6 +9,7 @@ import (
 	"github.com/voocel/ainovel-cli/internal/entry/startup"
 	"github.com/voocel/ainovel-cli/internal/host"
 	"github.com/voocel/ainovel-cli/internal/host/imp"
+	"github.com/voocel/ainovel-cli/internal/utils"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -172,6 +173,10 @@ func (m Model) handleBaseKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyRunes && (containsSGRFragment(string(msg.Runes)) || isCSILeak(msg.Runes)) {
 		return m, nil
 	}
+	var ok bool
+	if msg, ok = cleanHumanKeyRunes(msg); !ok {
+		return m, nil
+	}
 
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
@@ -180,7 +185,7 @@ func (m Model) handleBaseKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleEnterKey() (tea.Model, tea.Cmd) {
-	text := strings.TrimSpace(m.textarea.Value())
+	text := utils.CleanInputLine(m.textarea.Value())
 	if text == "" {
 		return m, nil
 	}
