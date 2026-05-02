@@ -43,10 +43,9 @@ type Host struct {
 	clearCh  chan struct{}
 	done     chan struct{}
 
-	mu              sync.Mutex
-	lifecycle       lifecycle
-	idleResumeCount int // 连续异常停机自动恢复次数
-	closeOnce       sync.Once
+	mu        sync.Mutex
+	lifecycle lifecycle
+	closeOnce sync.Once
 }
 
 type lifecycle string
@@ -151,7 +150,6 @@ func (h *Host) StartPrepared(promptText string) error {
 
 	h.mu.Lock()
 	h.lifecycle = lifecycleRunning
-	h.idleResumeCount = 0
 	h.mu.Unlock()
 	go h.waitDone()
 	return nil
@@ -191,7 +189,6 @@ func (h *Host) Resume() (string, error) {
 
 	h.mu.Lock()
 	h.lifecycle = lifecycleRunning
-	h.idleResumeCount = 0
 	h.mu.Unlock()
 	go h.waitDone()
 	return label, nil
@@ -274,71 +271,42 @@ func (h *Host) Close() {
 	})
 }
 
-const maxIdleResumes = 3
-
-// waitDone — 核心：等待 coordinator 停机，处理结束状态。
-// 当 coordinator 在创作未完成时异常停机（如 LLM 返回空响应），自动注入恢复指令重新启动。
+// waitDone 等待 coordinator 停机并发布终态事件。
+//
+// 不做任何续跑。Run 结束 = Host 进入终态：
+//   - Phase=Complete  → 标记 completed，发"创作完成"事件
+//   - 其它            → 标记 idle，发"Coordinator 停止"事件
+//
+// 用户要继续创作只有两条路径：手动 Continue（停机注入）或重启进程走 Resume。
+// 见 docs/architecture.md §13.3、§8.3。
 func (h *Host) waitDone() {
 	h.coordinator.WaitForIdle()
 	h.observer.finalize()
 
 	h.mu.Lock()
 	progress, _ := h.store.Progress.Load()
-
 	if progress != nil && progress.Phase == domain.PhaseComplete {
 		h.lifecycle = lifecycleCompleted
-		h.idleResumeCount = 0
 		summary := fmt.Sprintf("创作完成: %d 章 %d 字", len(progress.CompletedChapters), progress.TotalWordCount)
+		h.mu.Unlock()
 		slog.Info(summary, "module", "host")
 		h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: summary, Level: "success"})
-		h.mu.Unlock()
-		select {
-		case h.done <- struct{}{}:
-		default:
-		}
-		return
-	}
-
-	if h.lifecycle == lifecycleRunning && progress != nil &&
-		progress.Phase == domain.PhaseWriting && h.idleResumeCount < maxIdleResumes {
-		h.idleResumeCount++
-		attempt := h.idleResumeCount
-		h.mu.Unlock()
-
-		slog.Warn("Coordinator 异常停机，自动恢复",
-			"module", "host", "attempt", attempt,
-			"completed", len(progress.CompletedChapters))
-		h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM",
-			Summary: fmt.Sprintf("Coordinator 异常停机，自动恢复 (%d/%d)", attempt, maxIdleResumes),
-			Level:   "warn"})
-
-		if _, err := h.coordinator.Inject(agentcore.UserMsg("继续创作")); err != nil {
-			slog.Error("自动恢复失败", "module", "host", "err", err)
-			h.mu.Lock()
+	} else {
+		wasRunning := h.lifecycle == lifecycleRunning
+		if wasRunning {
 			h.lifecycle = lifecycleIdle
-			h.mu.Unlock()
-			select {
-			case h.done <- struct{}{}:
-			default:
-			}
-			return
 		}
-		go h.waitDone()
-		return
-	}
-
-	if h.lifecycle == lifecycleRunning {
-		h.lifecycle = lifecycleIdle
 		completed := 0
 		if progress != nil {
 			completed = len(progress.CompletedChapters)
 		}
-		summary := fmt.Sprintf("Coordinator 停止 (已完成 %d 章)", completed)
-		slog.Warn(summary, "module", "host")
-		h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: summary, Level: "warn"})
+		h.mu.Unlock()
+		if wasRunning {
+			summary := fmt.Sprintf("Coordinator 停止 (已完成 %d 章)", completed)
+			slog.Warn(summary, "module", "host")
+			h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: summary, Level: "warn"})
+		}
 	}
-	h.idleResumeCount = 0
-	h.mu.Unlock()
 
 	select {
 	case h.done <- struct{}{}:
@@ -603,10 +571,10 @@ func deriveStatusLabel(s UISnapshot) string {
 }
 
 func extractNovelName(premise string) string {
-	for _, line := range strings.Split(premise, "\n") {
+	for line := range strings.SplitSeq(premise, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "# ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "# "))
+		if rest, ok := strings.CutPrefix(line, "# "); ok {
+			return strings.TrimSpace(rest)
 		}
 	}
 	return ""
