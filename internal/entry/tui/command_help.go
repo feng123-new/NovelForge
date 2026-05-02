@@ -56,6 +56,7 @@ func renderHelpText(width int) string {
 		"↑↓ 选择命令候选",
 		"Tab/Enter 接受补全",
 		"Esc 关闭当前命令面板",
+		"Ctrl+R 切换选中复制模式（关闭鼠标上报后可拖拽选中复制，再按一次恢复）",
 	} {
 		b.WriteString(hintStyle.Render(line))
 		b.WriteString("\n")

@@ -81,6 +81,7 @@ type Model struct {
 	streamRound    int  // 流式输出轮次计数
 	quitPending    bool // 双次 Ctrl+C 退出确认
 	abortPending   bool // 等待 Done 回来的手动暂停
+	mouseOff       bool // true 时已禁用鼠标上报，让用户原生拖拽选中复制；再次切换恢复
 }
 
 // NewModel 创建 TUI Model。
@@ -254,34 +255,42 @@ func (m *Model) currentInputWidth() int {
 }
 
 // inputHints 根据当前状态生成底部提示文本。
+// 末尾统一追加 copySuffix，让用户在任何非紧急状态都能看到选中复制方法；
+// 鼠标已关时显示醒目红字提示，提醒再次按键恢复鼠标交互。
 func (m *Model) inputHints() string {
 	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
 	if m.quitPending {
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Bold(true).Render("Press Ctrl+C again to exit")
 	}
+	suffix := " · Ctrl+R 切到选中复制模式"
+	if m.mouseOff {
+		// 鼠标已关：用强调色提示用户当前处于"自由拖拽选中"状态，按 Ctrl+R 可以恢复
+		return lipgloss.NewStyle().Foreground(colorAccent).Bold(true).
+			Render("✂ 选中复制模式：可拖拽选中文本复制 · Ctrl+R 退出恢复鼠标交互")
+	}
 	if m.cocreate != nil {
 		switch {
 		case m.cocreate.awaiting:
-			return dimStyle.Render("等待 AI 回复 · Esc 退出共创")
+			return dimStyle.Render("等待 AI 回复 · Esc 退出共创" + suffix)
 		case m.cocreate.canStart():
-			return dimStyle.Render("Enter 发送 · Ctrl+S 开始创作 · Esc 退出共创")
+			return dimStyle.Render("Enter 发送 · Ctrl+S 开始创作 · Esc 退出共创" + suffix)
 		default:
-			return dimStyle.Render("Enter 发送 · Esc 退出共创")
+			return dimStyle.Render("Enter 发送 · Esc 退出共创" + suffix)
 		}
 	}
 	if m.mode == modeNew {
 		if m.startupMode == startupModeQuick {
-			return dimStyle.Render("Tab 切换启动模式 · 输入 / 搜索命令 · Enter 直接开始创作 · Esc 清空输入")
+			return dimStyle.Render("Tab 切换启动模式 · 输入 / 搜索命令 · Enter 直接开始创作 · Esc 清空输入" + suffix)
 		}
-		return dimStyle.Render("Tab 切换启动模式 · 输入 / 搜索命令 · Enter 开始共创对话 · Esc 清空输入")
+		return dimStyle.Render("Tab 切换启动模式 · 输入 / 搜索命令 · Enter 开始共创对话 · Esc 清空输入" + suffix)
 	}
 	switch m.snapshot.RuntimeState {
 	case "pausing":
-		return dimStyle.Render("正在暂停创作 · 请等待当前轮次结束")
+		return dimStyle.Render("正在暂停创作 · 请等待当前轮次结束" + suffix)
 	case "paused":
-		return dimStyle.Render("输入 / 搜索命令 · Enter 继续创作 · Esc 清空输入")
+		return dimStyle.Render("输入 / 搜索命令 · Enter 继续创作 · Esc 清空输入" + suffix)
 	}
-	return dimStyle.Render("输入 / 搜索命令 · 点击/Tab 切换面板 · ↑↓ 滚动 · End 跳底 · ^L 清屏 · Esc 暂停 · Enter 发送")
+	return dimStyle.Render("输入 / 搜索命令 · 点击/Tab 切换面板 · ↑↓ 滚动 · End 跳底 · Ctrl+L 清屏 · Esc 暂停 · Enter 发送" + suffix)
 }
 
 func (m *Model) eventFlowWidth() int {

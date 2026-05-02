@@ -982,8 +982,10 @@ func renderEventFlowViewport(vp viewport.Model, width, height int, focused bool)
 
 // renderStreamPanel 渲染流式输出面板（中间列下半部分）。
 func renderStreamPanel(vp viewport.Model, width, height int, focused, running bool, frame int) string {
-	// 分隔标题栏（始终醒目）
-	title := lipgloss.NewStyle().Foreground(colorAccent).Bold(focused).Render(":: 实时输出")
+	// 分隔标题栏（始终醒目）：粗竖条前缀 + 永远 Bold + 强调色，避免与思考的淡灰斜体撞色
+	// focused 时额外下划线，区分焦点态。
+	titleStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Underline(focused)
+	title := titleStyle.Render("▍实时输出")
 	if running {
 		status := renderStreamActivity(frame)
 		title += " " + status
@@ -1034,7 +1036,7 @@ var streamActivityFrames = [][2]string{
 
 func renderStreamActivity(frame int) string {
 	pair := streamActivityFrames[frame%len(streamActivityFrames)]
-	major := lipgloss.NewStyle().Foreground(lipgloss.Color("#d4a21a")).Bold(true).Render(pair[0])
+	major := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(pair[0])
 	minor := lipgloss.NewStyle().Foreground(colorAccent2).Render(pair[1])
 	return major + " " + minor
 }
@@ -1108,15 +1110,11 @@ func renderChapterBlock(text string, width int) string {
 
 	var b strings.Builder
 	for i, part := range parts {
-		part = strings.TrimRight(part, " ")
+		part = strings.TrimRight(part, " \n")
 		if part == "" {
 			continue
 		}
 		isThinking := i > 0 && i%2 != 0 // ThinkingSep 之后的奇数段是思考
-		// 如果整段都是思考标记开头（第一个 part 之前无正文），调整判断
-		if i == 0 && part == "" {
-			continue
-		}
 
 		style := contentStyle
 		if isThinking {
@@ -1126,7 +1124,7 @@ func renderChapterBlock(text string, width int) string {
 		lines := wrapStreamText(part, wrapW)
 		for j, line := range lines {
 			if b.Len() > 0 && j == 0 {
-				b.WriteString("\n")
+				b.WriteString("\n\n") // 段间空行：思考与正文之间留出视觉间隔
 			} else if j > 0 {
 				b.WriteString("\n")
 			}

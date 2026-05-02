@@ -136,6 +136,13 @@ func (m Model) handleBaseKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyCtrlL:
 		m.resetOutputPanels()
 		return m, nil
+	case tea.KeyCtrlR:
+		// 切换鼠标上报：开 → 关 让用户原生拖拽选中复制；关 → 开 恢复点击切焦点 / 滚轮
+		m.mouseOff = !m.mouseOff
+		if m.mouseOff {
+			return m, tea.DisableMouse
+		}
+		return m, tea.EnableMouseCellMotion
 	case tea.KeyTab:
 		if m.mode == modeNew {
 			if m.cocreate != nil {
