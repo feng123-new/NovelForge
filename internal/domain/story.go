@@ -30,8 +30,8 @@ type Character struct {
 type VolumeOutline struct {
 	Index int          `json:"index"`
 	Title string       `json:"title"`
-	Theme string       `json:"theme"`            // 本卷核心冲突/主题
-	Final bool         `json:"final,omitempty"`   // 标记为最终卷
+	Theme string       `json:"theme"`           // 本卷核心冲突/主题
+	Final bool         `json:"final,omitempty"` // 标记为最终卷
 	Arcs  []ArcOutline `json:"arcs"`
 }
 
@@ -49,7 +49,7 @@ type StoryCompass struct {
 
 // ArcOutline 弧级大纲。
 type ArcOutline struct {
-	Index             int            `json:"index"`                        // 卷内弧序号
+	Index             int            `json:"index"` // 卷内弧序号
 	Title             string         `json:"title"`
 	Goal              string         `json:"goal"`                         // 弧目标（起承转合）
 	EstimatedChapters int            `json:"estimated_chapters,omitempty"` // 骨架弧的预估章数（展开后清零）
@@ -59,15 +59,17 @@ type ArcOutline struct {
 // IsExpanded 判断弧是否已展开（有详细章节）。
 func (a *ArcOutline) IsExpanded() bool { return len(a.Chapters) > 0 }
 
-// TotalChapters 计算分层大纲中已展开的实际章节数。
-// 骨架弧（未展开）不计入，因为其 EstimatedChapters 只是预估值，
-// 会随弧展开和新卷创建不断变化。
+// TotalChapters 计算分层大纲的当前规划总章数。
+// 已展开弧按真实章节数计，骨架弧按 EstimatedChapters 计。
+// Progress.TotalChapters 用它判断长篇上下文策略；真正可写章节仍来自 FlattenOutline。
 func TotalChapters(volumes []VolumeOutline) int {
 	n := 0
 	for _, v := range volumes {
 		for _, a := range v.Arcs {
 			if a.IsExpanded() {
 				n += len(a.Chapters)
+			} else {
+				n += a.EstimatedChapters
 			}
 		}
 	}

@@ -38,21 +38,19 @@ func (t *PlanChapterTool) Schema() map[string]any {
 		schema.Property("hook", schema.String("章末钩子")).Required(),
 		schema.Property("emotion_arc", schema.String("情绪曲线")),
 		schema.Property("notes", schema.String("自由备忘（任何你觉得写作时需要记住的东西）")),
-		schema.Property("contract", schema.Object(
-			schema.Property("required_beats", schema.Array("本章必须完成的推进项", schema.String(""))),
-			schema.Property("forbidden_moves", schema.Array("本章明确不能发生的推进", schema.String(""))),
-			schema.Property("continuity_checks", schema.Array("本章需特别核对的连续性点", schema.String(""))),
-			schema.Property("evaluation_focus", schema.Array("Editor 重点检查项", schema.String(""))),
-			schema.Property("emotion_target", schema.String("可选：本章希望读者主要感受到的情绪")),
-			schema.Property("payoff_points", schema.Array("可选：关键章希望回应的情节点或兑现点", schema.String(""))),
-			schema.Property("hook_goal", schema.String("可选：章末希望驱动的追读欲望或悬念目标")),
-		)),
+		schema.Property("required_beats", schema.Array("本章必须完成的推进项", schema.String(""))),
+		schema.Property("forbidden_moves", schema.Array("本章明确不能发生的推进", schema.String(""))),
+		schema.Property("continuity_checks", schema.Array("本章需特别核对的连续性点", schema.String(""))),
+		schema.Property("evaluation_focus", schema.Array("Editor 重点检查项", schema.String(""))),
+		schema.Property("emotion_target", schema.String("可选：本章希望读者主要感受到的情绪")),
+		schema.Property("payoff_points", schema.Array("可选：关键章希望回应的情节点或兑现点", schema.String(""))),
+		schema.Property("hook_goal", schema.String("可选：章末希望驱动的追读欲望或悬念目标")),
 	)
 }
 
 func (t *PlanChapterTool) Execute(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
-	var plan domain.ChapterPlan
-	if err := json.Unmarshal(args, &plan); err != nil {
+	plan, err := decodeChapterPlanArgs(args)
+	if err != nil {
 		return nil, fmt.Errorf("invalid args: %w", err)
 	}
 	if plan.Chapter <= 0 {
@@ -77,14 +75,57 @@ func (t *PlanChapterTool) Execute(_ context.Context, args json.RawMessage) (json
 		return nil, fmt.Errorf("mark chapter in progress: %w", err)
 	}
 
-	_, _ = t.store.Checkpoints.Append(
+	if _, err := t.store.Checkpoints.AppendArtifact(
 		domain.ChapterScope(plan.Chapter), "plan",
-		fmt.Sprintf("drafts/ch%02d.plan.json", plan.Chapter), "",
-	)
+		fmt.Sprintf("drafts/%02d.plan.json", plan.Chapter),
+	); err != nil {
+		return nil, fmt.Errorf("checkpoint chapter plan: %w", err)
+	}
 
 	return json.Marshal(map[string]any{
 		"planned":   true,
 		"chapter":   plan.Chapter,
 		"next_step": "立即调用 draft_chapter(chapter=本章节号, content=完整正文字符串) 写入正文，不要重复规划同一章",
 	})
+}
+
+func decodeChapterPlanArgs(args json.RawMessage) (domain.ChapterPlan, error) {
+	var a struct {
+		Chapter          int      `json:"chapter"`
+		Title            string   `json:"title"`
+		Goal             string   `json:"goal"`
+		Conflict         string   `json:"conflict"`
+		Hook             string   `json:"hook"`
+		EmotionArc       string   `json:"emotion_arc"`
+		Notes            string   `json:"notes"`
+		RequiredBeats    []string `json:"required_beats"`
+		ForbiddenMoves   []string `json:"forbidden_moves"`
+		ContinuityChecks []string `json:"continuity_checks"`
+		EvaluationFocus  []string `json:"evaluation_focus"`
+		EmotionTarget    string   `json:"emotion_target"`
+		PayoffPoints     []string `json:"payoff_points"`
+		HookGoal         string   `json:"hook_goal"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return domain.ChapterPlan{}, err
+	}
+
+	return domain.ChapterPlan{
+		Chapter:    a.Chapter,
+		Title:      a.Title,
+		Goal:       a.Goal,
+		Conflict:   a.Conflict,
+		Hook:       a.Hook,
+		EmotionArc: a.EmotionArc,
+		Notes:      a.Notes,
+		Contract: domain.ChapterContract{
+			RequiredBeats:    a.RequiredBeats,
+			ForbiddenMoves:   a.ForbiddenMoves,
+			ContinuityChecks: a.ContinuityChecks,
+			EvaluationFocus:  a.EvaluationFocus,
+			EmotionTarget:    a.EmotionTarget,
+			PayoffPoints:     a.PayoffPoints,
+			HookGoal:         a.HookGoal,
+		},
+	}, nil
 }

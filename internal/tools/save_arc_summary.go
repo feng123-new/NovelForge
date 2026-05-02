@@ -67,9 +67,9 @@ func (t *SaveArcSummaryTool) Execute(_ context.Context, args json.RawMessage) (j
 		KeyEvents          []string                   `json:"key_events"`
 		CharacterSnapshots []domain.CharacterSnapshot `json:"character_snapshots"`
 		StyleRules         *struct {
-			Prose    []string              `json:"prose"`
+			Prose    []string                `json:"prose"`
 			Dialogue []domain.CharacterVoice `json:"dialogue"`
-			Taboos   []string              `json:"taboos"`
+			Taboos   []string                `json:"taboos"`
 		} `json:"style_rules"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
@@ -116,9 +116,12 @@ func (t *SaveArcSummaryTool) Execute(_ context.Context, args json.RawMessage) (j
 		styleRulesSaved = true
 	}
 
-	_, _ = t.store.Checkpoints.Append(
-		domain.ArcScope(a.Volume, a.Arc), "arc_summary", "", "",
-	)
+	if _, err := t.store.Checkpoints.AppendArtifact(
+		domain.ArcScope(a.Volume, a.Arc), "arc_summary",
+		fmt.Sprintf("summaries/arc-v%02da%02d.json", a.Volume, a.Arc),
+	); err != nil {
+		return nil, fmt.Errorf("checkpoint arc summary: %w", err)
+	}
 
 	return json.Marshal(map[string]any{
 		"saved": true, "type": "arc_summary",

@@ -179,7 +179,7 @@ func compactArgsContent(tc *agentcore.ToolCall, label, ref string) *agentcore.To
 		ch := extractJSONFieldInt(tc.Args, "chapter")
 		if ch > 0 {
 			label = fmt.Sprintf("第%d章正文", ch)
-			ref = fmt.Sprintf("drafts/ch%02d.draft.md", ch)
+			ref = fmt.Sprintf("drafts/%02d.draft.md", ch)
 		}
 		placeholder := fmt.Sprintf("[session_compact: %s %d字 | 见 %s]", label, chars, ref)
 		args["content"], _ = json.Marshal(placeholder)

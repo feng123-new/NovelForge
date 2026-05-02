@@ -115,10 +115,12 @@ func (t *EditChapterTool) Execute(ctx context.Context, args json.RawMessage) (js
 		return nil, apperr.Wrap(err, apperr.CodeToolPreconditionFailed, "tools.edit_chapter.apply", "apply edit")
 	}
 
-	_, _ = t.store.Checkpoints.Append(
+	if _, err := t.store.Checkpoints.AppendArtifact(
 		domain.ChapterScope(a.Chapter), "edit",
-		fmt.Sprintf("drafts/%02d.draft.md", a.Chapter), "",
-	)
+		fmt.Sprintf("drafts/%02d.draft.md", a.Chapter),
+	); err != nil {
+		return nil, apperr.Wrap(err, apperr.CodeStoreWriteFailed, "tools.edit_chapter.checkpoint", "checkpoint edit")
+	}
 
 	// 附加指引：让 writer 知道后续步骤，避免遗漏 check_consistency / commit_chapter
 	var passthrough map[string]any

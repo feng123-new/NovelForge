@@ -62,9 +62,12 @@ func (t *SaveVolumeSummaryTool) Execute(_ context.Context, args json.RawMessage)
 		return nil, fmt.Errorf("save volume summary: %w", err)
 	}
 
-	_, _ = t.store.Checkpoints.Append(
-		domain.VolumeScope(a.Volume), "volume_summary", "", "",
-	)
+	if _, err := t.store.Checkpoints.AppendArtifact(
+		domain.VolumeScope(a.Volume), "volume_summary",
+		fmt.Sprintf("summaries/vol-v%02d.json", a.Volume),
+	); err != nil {
+		return nil, fmt.Errorf("checkpoint volume summary: %w", err)
+	}
 
 	return json.Marshal(map[string]any{
 		"saved": true, "type": "volume_summary", "volume": a.Volume,

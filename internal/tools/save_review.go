@@ -137,19 +137,25 @@ func (t *SaveReviewTool) Execute(_ context.Context, args json.RawMessage) (json.
 		}
 		scope = domain.ArcScope(vol, arc)
 	}
-	_, _ = t.store.Checkpoints.Append(scope, "review", "", "")
+	artifact := fmt.Sprintf("reviews/%02d.json", r.Chapter)
+	if r.Scope == "global" {
+		artifact = fmt.Sprintf("reviews/%02d-global.json", r.Chapter)
+	}
+	if _, err := t.store.Checkpoints.AppendArtifact(scope, "review", artifact); err != nil {
+		return nil, fmt.Errorf("checkpoint review: %w", err)
+	}
 
 	return json.Marshal(map[string]any{
-		"saved":              true,
-		"chapter":            r.Chapter,
-		"scope":              r.Scope,
-		"verdict":            r.Verdict,
-		"final_verdict":      finalVerdict,
-		"escalation_reason":  escalationReason,
-		"affected_chapters":  affected,
-		"issues":             len(r.Issues),
-		"next_flow":          nextFlow,
-		"next_chapter":       nextChapter,
+		"saved":             true,
+		"chapter":           r.Chapter,
+		"scope":             r.Scope,
+		"verdict":           r.Verdict,
+		"final_verdict":     finalVerdict,
+		"escalation_reason": escalationReason,
+		"affected_chapters": affected,
+		"issues":            len(r.Issues),
+		"next_flow":         nextFlow,
+		"next_chapter":      nextChapter,
 	})
 }
 

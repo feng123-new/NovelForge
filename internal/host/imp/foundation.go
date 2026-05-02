@@ -13,10 +13,10 @@ import (
 
 // FoundationResult 是 Foundation 反推的结构化产物。
 type FoundationResult struct {
-	Premise    string                 // Markdown 字符串
-	Characters []domain.Character     // 角色档案
-	WorldRules []domain.WorldRule     // 世界规则
-	Outline    []domain.OutlineEntry  // 章节大纲，长度 = len(chapters)
+	Premise    string                // Markdown 字符串
+	Characters []domain.Character    // 角色档案
+	WorldRules []domain.WorldRule    // 世界规则
+	Outline    []domain.OutlineEntry // 章节大纲，长度 = len(chapters)
 }
 
 // LLMChat 是 imp 包对 ChatModel 的最小依赖：仅需要一次普通文本生成。
@@ -136,19 +136,25 @@ func PersistFoundation(ctx context.Context, st *store.Store, scale domain.Planni
 		_ = st.Progress.SetNovelName(name)
 	}
 	_ = st.Progress.UpdatePhase(domain.PhasePremise)
-	_, _ = st.Checkpoints.Append(domain.GlobalScope(), "premise", "", "")
+	if _, err := st.Checkpoints.AppendArtifact(domain.GlobalScope(), "premise", "premise.md"); err != nil {
+		return fmt.Errorf("checkpoint premise: %w", err)
+	}
 
 	// 2. characters
 	if err := st.Characters.Save(fr.Characters); err != nil {
 		return fmt.Errorf("save characters: %w", err)
 	}
-	_, _ = st.Checkpoints.Append(domain.GlobalScope(), "characters", "", "")
+	if _, err := st.Checkpoints.AppendArtifact(domain.GlobalScope(), "characters", "characters.json"); err != nil {
+		return fmt.Errorf("checkpoint characters: %w", err)
+	}
 
 	// 3. world_rules
 	if err := st.World.SaveWorldRules(fr.WorldRules); err != nil {
 		return fmt.Errorf("save world_rules: %w", err)
 	}
-	_, _ = st.Checkpoints.Append(domain.GlobalScope(), "world_rules", "", "")
+	if _, err := st.Checkpoints.AppendArtifact(domain.GlobalScope(), "world_rules", "world_rules.json"); err != nil {
+		return fmt.Errorf("checkpoint world_rules: %w", err)
+	}
 
 	// 4. outline (扁平模式，与短篇 architect 一致)
 	if err := st.Outline.SaveOutline(fr.Outline); err != nil {
@@ -159,7 +165,9 @@ func PersistFoundation(ctx context.Context, st *store.Store, scale domain.Planni
 	_ = st.Progress.SetLayered(false)
 	_ = st.Progress.UpdateVolumeArc(0, 0)
 	_ = st.Outline.ClearLayeredOutline()
-	_, _ = st.Checkpoints.Append(domain.GlobalScope(), "outline", "", "")
+	if _, err := st.Checkpoints.AppendArtifact(domain.GlobalScope(), "outline", "outline.json"); err != nil {
+		return fmt.Errorf("checkpoint outline: %w", err)
+	}
 
 	// 5. foundation 完整 → 推进到 writing 阶段（与 save_foundation 末尾逻辑一致）
 	if len(st.FoundationMissing()) == 0 {

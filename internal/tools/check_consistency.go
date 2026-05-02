@@ -85,9 +85,12 @@ func (t *CheckConsistencyTool) Execute(_ context.Context, args json.RawMessage) 
 		result["recent_summaries"] = summaries
 	}
 
-	_, _ = t.store.Checkpoints.Append(
-		domain.ChapterScope(a.Chapter), "consistency_check", "", "",
-	)
+	if _, err := t.store.Checkpoints.AppendArtifact(
+		domain.ChapterScope(a.Chapter), "consistency_check",
+		fmt.Sprintf("drafts/%02d.draft.md", a.Chapter),
+	); err != nil {
+		return nil, fmt.Errorf("checkpoint consistency check: %w", err)
+	}
 
 	return json.Marshal(result)
 }

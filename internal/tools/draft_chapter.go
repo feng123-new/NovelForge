@@ -91,10 +91,12 @@ func (t *DraftChapterTool) Execute(_ context.Context, args json.RawMessage) (jso
 		if err != nil {
 			return nil, fmt.Errorf("load draft after append: %w", err)
 		}
-		_, _ = t.store.Checkpoints.Append(
+		if _, err := t.store.Checkpoints.AppendArtifact(
 			domain.ChapterScope(a.Chapter), "draft",
-			fmt.Sprintf("drafts/ch%02d.draft.md", a.Chapter), "",
-		)
+			fmt.Sprintf("drafts/%02d.draft.md", a.Chapter),
+		); err != nil {
+			return nil, fmt.Errorf("checkpoint draft: %w", err)
+		}
 		return json.Marshal(map[string]any{
 			"written":    true,
 			"chapter":    a.Chapter,
@@ -106,10 +108,12 @@ func (t *DraftChapterTool) Execute(_ context.Context, args json.RawMessage) (jso
 		if err := t.store.Drafts.SaveDraft(a.Chapter, a.Content); err != nil {
 			return nil, fmt.Errorf("save draft: %w", err)
 		}
-		_, _ = t.store.Checkpoints.Append(
+		if _, err := t.store.Checkpoints.AppendArtifact(
 			domain.ChapterScope(a.Chapter), "draft",
-			fmt.Sprintf("drafts/ch%02d.draft.md", a.Chapter), "",
-		)
+			fmt.Sprintf("drafts/%02d.draft.md", a.Chapter),
+		); err != nil {
+			return nil, fmt.Errorf("checkpoint draft: %w", err)
+		}
 		return json.Marshal(map[string]any{
 			"written":    true,
 			"chapter":    a.Chapter,

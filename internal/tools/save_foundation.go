@@ -214,7 +214,9 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 	} else if a.Type == "append_volume" {
 		scope = domain.GlobalScope()
 	}
-	_, _ = t.store.Checkpoints.Append(scope, a.Type, "", "")
+	if _, err := t.store.Checkpoints.AppendArtifact(scope, a.Type, foundationArtifact(a.Type)); err != nil {
+		return nil, fmt.Errorf("checkpoint foundation %s: %w", a.Type, err)
+	}
 
 	// 返回剩余未完成项，引导 Architect 继续或结束；
 	// 齐全时一次性把 phase 推进到 writing，避免 Coordinator 再回来派单。
@@ -230,6 +232,25 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		}
 	}
 	return json.Marshal(result)
+}
+
+func foundationArtifact(t string) string {
+	switch t {
+	case "premise":
+		return "premise.md"
+	case "outline":
+		return "outline.json"
+	case "layered_outline", "expand_arc", "append_volume", "mark_final":
+		return "layered_outline.json"
+	case "characters":
+		return "characters.json"
+	case "world_rules":
+		return "world_rules.json"
+	case "update_compass":
+		return "meta/compass.json"
+	default:
+		return ""
+	}
 }
 
 // decodeFoundationJSON 解析 save_foundation 的 content 字段，失败时附上行列位置

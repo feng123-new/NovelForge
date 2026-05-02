@@ -2,7 +2,10 @@ package store
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sync/atomic"
 	"time"
@@ -74,6 +77,19 @@ func (cs *CheckpointStore) Append(scope domain.Scope, step, artifact, digest str
 		return nil, err
 	}
 	return &cp, nil
+}
+
+// AppendArtifact 计算 artifact 内容指纹后追加 checkpoint。
+func (cs *CheckpointStore) AppendArtifact(scope domain.Scope, step, artifact string) (*domain.Checkpoint, error) {
+	if artifact == "" {
+		return cs.Append(scope, step, "", "")
+	}
+	data, err := cs.io.ReadFile(artifact)
+	if err != nil {
+		return nil, fmt.Errorf("digest artifact %s: %w", artifact, err)
+	}
+	sum := sha256.Sum256(data)
+	return cs.Append(scope, step, artifact, "sha256:"+hex.EncodeToString(sum[:]))
 }
 
 // Latest 返回指定 scope 的最新 checkpoint。

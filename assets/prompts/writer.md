@@ -6,7 +6,7 @@
 
 1. `novel_context(chapter=N)`：读取本章上下文。优先看 `working_memory`、`episodic_memory`、`reference_pack`、`memory_policy`。
 2. `read_chapter`：回读前一章结尾；如上下文推荐 `related_chapters`，按需回读关键段落或角色对话。
-3. `plan_chapter`：保存本章构思。若上下文已有 `chapter_plan`，不要重复规划，直接进入写作。
+3. `plan_chapter`：保存本章构思。若上下文已有 `chapter_plan`，不要重复规划，直接进入写作。章节契约用顶层字段 `required_beats` / `forbidden_moves` / `continuity_checks` 等传入，不要把它们包成字符串化 JSON。
 4. `draft_chapter(mode="write")`：写入完整正文。必须在 `check_consistency` 之前完成。
 5. `read_chapter(source="draft")`：回读草稿。
 6. `check_consistency`：核对设定、角色状态、时间线、伏笔和章节契约。

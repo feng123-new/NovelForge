@@ -298,10 +298,12 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 	}
 
 	// 10. 追加 checkpoint
-	_, _ = t.store.Checkpoints.Append(
+	if _, err := t.store.Checkpoints.AppendArtifact(
 		domain.ChapterScope(a.Chapter), "commit",
-		fmt.Sprintf("chapters/ch%02d.md", a.Chapter), "",
-	)
+		fmt.Sprintf("chapters/%02d.md", a.Chapter),
+	); err != nil {
+		return nil, apperr.Wrap(err, apperr.CodeStoreWriteFailed, "tools.commit_chapter.checkpoint", "checkpoint commit")
+	}
 
 	return json.Marshal(result)
 }
@@ -371,10 +373,12 @@ func (t *CommitChapterTool) executeRewriteCommit(
 	}
 
 	// 6. Checkpoint
-	_, _ = t.store.Checkpoints.Append(
+	if _, err := t.store.Checkpoints.AppendArtifact(
 		domain.ChapterScope(chapter), "commit",
-		fmt.Sprintf("chapters/ch%02d.md", chapter), "",
-	)
+		fmt.Sprintf("chapters/%02d.md", chapter),
+	); err != nil {
+		return nil, apperr.Wrap(err, apperr.CodeStoreWriteFailed, "tools.commit_chapter.rewrite.checkpoint", "checkpoint rewrite commit")
+	}
 
 	// 7. 读取 drain 后的 Progress 快照，作为事实返回
 	mode := "rewrite"
