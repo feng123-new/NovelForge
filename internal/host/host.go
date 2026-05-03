@@ -40,7 +40,6 @@ type Host struct {
 
 	events   chan Event
 	streamCh chan string
-	clearCh  chan struct{}
 	done     chan struct{}
 
 	mu        sync.Mutex
@@ -94,7 +93,6 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 		usage:         usage,
 		events:        make(chan Event, 100),
 		streamCh:      make(chan string, 256),
-		clearCh:       make(chan struct{}, 4),
 		done:          make(chan struct{}, 4),
 		lifecycle:     lifecycleIdle,
 	}
@@ -267,7 +265,6 @@ func (h *Host) Close() {
 		close(h.done)
 		close(h.events)
 		close(h.streamCh)
-		close(h.clearCh)
 	})
 }
 
@@ -316,12 +313,15 @@ func (h *Host) waitDone() {
 
 // ── 通道 ──
 
-func (h *Host) Events() <-chan Event         { return h.events }
-func (h *Host) Stream() <-chan string        { return h.streamCh }
-func (h *Host) StreamClear() <-chan struct{} { return h.clearCh }
-func (h *Host) Done() <-chan struct{}        { return h.done }
-func (h *Host) Dir() string                  { return h.store.Dir() }
-func (h *Host) AskUser() *tools.AskUserTool  { return h.askUser }
+// StreamClearSentinel 通过 streamCh 单条发送以示意"清空当前流式 round"。
+// 不再用独立 clearCh —— 双通道无序导致 ✻ header 时常落到上一个 round 末尾。
+const StreamClearSentinel = "\x00\x00CLEAR\x00\x00"
+
+func (h *Host) Events() <-chan Event        { return h.events }
+func (h *Host) Stream() <-chan string       { return h.streamCh }
+func (h *Host) Done() <-chan struct{}       { return h.done }
+func (h *Host) Dir() string                 { return h.store.Dir() }
+func (h *Host) AskUser() *tools.AskUserTool { return h.askUser }
 
 // ── 事件发射 ──
 
@@ -372,11 +372,8 @@ func (h *Host) emitDelta(delta string) {
 }
 
 func (h *Host) emitClear() {
-	defer func() { recover() }()
-	select {
-	case h.clearCh <- struct{}{}:
-	default:
-	}
+	// 通过 streamCh 走"sentinel"，保证与 emitDelta 在同一条通道里有序送达 TUI。
+	h.emitDelta(StreamClearSentinel)
 }
 
 // ── Snapshot (TUI 状态聚合) ──

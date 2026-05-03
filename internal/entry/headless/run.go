@@ -93,18 +93,17 @@ func consume(eng *host.Host, stdout, stderr io.Writer, roundHasContent bool) err
 				return nil
 			}
 			writeEvent(stderr, ev)
-		case _, ok := <-eng.StreamClear():
+		case delta, ok := <-eng.Stream():
 			if !ok {
 				continue
 			}
-			if roundHasContent {
-				if _, err := io.WriteString(stdout, "\n\n"); err != nil {
-					return err
+			if delta == host.StreamClearSentinel {
+				if roundHasContent {
+					if _, err := io.WriteString(stdout, "\n\n"); err != nil {
+						return err
+					}
+					roundHasContent = false
 				}
-				roundHasContent = false
-			}
-		case delta, ok := <-eng.Stream():
-			if !ok {
 				continue
 			}
 			if delta == "" {
@@ -130,15 +129,20 @@ func drainPending(eng *host.Host, stdout, stderr io.Writer, roundHasContent bool
 			if ok {
 				writeEvent(stderr, ev)
 			}
-		case _, ok := <-eng.StreamClear():
-			if ok && roundHasContent {
-				if _, err := io.WriteString(stdout, "\n\n"); err != nil {
-					return err
-				}
-				roundHasContent = false
-			}
 		case delta, ok := <-eng.Stream():
-			if ok && delta != "" {
+			if !ok {
+				continue
+			}
+			if delta == host.StreamClearSentinel {
+				if roundHasContent {
+					if _, err := io.WriteString(stdout, "\n\n"); err != nil {
+						return err
+					}
+					roundHasContent = false
+				}
+				continue
+			}
+			if delta != "" {
 				if _, err := io.WriteString(stdout, delta); err != nil {
 					return err
 				}

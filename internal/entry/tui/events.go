@@ -216,17 +216,13 @@ func listenStream(rt *host.Host) tea.Cmd {
 		if !ok {
 			return nil
 		}
-		return streamDeltaMsg(delta)
-	}
-}
-
-func listenStreamClear(rt *host.Host) tea.Cmd {
-	return func() tea.Msg {
-		_, ok := <-rt.StreamClear()
-		if !ok {
-			return nil
+		// sentinel 派发为 streamClearMsg，保证与正常 delta 在同一通道里按 emit
+		// 顺序到达 TUI。双通道时 clearCh 与 streamCh 之间无序，✻ header 经常被
+		// 错塞到上一段 thinking 末尾。
+		if delta == host.StreamClearSentinel {
+			return streamClearMsg{}
 		}
-		return streamClearMsg{}
+		return streamDeltaMsg(delta)
 	}
 }
 

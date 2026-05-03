@@ -26,7 +26,7 @@ func renderHelpText(width int) string {
 	titleStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	nameStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
 	usageStyle := lipgloss.NewStyle().Foreground(colorMuted)
-	descStyle := lipgloss.NewStyle().Foreground(colorText)
+	descStyle := lipgloss.NewStyle().Foreground(bodyTextColor)
 	hintStyle := lipgloss.NewStyle().Foreground(colorDim)
 
 	var b strings.Builder

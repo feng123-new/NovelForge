@@ -271,9 +271,7 @@ func renderModelField(label, value string, focused bool) string {
 		Foreground(colorMuted).
 		Width(12).
 		Render(label + ":")
-	style := lipgloss.NewStyle().
-		Foreground(colorText).
-		Padding(0, 1)
+	style := lipgloss.NewStyle().Padding(0, 1).Foreground(bodyTextColor)
 	if focused {
 		style = style.Foreground(colorAccent).Bold(true).Underline(true)
 	}

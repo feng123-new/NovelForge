@@ -260,6 +260,7 @@ func (o *observer) handleToolStart(ev agentcore.Event) {
 		Summary:  toolName,
 		Level:    "info",
 	})
+	o.emitFallbackStreamHeader(ev.Tool)
 }
 
 func (o *observer) handleToolUpdate(ev agentcore.Event) {
@@ -301,6 +302,9 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 			break
 		}
 		// 未提前发过 → 正常流程
+		// （非流式 tool args 的模型不会触发 ensureSubagentToolStarted，
+		// fallback header 必须在这条路径上补一次，否则 read_chapter 这类
+		// 无 extractor 的工具流式面板上就没有 ✻ 头部，紧贴前面思考一段。）
 		id := nextEventID()
 		o.toolStarts[ev.Progress.Agent] = &activeCall{id: id, start: time.Now(), summary: toolName, depth: 1}
 		o.emitAndLog(Event{
@@ -317,6 +321,7 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 			a.tool = ev.Progress.Tool
 			a.summary = fmt.Sprintf("%s → %s", ev.Progress.Agent, toolName)
 		})
+		o.emitFallbackStreamHeader(ev.Progress.Tool)
 	case agentcore.ProgressToolEnd:
 		delete(o.streamExtractors, ev.Progress.Agent)
 		if ev.Progress.Agent == "" {
@@ -428,7 +433,11 @@ func (o *observer) handleSubagentDelta(p *agentcore.ProgressPayload) {
 	if emitted := cur.ext.Feed(p.Delta); emitted != "" {
 		if !cur.emittedAny {
 			cur.emittedAny = true
-			o.ensureStreamParagraphBreak()
+			// streamClear 让 extractor 的 ✻ header 落在新 round 起点，配合
+			// renderStreamContent 的 HasPrefix("✻") 检查走 renderAgentBlock 高亮
+			// 路径；用 ensureStreamParagraphBreak 只插空行不开 round，✻ 仍会被
+			// 前面的 thinking/正文包住，落到 renderChapterBlock 用默认色画掉。
+			o.streamClear()
 		}
 		o.emitStreamDelta(emitted, false)
 	}
@@ -707,17 +716,30 @@ func (o *observer) ensureSubagentToolStarted(agent, tool string) {
 		a.state = "working"
 		a.tool = tool
 	})
-	// 无 extractor 的工具（read_chapter / check_consistency 等）在流式面板上
-	// 补一行 header，避免面板在这类调用期间空白让用户觉得卡住。
-	// 有 extractor 的工具由 extractor 在首个字段匹配时自行输出 header。
-	if _, has := toolDisplays[tool]; !has {
-		o.ensureStreamParagraphBreak()
-		o.emitStreamDelta(streamHeaderFallback(tool)+"\n", false)
+	o.emitFallbackStreamHeader(tool)
+}
+
+// emitFallbackStreamHeader 给未配置 extractor 的工具补一行 ✻ 标题到流面板。
+// 三条路径都要调用以保证一致：
+//  1. ensureSubagentToolStarted —— subagent 流式 tool args（DeltaToolCall）
+//  2. handleToolUpdate ProgressToolStart —— subagent 非流式 tool args
+//  3. handleToolStart —— coordinator 自身工具
+//
+// 缺任何一条，同一个工具就会"writer 调有 ✻、coordinator 调没 ✻"或反过来。
+func (o *observer) emitFallbackStreamHeader(tool string) {
+	if _, has := toolDisplays[tool]; has {
+		return // 有 extractor，header 由 extractor 自行输出
 	}
+	o.streamClear()
+	o.emitStreamDelta(streamHeaderFallback(tool)+"\n", false)
 }
 
 // streamHeaderFallback 为未配置 extractor 的工具生成流式 header 文本，
 // 让用户即使对轻量读取类工具也能看到"在调用什么"。
+//
+// 前缀 "✻ " 是约定的"agent 调度块"标记 — TUI 的 renderStreamContent 见到这个
+// 前缀会走 renderAgentBlock 路径渲染（图标 + 高亮 label + 分隔线），
+// 否则会落到正文块路径用终端默认色，header 看起来就是普通正文不醒目。
 func streamHeaderFallback(tool string) string {
 	label := tool
 	switch tool {
@@ -730,34 +752,26 @@ func streamHeaderFallback(tool string) string {
 	case "ask_user":
 		label = "向用户提问"
 	}
-	return "【" + label + "】"
+	return "✻ " + label
 }
 
 // streamClear 通知 TUI 开启新一轮 streamRound，同时重置与段落分隔相关的状态。
 // 逻辑上新 round 是"空 stream"，否则下一次首个 extractor emit 会误补前导空行。
+//
+// streamThinking 必须一并重置：emitStreamDelta 用 streamThinking 跨调用追踪
+// 上一段是不是思考。新 round 内还没输出过任何内容，下一次 emit(thinking=false)
+// 不应该再插入 ThinkingSep。否则 fallback header（如 ✻ 读章节）会被 \x02
+// 抢先占头，renderStreamContent 的 HasPrefix("✻") 失配，整段落到正文路径
+// 再被 ThinkingSep 切分为思考段，title 颜色被画成思考色。
 func (o *observer) streamClear() {
 	o.emitC()
 	o.streamHasContent = false
 	o.streamLastByte = 0
+	o.streamThinking = false
 	// 上一轮的 subagent 结束前 ProgressToolEnd 已 delete，这里防御性清空。
 	if len(o.streamExtractors) > 0 {
 		o.streamExtractors = make(map[string]*agentExtractor)
 	}
-}
-
-// ensureStreamParagraphBreak 在流式面板上插入一个段落分隔（空行），
-// 用于新工具调用 / 新输出块前，避免与上一段内容挤在同一行。
-// 若流为空则跳过；若末尾已是 '\n' 则只补一个换行构成空行，否则补两个。
-func (o *observer) ensureStreamParagraphBreak() {
-	if !o.streamHasContent {
-		return
-	}
-	if o.streamLastByte == '\n' {
-		o.emitD("\n")
-	} else {
-		o.emitD("\n\n")
-	}
-	o.streamLastByte = '\n'
 }
 
 func (o *observer) subagentResultErrorEvent(ev agentcore.Event) (*Event, string) {

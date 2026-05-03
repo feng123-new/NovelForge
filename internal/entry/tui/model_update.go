@@ -438,7 +438,7 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if m.streamScroll {
 			m.streamVP.GotoBottom()
 		}
-		return m, listenStreamClear(m.runtime), true
+		return m, listenStream(m.runtime), true
 	case quitResetMsg:
 		m.quitPending = false
 		return m, nil, true

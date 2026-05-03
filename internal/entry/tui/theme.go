@@ -4,18 +4,40 @@ import "github.com/charmbracelet/lipgloss"
 
 // 主题色板 — 暖调书卷气
 // AdaptiveColor: Light = 亮底色值, Dark = 暗底色值
+//
+// 设计原则：Light 一档稳定不动（亮底已调出满意效果）；Dark 一档统一比 Light
+// 提亮 ~25% lightness、略升饱和，保证暗底有足够对比度（colorDim 之前 #6b6355
+// 在 #1c1c1c 黑底上几乎不可见，分隔线/辅助文字全消失）。
+//
+// colorAccent2 暗底从 #7a9e7e 改为青绿 #5fb8a3，跟 colorSuccess 的"健康绿"拉
+// 开 — 之前两者完全同色，让 architect agent 的色标和"高命中"喜悦感混淆。
+// bodyTextColor 是"中性正文"的前景策略：
+//   - 暗色终端 → NoColor，继承终端默认前景，避免我们硬塞 #e8e0d0 米白在用户自配
+//     的暖底/冷底主题上撞色（用户实测暗底默认色更耐读）。
+//   - 亮色终端 → 用 colorText 的 Light 档（深棕 #3d3529），保留品牌暖调；
+//     亮底默认黑色对比度太硬，原本调过的深棕在亮底视觉更柔和。
+//
+// AdaptiveColor 两端都必须给颜色值，没有"无色"档，所以这里启动时判一次背景，
+// 之后所有概览值/章节正文/命令描述等"中性正文"统一引用 bodyTextColor。
+var bodyTextColor lipgloss.TerminalColor = func() lipgloss.TerminalColor {
+	if lipgloss.HasDarkBackground() {
+		return lipgloss.NoColor{}
+	}
+	return lipgloss.Color("#3d3529")
+}()
+
 var (
 	colorText    = lipgloss.AdaptiveColor{Light: "#3d3529", Dark: "#e8e0d0"}
-	colorDim     = lipgloss.AdaptiveColor{Light: "#8a7e6b", Dark: "#6b6355"}
-	colorMuted   = lipgloss.AdaptiveColor{Light: "#7a7060", Dark: "#a09880"}
-	colorAccent  = lipgloss.AdaptiveColor{Light: "#b8860b", Dark: "#c9953c"}
-	colorAccent2 = lipgloss.AdaptiveColor{Light: "#3d7a42", Dark: "#7a9e7e"}
-	colorRunning = lipgloss.AdaptiveColor{Light: "#6f8641", Dark: "#9ab65b"}
-	colorSuccess = lipgloss.AdaptiveColor{Light: "#3d7a42", Dark: "#7a9e7e"}
-	colorError   = lipgloss.AdaptiveColor{Light: "#b5433a", Dark: "#c45c4a"}
-	colorReview  = lipgloss.AdaptiveColor{Light: "#b07530", Dark: "#cc8844"}
-	colorContext = lipgloss.AdaptiveColor{Light: "#6b5a9e", Dark: "#8b7bb5"}
-	colorTool    = lipgloss.AdaptiveColor{Light: "#3a7a8a", Dark: "#6b9dad"}
+	colorDim     = lipgloss.AdaptiveColor{Light: "#8a7e6b", Dark: "#8a8175"}
+	colorMuted   = lipgloss.AdaptiveColor{Light: "#7a7060", Dark: "#b8b09c"}
+	colorAccent  = lipgloss.AdaptiveColor{Light: "#b8860b", Dark: "#e5b449"}
+	colorAccent2 = lipgloss.AdaptiveColor{Light: "#3d7a42", Dark: "#5fb8a3"}
+	colorRunning = lipgloss.AdaptiveColor{Light: "#6f8641", Dark: "#b5d075"}
+	colorSuccess = lipgloss.AdaptiveColor{Light: "#3d7a42", Dark: "#7ec488"}
+	colorError   = lipgloss.AdaptiveColor{Light: "#b5433a", Dark: "#e07060"}
+	colorReview  = lipgloss.AdaptiveColor{Light: "#b07530", Dark: "#e09b5a"}
+	colorContext = lipgloss.AdaptiveColor{Light: "#6b5a9e", Dark: "#a890d8"}
+	colorTool    = lipgloss.AdaptiveColor{Light: "#3a7a8a", Dark: "#7ec5d8"}
 )
 
 // 状态标签颜色映射
@@ -82,8 +104,12 @@ var (
 			Foreground(colorMuted).
 			Width(10)
 
-	fieldValueStyle = lipgloss.NewStyle().
-			Foreground(colorText)
+	// fieldValueStyle / cardContentStyle 用 bodyTextColor —— 概览区的值（运行态、
+	// 已完成章节数、字数等）、大纲条目、角色列表、章节摘要等"中性正文内容"
+	// 在暗底跟随终端默认前景色（避免硬塞米白撞主题），亮底走深棕保留暖调。
+	// 语义性强的元素（标题、高亮值、状态、错误、命中率染色等）仍走 colorAccent /
+	// colorError 等主题色。
+	fieldValueStyle = lipgloss.NewStyle().Foreground(bodyTextColor)
 
 	highlightValueStyle = lipgloss.NewStyle().
 				Foreground(colorAccent).
@@ -96,6 +122,5 @@ var (
 			Foreground(colorMuted).
 			Italic(true)
 
-	cardContentStyle = lipgloss.NewStyle().
-				Foreground(colorText)
+	cardContentStyle = lipgloss.NewStyle().Foreground(bodyTextColor)
 )

@@ -142,7 +142,7 @@ func renderCommandPalette(width int, items []commandPaletteItem, cursor int) str
 	remaining := len(items) - end
 
 	nameStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-	descStyle := lipgloss.NewStyle().Foreground(colorText)
+	descStyle := lipgloss.NewStyle().Foreground(bodyTextColor)
 	mutedStyle := lipgloss.NewStyle().Foreground(colorMuted)
 	selectedNameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#1c1a14")).Background(colorAccent).Bold(true)
 	selectedDescStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)

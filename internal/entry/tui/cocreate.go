@@ -141,9 +141,7 @@ func renderStartupModeBar(width int, mode startupMode) string {
 }
 
 func renderStartupModePill(active bool, label string) string {
-	style := lipgloss.NewStyle().
-		Padding(0, 1).
-		Foreground(colorText)
+	style := lipgloss.NewStyle().Padding(0, 1)
 	if active {
 		style = style.Foreground(lipgloss.Color("#1c1a14")).Background(colorAccent).Bold(true)
 	} else {

@@ -14,16 +14,20 @@ import (
 //
 // 裸流模式（nakedKey 非空）：仅把目标顶层字段的 string 值原样流出，其它字段
 // 全部跳过。给 draft_chapter 用，让整章 markdown 不被装饰成 "content: # …"。
+// header 一律以 "✻ " 开头：这是 TUI renderStreamContent 走 renderAgentBlock
+// 高亮路径（金 ✻ + 青底蓝下划线 label + dim 横线）的约定前缀，跟 fallback
+// header（streamHeaderFallback）保持一致；改成普通文字会落到正文路径用终端
+// 默认色画掉，title 不再醒目。
 var toolDisplays = map[string]toolDisplay{
 	"draft_chapter": {nakedKey: "content"},
 
-	"plan_chapter":        {header: "【规划】"},
-	"edit_chapter":        {header: "【打磨】"},
-	"commit_chapter":      {header: "【章节提交】"},
-	"save_review":         {header: "【审阅】"},
-	"save_arc_summary":    {header: "【弧摘要】"},
-	"save_volume_summary": {header: "【卷摘要】"},
-	"save_foundation":     {header: "【设定】"},
+	"plan_chapter":        {header: "✻ 规划"},
+	"edit_chapter":        {header: "✻ 打磨"},
+	"commit_chapter":      {header: "✻ 章节提交"},
+	"save_review":         {header: "✻ 审阅"},
+	"save_arc_summary":    {header: "✻ 弧摘要"},
+	"save_volume_summary": {header: "✻ 卷摘要"},
+	"save_foundation":     {header: "✻ 设定"},
 }
 
 type toolDisplay struct {

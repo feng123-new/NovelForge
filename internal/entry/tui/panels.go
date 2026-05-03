@@ -85,8 +85,8 @@ func renderTopBar(snap host.UISnapshot, width int, spinnerFrame string) string {
 	centerCell := lipgloss.NewStyle().
 		Width(centerW).
 		AlignHorizontal(lipgloss.Center).
-		Foreground(colorText).
 		Bold(true).
+		Foreground(bodyTextColor).
 		Render(titleText)
 	rightCell := lipgloss.NewStyle().
 		Width(rightW).
@@ -216,7 +216,7 @@ func renderAgentLine(agent host.AgentSnapshot, width int) string {
 	stateColor := taskStatusColor(agent.State)
 	icon := lipgloss.NewStyle().Foreground(stateColor).Render(agentStateIcon(agent.State))
 	badge := lipgloss.NewStyle().Foreground(stateColor).Render(agentStateLabel(agent.State))
-	name := lipgloss.NewStyle().Foreground(colorText).Bold(true).Render(agentDisplayName(agent.Name))
+	name := lipgloss.NewStyle().Bold(true).Foreground(bodyTextColor).Render(agentDisplayName(agent.Name))
 	line := icon + " " + name + " " + badge
 
 	taskLine := agentTaskLine(agent)
@@ -505,14 +505,16 @@ func renderCacheSidebar(snap host.UISnapshot, width int) string {
 		b.WriteString(renderField("节省", savedStr))
 	}
 
-	// 读/写量分两行；写量为 0 在很多自建 OpenAI 兼容后端是"未上报 cache_creation_tokens"
-	// 而非"真无写入"，加一个轻提示，避免被误读成 prefix 极度稳定。
+	// 读/写量分两行。写量为 0 在 OpenAI / Gemini 系协议是常态——
+	// 这两家是自动透明 caching，cache 写入完全免费（首次未命中按正常输入价，
+	// 建立 cache 不收任何溢价），所以协议本身不暴露 cache_creation 字段，没必要。
+	// 只有 Anthropic / Bedrock 系才报写量，因为他们写要加价（5m +25%/1h +100%），
+	// 必须把这个量给用户用于计费。
 	b.WriteString(renderField("缓存读量", formatTokensCompact(snap.TotalCacheReadTokens)))
 	if snap.TotalCacheWriteTokens > 0 {
 		b.WriteString(renderField("缓存写量", formatTokensCompact(snap.TotalCacheWriteTokens)))
 	} else if snap.TotalCacheReadTokens > 0 {
-		// 既然有命中就一定写过，写量却是 0 → 上游没返字段
-		hint := lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render("(上游未上报)")
+		hint := lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render("(自动缓存无溢价)")
 		b.WriteString(renderField("缓存写量", "0 "+hint))
 	}
 
@@ -534,17 +536,19 @@ func colorPercent(p float64) string {
 		Render(formatPercent(p))
 }
 
-// renderCacheAgentLine 渲染单个 role 行：role 名 + 一个百分比 + 缓存读量。
-// 百分比优先用滑动窗（稳态命中率）— 这是优化时唯一关心的信号；累计值的对比
-// 由顶部综合指标承担，per-role 不再混塞双值，避免 "82%/85%" 这种无标签歧义。
+// renderCacheAgentLine 渲染单个 role 行：role + 命中率 + 缓存读 / 总输入。
+//
+// 把分子分母都摆出来（cacheRead / input）让用户一眼就能验算命中率的来源，
+// 也能识别"高百分比但小样本"的侥幸数据（比如 100% / 1k 的可信度低于 80% / 300k）。
+//
+// 百分比优先用滑动窗稳态值；窗内无样本时回落到累计。整个左栏只有这一处用 "/"，
+// 语义专一（数学除号：cache 命中量 / 总输入量），不会与其它分隔符混淆。
 //
 // 三种态：
 //
 //	未启用     "WRITER        未启用"
-//	已启用     "WRITER        85%  · 323.3k"   稳态值（窗已积累）
-//	刚启用     "WRITER        82%  · 1.2k"     累计值兜底（窗未填满或样本=0）
-//
-// 后接 cache 读量帮助判断"高命中率是真规模还是小样本侥幸"。
+//	已启用     "WRITER        85%  · 323k / 394k"
+//	无 cache  显式"未启用"，不混进 0/0 干扰判读
 func renderCacheAgentLine(a host.AgentCacheStat, width int) string {
 	// role 名与"运行角色"区保持完全一致；Width 取 12 让最长的 COORDINATOR
 	// 仍能保留 1 列尾随空格做分隔，其它 role 自动右侧填充。
@@ -566,10 +570,12 @@ func renderCacheAgentLine(a host.AgentCacheStat, width int) string {
 	pctCell := lipgloss.NewStyle().Width(4).
 		Render(colorPercent(hit))
 
-	read := lipgloss.NewStyle().Foreground(colorDim).
-		Render(" · " + formatTokensCompact(a.CacheRead))
+	// 累计读 / 累计输入 — 即便上方百分比是滑动窗值，分子分母都用累计，因为
+	// "看出规模"才是这一列的主诉求；百分比单独提供稳态信号即可。
+	tokens := lipgloss.NewStyle().Foreground(colorDim).Render(
+		" · " + formatTokensCompact(a.CacheRead) + " / " + formatTokensCompact(a.Input))
 	_ = width
-	return role + pctCell + read
+	return role + pctCell + tokens
 }
 
 // cacheHitRate 在 input 已含 cacheRead 的语义下直接除得百分比。
@@ -1013,13 +1019,14 @@ func renderEventLine(ev host.Event, width, spinnerFrame int) string {
 		return tsStr + " " + indent + icon + " " + sum
 
 	default:
-		color, ok := categoryColors[ev.Category]
-		if !ok {
-			color = colorText
+		// 已知 category 走映射色；未知 category 跟随终端默认前景，避免硬塞 colorText。
+		if color, ok := categoryColors[ev.Category]; ok {
+			icon := lipgloss.NewStyle().Foreground(color).Render("·")
+			sum := lipgloss.NewStyle().Foreground(color).Render(truncate(ev.Summary, maxSumW))
+			return tsStr + " " + indent + icon + " " + sum
 		}
-		icon := lipgloss.NewStyle().Foreground(color).Render("·")
-		sum := lipgloss.NewStyle().Foreground(color).Render(truncate(ev.Summary, maxSumW))
-		return tsStr + " " + indent + icon + " " + sum
+		icon := lipgloss.NewStyle().Foreground(colorDim).Render("·")
+		return tsStr + " " + indent + icon + " " + truncate(ev.Summary, maxSumW)
 	}
 }
 
@@ -1163,7 +1170,10 @@ func renderStreamPanel(vp viewport.Model, width, height int, focused, running bo
 	separator := lipgloss.NewStyle().Foreground(colorDim).Render(strings.Repeat("─", lineW))
 	header := " " + title + " " + separator
 
-	// viewport 内容（height 包含 header 行，viewport 实际高度需减 1）
+	// viewport 内容（height 包含 header 行，viewport 实际高度需减 1）。
+	// 外层 vpStyle 不设 Foreground —— 章节正文颜色由 renderChapterBlock 内部的
+	// contentStyle 管（亮底深棕 / 暗底终端默认）。如果外层加 Foreground，亮底
+	// 主题下 agent 调度块（✻ 金色 + 青色 label）会被深棕"压"成普通正文色。
 	vpH := height - 1
 	if vpH < 1 {
 		vpH = 1
@@ -1171,8 +1181,7 @@ func renderStreamPanel(vp viewport.Model, width, height int, focused, running bo
 	vpStyle := lipgloss.NewStyle().
 		Width(width).
 		Height(vpH).
-		Padding(0, 1).
-		Foreground(colorText)
+		Padding(0, 1)
 
 	return header + "\n" + vpStyle.Render(vp.View())
 }
@@ -1208,7 +1217,7 @@ func renderStreamActivity(frame int) string {
 }
 
 // renderStreamContent 将流式输出按轮次渲染为语义分块。
-// Agent 调度块（以 ▸ 开头）用 accent 标题 + dim 指令；正文块用标准文本色。
+// Agent 调度块（以 ▸ 或 ✻ 开头）用 accent 标题 + dim 指令；正文块跟随终端默认色。
 // cursor 非空时追加在末尾，表示 AI 正在输出。
 func renderStreamContent(rounds []string, width int, cursor string) string {
 	if width < 24 {
@@ -1221,7 +1230,7 @@ func renderStreamContent(rounds []string, width int, cursor string) string {
 		if text == "" {
 			continue
 		}
-		if strings.HasPrefix(text, "▸") {
+		if strings.HasPrefix(text, "▸") || strings.HasPrefix(text, "✻") {
 			blocks = append(blocks, renderAgentBlock(text, width))
 		} else {
 			blocks = append(blocks, renderChapterBlock(text, width))
@@ -1234,25 +1243,41 @@ func renderStreamContent(rounds []string, width int, cursor string) string {
 	return result
 }
 
-// renderAgentBlock 渲染 Agent 调度块：标题 + 分隔线 + 任务指令。
+// renderAgentBlock 渲染 Agent 调度块：图标 + 标题 + 分隔线 + 任务指令。
+//
+// label 用 colorAccent2 青绿 + Bold + Underline 三重强调 —— 之前 colorAccent
+// 金色 + Bold 在暗底跟 colorDim 灰的思考行视觉太接近，分不出主次。青绿是冷色，
+// 跟思考行用的暖灰在色相上完全拉开；Underline 在所有终端都稳定生效，比 Bold
+// 更可靠的视觉锚。图标 ✻ 反过来用金色作锚点，跟 label 形成双色对比。
 func renderAgentBlock(text string, width int) string {
 	headerLine, body, _ := strings.Cut(text, "\n")
 
-	// 标题行 + 分隔线
+	iconStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	labelStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true).Underline(true)
+
+	// 拆分前缀图标（✻ 或 ▸）和正文 label，分别染色；无图标的旧格式保持单色。
+	var headerStyled string
+	if first, rest, ok := strings.Cut(headerLine, " "); ok && (first == "✻" || first == "▸") {
+		headerStyled = iconStyle.Render(first) + " " + labelStyle.Render(rest)
+	} else {
+		headerStyled = labelStyle.Render(headerLine)
+	}
+
+	// 标题行 + 分隔线（lineW 用 headerLine 的视觉宽度而非渲染后的字节宽度）
 	titleW := lipgloss.Width(headerLine)
 	lineW := max(0, width-titleW-1)
-	header := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(headerLine) +
+	header := headerStyled +
 		" " + lipgloss.NewStyle().Foreground(colorDim).Render(strings.Repeat("─", lineW))
 
 	var b strings.Builder
 	b.WriteString(header)
 
-	// 任务指令：dim 色，缩进 2 格
+	// 任务指令：dim 色，缩进 2 格；与 header 之间留一行空行，防止视觉贴一起。
 	body = strings.TrimSpace(body)
 	if body != "" {
 		taskStyle := lipgloss.NewStyle().Foreground(colorMuted)
 		lines := wrapStreamText(body, max(16, width-6))
-		b.WriteString("\n")
+		b.WriteString("\n\n")
 		for i, line := range lines {
 			if i > 0 {
 				b.WriteString("\n")
@@ -1264,9 +1289,10 @@ func renderAgentBlock(text string, width int) string {
 }
 
 // renderChapterBlock 渲染正文块，自动区分思考内容和章节正文。
-// 思考内容（ThinkingSep 标记的段落）用淡色斜体，正文用标准文本色。
+// 思考内容（ThinkingSep 标记的段落）用 colorDim 斜体；章节正文走 bodyTextColor：
+// 暗底继承终端默认前景，亮底用深棕保留暖调。
 func renderChapterBlock(text string, width int) string {
-	contentStyle := lipgloss.NewStyle().Foreground(colorText)
+	contentStyle := lipgloss.NewStyle().Foreground(bodyTextColor)
 	thinkStyle := lipgloss.NewStyle().Foreground(colorDim).Italic(true)
 	wrapW := max(16, width-4)
 
@@ -1557,7 +1583,7 @@ func renderWelcome(width, height int, errMsg string, mode startupMode) string {
 		{"##", "分层长篇", "支持卷-弧-章分层结构的长篇创作"},
 	}
 	iconStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
-	featLabelStyle := lipgloss.NewStyle().Foreground(colorText)
+	featLabelStyle := lipgloss.NewStyle().Foreground(bodyTextColor)
 	descStyle := lipgloss.NewStyle().Foreground(colorDim)
 	var featLines []string
 	for _, f := range features {
@@ -1569,8 +1595,7 @@ func renderWelcome(width, height int, errMsg string, mode startupMode) string {
 	feats := strings.Join(featLines, "\n")
 
 	// 输入提示
-	prompt := lipgloss.NewStyle().Foreground(colorText).
-		Render("在下方输入你的小说需求开始创作")
+	prompt := lipgloss.NewStyle().Foreground(bodyTextColor).Render("在下方输入你的小说需求开始创作")
 
 	modeLine := lipgloss.NewStyle().
 		Foreground(colorMuted).
