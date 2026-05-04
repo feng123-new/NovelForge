@@ -119,6 +119,10 @@ func (s *cocreateState) ready() bool {
 	return s.session.Ready()
 }
 
+func (s *cocreateState) suggestions() []string {
+	return s.session.Suggestions()
+}
+
 func (s *cocreateState) buildPlan() (startup.Plan, error) {
 	return s.session.BuildPlan()
 }
@@ -171,8 +175,8 @@ func renderCoCreateBody(width, height int, state *cocreateState, errMsg, inputVi
 	}
 	leftW, rightW := coCreateColumns(width)
 
-	// 右 border 由外层 leftCol 容器画，贯穿 body 顶到底；conversation 与 input
-	// 都不画自己的右 border。input 仍是完整圆角框，左右各 1 列 margin 与
+	// 右 border 由外层 leftCol 容器画，贯穿 body 顶到底；conversation / suggestions /
+	// input 都不画自己的右 border。input 仍是完整圆角框，左右各 1 列 margin 与
 	// conversation 的 padding 对齐，看起来与两侧边线距离一致。
 	// 共创模式下 textarea 固定 1 行（见 model.refitTextareaHeight 分支），
 	// input 高度 = 1 (textarea) + 2 (top/bottom border) = 3 行，永不漂移。
@@ -186,19 +190,84 @@ func renderCoCreateBody(width, height int, state *cocreateState, errMsg, inputVi
 		Margin(0, 1).
 		Render(inputView)
 
-	convH := height - lipgloss.Height(inputBox)
+	suggestionsBox := renderCoCreateSuggestions(innerW, state)
+	suggestionsH := 0
+	if suggestionsBox != "" {
+		suggestionsH = lipgloss.Height(suggestionsBox)
+	}
+
+	convH := height - lipgloss.Height(inputBox) - suggestionsH
 	if convH < 4 {
 		convH = 4
 	}
 
 	convPanel := renderCoCreateConversationPanel(innerW, convH, state, errMsg, spinnerFrame)
+
+	var stack string
+	if suggestionsBox == "" {
+		stack = lipgloss.JoinVertical(lipgloss.Left, convPanel, inputBox)
+	} else {
+		stack = lipgloss.JoinVertical(lipgloss.Left, convPanel, suggestionsBox, inputBox)
+	}
+
 	leftCol := lipgloss.NewStyle().
 		Border(baseBorder, false, true, false, false).
 		BorderForeground(colorDim).
-		Render(lipgloss.JoinVertical(lipgloss.Left, convPanel, inputBox))
+		Render(stack)
 
 	rightPanel := renderCoCreatePromptPanel(rightW, height, state)
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, rightPanel)
+}
+
+// extractReplyForDisplay 从 assistant 历史内容中切出 <reply>...</reply> 段。
+// 其他标签（<draft>/<ready>/<suggestions>）是给下一轮模型看的协议字段，不应裸暴露给用户。
+// 不含 <reply> 标签时（模型未遵守协议的降级路径）原样返回。
+func extractReplyForDisplay(content string) string {
+	rIdx := strings.Index(content, "<reply>")
+	if rIdx < 0 {
+		return content
+	}
+	rest := content[rIdx+len("<reply>"):]
+	if cIdx := strings.Index(rest, "</reply>"); cIdx >= 0 {
+		return strings.TrimSpace(rest[:cIdx])
+	}
+	for _, mark := range []string{"<draft>", "<ready>", "<suggestions>"} {
+		if idx := strings.Index(rest, mark); idx >= 0 {
+			rest = rest[:idx]
+		}
+	}
+	return strings.TrimSpace(rest)
+}
+
+// renderCoCreateSuggestions 在 input 上方渲染 AI 建议行。awaiting 时或没有建议时
+// 返回空字符串，让 layout 自动塌陷不留空行。建议条数最多 3 条，按 1/2/3 数字键选中。
+func renderCoCreateSuggestions(width int, state *cocreateState) string {
+	if state == nil || state.awaiting {
+		return ""
+	}
+	sugs := state.suggestions()
+	if len(sugs) == 0 {
+		return ""
+	}
+	if len(sugs) > 3 {
+		sugs = sugs[:3]
+	}
+
+	digits := []string{"❶", "❷", "❸"}
+	digitStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	bodyStyle := lipgloss.NewStyle().Foreground(colorMuted)
+	hintStyle := lipgloss.NewStyle().Foreground(colorDim).Italic(true)
+
+	lines := []string{hintStyle.Render("AI 建议（按数字键填入输入框）：")}
+	for i, s := range sugs {
+		lines = append(lines, digitStyle.Render(digits[i]+" ")+bodyStyle.Render(strings.TrimSpace(s)))
+	}
+
+	// 与 inputBox 左右 margin/padding 对齐：左 2 列（margin1+padding1）、右同。
+	return lipgloss.NewStyle().
+		Width(width - 2).
+		Padding(0, 2).
+		Render(strings.Join(lines, "\n"))
 }
 
 func coCreateModalSize(width, height int) (boxW, boxH int) {
@@ -292,12 +361,15 @@ func coCreateHint(state *cocreateState) string {
 
 func renderCoCreateConversationPanel(width, height int, state *cocreateState, errMsg string, spinnerFrame int) string {
 	// 不画自己的 border —— 右竖线由外层 leftCol 容器统一画。
-	// 内容宽 = 列总宽 - 2（仅 padding 0,1）；行内再扣 2 列前缀（"▌ "/"  "）。
+	// 列总宽 = width；style.Width = contentW = width-2；Padding(0,1) 后内容区 = contentW-2。
+	// 行内还要扣 "▌ " / "  " 这类 2 列前缀，否则 wrap 后每行 + 前缀会溢出内容区 2 列，
+	// 触发终端物理折行 —— lipgloss 仍认为 modal 高度固定，但终端实际渲染高度增加，
+	// 流式 thinking 时一直触发就表现为外框"高度抖动"。所以 wrapW = contentW - 4。
 	contentW := width - 2
 	if contentW < 12 {
 		contentW = 12
 	}
-	wrapW := max(12, contentW-2)
+	wrapW := max(12, contentW-4)
 
 	userRole := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true).Render("你")
 	aiRole := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("AI")
@@ -317,7 +389,9 @@ func renderCoCreateConversationPanel(width, height int, state *cocreateState, er
 			}
 		} else {
 			lines = append(lines, aiRole)
-			for _, line := range wrapStreamText(strings.TrimSpace(item.Content), wrapW) {
+			// history 里 assistant 存的是完整四段 Raw（给模型上下文用），UI 只显示 [REPLY] 段。
+			display := extractReplyForDisplay(item.Content)
+			for _, line := range wrapStreamText(strings.TrimSpace(display), wrapW) {
 				lines = append(lines, aiBody.Render("  "+line))
 			}
 		}

@@ -690,6 +690,21 @@ func (m Model) handleCoCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// 数字键 1/2/3 在 textarea 为空且有建议时 → 填入对应建议（不发送，可编辑）。
+	// 仅在空输入框时拦截，避免影响用户主动打数字。awaiting 时建议不展示，
+	// 这里也无需额外判断（state.suggestions 为空即跳过）。
+	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && !state.awaiting {
+		if r := msg.Runes[0]; r >= '1' && r <= '3' {
+			if strings.TrimSpace(m.textarea.Value()) == "" {
+				if sugs := state.suggestions(); int(r-'0') <= len(sugs) {
+					m.textarea.SetValue(sugs[r-'1'])
+					m.refitTextareaHeight()
+					return m, nil
+				}
+			}
+		}
+	}
+
 	// 常规输入转发给 textarea
 	if msg.Type == tea.KeyRunes && (containsSGRFragment(string(msg.Runes)) || isCSILeak(msg.Runes)) {
 		return m, nil

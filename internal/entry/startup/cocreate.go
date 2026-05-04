@@ -14,6 +14,7 @@ type CoCreateSession struct {
 	ready          bool
 	streamReply    string
 	streamThinking string
+	suggestions    []string
 }
 
 func NewCoCreateSession(initial string) *CoCreateSession {
@@ -29,17 +30,6 @@ func (s *CoCreateSession) History() []host.CoCreateMessage {
 		return nil
 	}
 	return append([]host.CoCreateMessage(nil), s.history...)
-}
-
-func (s *CoCreateSession) AppendUser(text string) {
-	if s == nil {
-		return
-	}
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return
-	}
-	s.history = append(s.history, host.CoCreateMessage{Role: "user", Content: text})
 }
 
 func (s *CoCreateSession) ApplyReply(reply host.CoCreateReply) {
@@ -65,6 +55,22 @@ func (s *CoCreateSession) ApplyReply(reply host.CoCreateReply) {
 		s.draftPrompt = prompt
 	}
 	s.ready = reply.Ready
+	// suggestions 直接覆盖（包括覆盖为空）：每轮的引导只对当下有意义。
+	s.suggestions = append(s.suggestions[:0], reply.Suggestions...)
+}
+
+func (s *CoCreateSession) AppendUser(text string) {
+	if s == nil {
+		return
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	// 用户已经决定下一句要说什么，suggestions 立即作废，避免 AI 还没回复时
+	// 旧建议挂在输入框上误导。
+	s.suggestions = nil
+	s.history = append(s.history, host.CoCreateMessage{Role: "user", Content: text})
 }
 
 // ApplyDelta 接收流式累积；kind="thinking" 写入推理流，"reply" 写入回复预览。
@@ -101,6 +107,13 @@ func (s *CoCreateSession) DraftPrompt() string {
 		return ""
 	}
 	return s.draftPrompt
+}
+
+func (s *CoCreateSession) Suggestions() []string {
+	if s == nil {
+		return nil
+	}
+	return s.suggestions
 }
 
 func (s *CoCreateSession) Ready() bool {

@@ -45,6 +45,18 @@ func (s *SessionStore) SubAgentLogger() func(agentName, task string, msg agentco
 	}
 }
 
+// LogCoCreate 追加一条共创对话日志到 meta/sessions/cocreate.jsonl。
+// 共创阶段还没绑定具体小说，统一落到 OutputDir 默认根（output/novel）下，
+// 与正式创作的 coordinator.jsonl / agents/* 同位，方便排查。
+func (s *SessionStore) LogCoCreate(entry any) error {
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("marshal cocreate session: %w", err)
+	}
+	data = append(data, '\n')
+	return s.io.AppendLine("meta/sessions/cocreate.jsonl", data)
+}
+
 // Log 追加一条消息到指定路径，自动压缩大内容。
 func (s *SessionStore) Log(rel string, msg agentcore.AgentMessage) error {
 	m, ok := msg.(agentcore.Message)
