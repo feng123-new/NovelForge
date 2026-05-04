@@ -536,7 +536,7 @@ func (m Model) View() string {
 		return renderAskUserModal(m.width, m.height, m.askState)
 	}
 	if m.cocreate != nil {
-		return renderCoCreateModal(m.width, m.height, m.cocreate, errorText(m.err), m.textarea.View())
+		return renderCoCreateModal(m.width, m.height, m.cocreate, errorText(m.err), m.textarea.View(), m.spinnerIdx, m.quitPending)
 	}
 	if m.help != nil {
 		return renderHelpModal(m.width, m.height, m.help)
@@ -629,13 +629,15 @@ func (m Model) handleCoCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.exitCoCreate()
 	}
 
-	// 等待 AI 回复时只允许 Esc 退出（上面已处理）
-	if state.awaiting {
-		return m, nil
-	}
+	// 等待 AI 回复时编辑类（字符输入/退格/光标/Ctrl+U/多行换行）放行——
+	// 用户能在 AI 思考期间预输入下一句。提交类的屏蔽下沉到各 case 内部，
+	// 让 Enter 节流先于 awaiting 屏蔽——这样粘贴的 \n 残片仍能补空格。
 
 	switch msg.Type {
 	case tea.KeyCtrlS:
+		if state.awaiting {
+			return m, nil
+		}
 		if state.canStart() {
 			plan, err := state.buildPlan()
 			if err != nil {
@@ -653,12 +655,17 @@ func (m Model) handleCoCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		// 与上一次字符按键间隔过短 → 视为粘贴流的 \n 残片：补空格代替提交。
-		// 与 base 路径同源的防御（详见 handleBaseKeyMsg KeyEnter 分支注释）。
+		// 必须在 awaiting 屏蔽之前判断——否则 awaiting 期间粘贴 \n 残片会被屏蔽，
+		// 导致 "abc\ndef" 被吞成 "abcdef"，与 base 路径语义不一致。
 		if !m.lastKeyAt.IsZero() && time.Since(m.lastKeyAt) < 50*time.Millisecond {
 			var cmd tea.Cmd
 			m.textarea, cmd = m.textarea.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
 			m.refitTextareaHeight()
 			return m, cmd
+		}
+		// 真正的提交意图：awaiting 期间屏蔽（不能并发发请求）
+		if state.awaiting {
+			return m, nil
 		}
 		text := utils.CleanInputLine(m.textarea.Value())
 		if text == "" {

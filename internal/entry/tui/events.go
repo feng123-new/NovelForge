@@ -32,7 +32,13 @@ type (
 	startResultMsg   struct{ err error }
 	cocreateDeltaMsg struct {
 		reqID int
+		kind  string // host.CoCreateProgressThinking | host.CoCreateProgressReply
 		text  string
+	}
+	// cocreateStreamItem 是 deltaCh 内部载荷，把流式 kind 与累积文本一起送达 TUI。
+	cocreateStreamItem struct {
+		kind string
+		text string
 	}
 	cocreateDoneMsg struct {
 		reqID int
@@ -113,13 +119,13 @@ func runCoCreate(rt *host.Host, state *cocreateState) tea.Cmd {
 	history := state.session.History()
 	ctx, cancel := context.WithCancel(context.Background())
 	state.cancel = cancel
-	state.deltaCh = make(chan string, 64)
+	state.deltaCh = make(chan cocreateStreamItem, 64)
 	state.doneCh = make(chan cocreateDoneMsg, 1)
 	start := func() tea.Msg {
 		go func() {
-			reply, err := rt.CoCreateStream(ctx, history, func(text string) {
+			reply, err := rt.CoCreateStream(ctx, history, func(kind, text string) {
 				select {
-				case state.deltaCh <- text:
+				case state.deltaCh <- cocreateStreamItem{kind: kind, text: text}:
 				default:
 				}
 			})
@@ -136,13 +142,16 @@ func listenCoCreateDelta(state *cocreateState) tea.Cmd {
 	if state == nil || state.deltaCh == nil {
 		return nil
 	}
+	// 抓取 channel 局部引用：避免后续 state.deltaCh 被 reassign 时
+	// 旧 listen 闭包错读新 channel（虽然当前流程不触发，留作维护陷阱不应该）。
 	reqID := state.reqID
+	ch := state.deltaCh
 	return func() tea.Msg {
-		delta, ok := <-state.deltaCh
+		item, ok := <-ch
 		if !ok {
 			return nil
 		}
-		return cocreateDeltaMsg{reqID: reqID, text: delta}
+		return cocreateDeltaMsg{reqID: reqID, kind: item.kind, text: item.text}
 	}
 }
 
@@ -151,8 +160,9 @@ func listenCoCreateDone(state *cocreateState) tea.Cmd {
 		return nil
 	}
 	reqID := state.reqID
+	ch := state.doneCh
 	return func() tea.Msg {
-		result, ok := <-state.doneCh
+		result, ok := <-ch
 		if !ok {
 			return nil
 		}

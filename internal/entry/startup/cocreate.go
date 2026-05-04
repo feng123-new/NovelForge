@@ -9,10 +9,11 @@ import (
 
 // CoCreateSession 承载共创模式的非 UI 状态。
 type CoCreateSession struct {
-	history     []host.CoCreateMessage
-	draftPrompt string
-	ready       bool
-	streamReply string
+	history        []host.CoCreateMessage
+	draftPrompt    string
+	ready          bool
+	streamReply    string
+	streamThinking string
 }
 
 func NewCoCreateSession(initial string) *CoCreateSession {
@@ -46,18 +47,31 @@ func (s *CoCreateSession) ApplyReply(reply host.CoCreateReply) {
 		return
 	}
 	s.streamReply = ""
+	s.streamThinking = ""
 	if text := strings.TrimSpace(reply.Message); text != "" {
 		s.history = append(s.history, host.CoCreateMessage{Role: "assistant", Content: text})
 	}
-	s.draftPrompt = strings.TrimSpace(reply.Prompt)
+	// 仅当 Prompt 非空才覆盖 draft：parse 降级路径会返回 Prompt=""，此时
+	// 必须保留上一轮 draft，否则用户已积累的"当前创作指令"会被截断的回复清空。
+	if prompt := strings.TrimSpace(reply.Prompt); prompt != "" {
+		s.draftPrompt = prompt
+	}
 	s.ready = reply.Ready
 }
 
-func (s *CoCreateSession) ApplyDelta(text string) {
+// ApplyDelta 接收流式累积；kind="thinking" 写入推理流，"reply" 写入回复预览。
+// 两路分别累积，UI 可分块染色显示，让用户在 thinking 阶段也看到 LLM 在工作。
+func (s *CoCreateSession) ApplyDelta(kind, text string) {
 	if s == nil {
 		return
 	}
-	s.streamReply = strings.TrimSpace(text)
+	text = strings.TrimSpace(text)
+	switch kind {
+	case host.CoCreateProgressThinking:
+		s.streamThinking = text
+	case host.CoCreateProgressReply:
+		s.streamReply = text
+	}
 }
 
 func (s *CoCreateSession) StreamReply() string {
@@ -65,6 +79,13 @@ func (s *CoCreateSession) StreamReply() string {
 		return ""
 	}
 	return s.streamReply
+}
+
+func (s *CoCreateSession) StreamThinking() string {
+	if s == nil {
+		return ""
+	}
+	return s.streamThinking
 }
 
 func (s *CoCreateSession) DraftPrompt() string {

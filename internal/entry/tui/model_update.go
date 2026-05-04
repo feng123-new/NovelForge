@@ -432,7 +432,7 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if m.cocreate == nil || msg.reqID != m.cocreate.reqID {
 			return m, nil, true
 		}
-		m.cocreate.applyDelta(msg.text)
+		m.cocreate.applyDelta(msg.kind, msg.text)
 		return m, listenCoCreateDelta(m.cocreate), true
 	case cocreateDoneMsg:
 		next, cmd := m.handleCoCreateDoneMsg(msg)

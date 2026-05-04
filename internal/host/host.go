@@ -673,8 +673,8 @@ func (h *Host) ReplayQueue(afterSeq int64) ([]domain.RuntimeQueueItem, error) {
 
 // ── 共创 ──
 
-func (h *Host) CoCreateStream(ctx context.Context, history []CoCreateMessage, onReply func(string)) (CoCreateReply, error) {
-	return coCreateStream(ctx, h.models, history, onReply)
+func (h *Host) CoCreateStream(ctx context.Context, history []CoCreateMessage, onProgress func(kind, text string)) (CoCreateReply, error) {
+	return coCreateStream(ctx, h.models, history, onProgress)
 }
 
 // ── 工具 ──
