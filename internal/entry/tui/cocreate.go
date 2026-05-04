@@ -150,23 +150,55 @@ func renderStartupModePill(active bool, label string) string {
 	return style.Render(label)
 }
 
-func renderCoCreateBody(width, height int, state *cocreateState, errMsg string, spinnerFrame int) string {
+// coCreateColumns 把 modal 内容区切成左右两栏宽度。
+// 左栏承载对话与输入框（上下叠），右栏承载创作指令草稿；总和等于 modal 内容宽。
+func coCreateColumns(bodyW int) (leftW, rightW int) {
+	leftW = bodyW * 58 / 100
+	if leftW < 42 {
+		leftW = bodyW / 2
+	}
+	rightW = bodyW - leftW
+	if rightW < 28 {
+		rightW = 28
+		leftW = bodyW - rightW
+	}
+	return leftW, rightW
+}
+
+func renderCoCreateBody(width, height int, state *cocreateState, errMsg, inputView string, spinnerFrame int) string {
 	if state == nil {
 		return ""
 	}
-	leftW := width * 58 / 100
-	if leftW < 42 {
-		leftW = width / 2
-	}
-	rightW := width - leftW
-	if rightW < 28 {
-		rightW = 28
-		leftW = width - rightW
+	leftW, rightW := coCreateColumns(width)
+
+	// 右 border 由外层 leftCol 容器画，贯穿 body 顶到底；conversation 与 input
+	// 都不画自己的右 border。input 仍是完整圆角框，左右各 1 列 margin 与
+	// conversation 的 padding 对齐，看起来与两侧边线距离一致。
+	// 共创模式下 textarea 固定 1 行（见 model.refitTextareaHeight 分支），
+	// input 高度 = 1 (textarea) + 2 (top/bottom border) = 3 行，永不漂移。
+	innerW := leftW - 1 // 给外层右竖线留 1 列
+
+	inputBox := lipgloss.NewStyle().
+		Width(innerW - 6). // -2 margin -2 padding -2 border
+		Border(baseBorder).
+		BorderForeground(colorDim).
+		Padding(0, 1).
+		Margin(0, 1).
+		Render(inputView)
+
+	convH := height - lipgloss.Height(inputBox)
+	if convH < 4 {
+		convH = 4
 	}
 
-	left := renderCoCreateConversationPanel(leftW, height, state, errMsg, spinnerFrame)
-	right := renderCoCreatePromptPanel(rightW, height, state)
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	convPanel := renderCoCreateConversationPanel(innerW, convH, state, errMsg, spinnerFrame)
+	leftCol := lipgloss.NewStyle().
+		Border(baseBorder, false, true, false, false).
+		BorderForeground(colorDim).
+		Render(lipgloss.JoinVertical(lipgloss.Left, convPanel, inputBox))
+
+	rightPanel := renderCoCreatePromptPanel(rightW, height, state)
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, rightPanel)
 }
 
 func coCreateModalSize(width, height int) (boxW, boxH int) {
@@ -187,10 +219,14 @@ func coCreateModalSize(width, height int) (boxW, boxH int) {
 	return boxW, boxH
 }
 
+// coCreateInputWidth 算出 textarea 实际可输入的字符宽度。
+// 左栏装饰：外层右竖线 1 + input 左右 margin 2 + border 2 + padding 2 = 7 列；
+// textarea 自身 prompt+cursor 占 2 列；所以 textareaW = leftW - 9。
 func coCreateInputWidth(width, height int) int {
 	boxW, _ := coCreateModalSize(width, height)
-	inputBoxW := boxW - 6
-	inputW := inputBoxW - 4
+	bodyW := boxW - 4
+	leftW, _ := coCreateColumns(bodyW)
+	inputW := leftW - 9
 	if inputW < 20 {
 		inputW = 20
 	}
@@ -204,99 +240,107 @@ func renderCoCreateModal(width, height int, state *cocreateState, errMsg, inputV
 
 	boxW, boxH := coCreateModalSize(width, height)
 
-	var b strings.Builder
-	title := lipgloss.NewStyle().Foreground(colorMuted).Bold(true).Render("共创规划")
-	subtitle := lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render("先把需求聊清楚，再开始创作")
-	b.WriteString(title)
-	b.WriteString("\n")
-	b.WriteString(subtitle)
-	b.WriteString("\n\n")
-
-	bodyH := boxH - 10
-	if bodyH < 8 {
-		bodyH = 8
+	// title / subtitle / hint 放在 modal 外（上方与下方居中），让 modal 内部
+	// 完全交给 body —— 左栏右竖线与右栏从 modal 顶贯穿到底。
+	// modal 实际占用 = boxH (content) + 2 (padding 1*2) + 2 (border) = boxH+4 行；
+	// 整体 stack = title(1) + subtitle(1) + 空(1) + modal(boxH+4) + 空(1) + hint(1) = boxH+9。
+	// 因此把 boxH 减 5 行预算给 modal 外的装饰，避免溢出终端。
+	contentH := boxH - 5
+	if contentH < 10 {
+		contentH = 10
 	}
-	b.WriteString(renderCoCreateBody(boxW-6, bodyH, state, errMsg, spinnerFrame))
-	b.WriteString("\n\n")
 
-	inputBox := lipgloss.NewStyle().
-		Width(boxW-6).
-		Border(baseBorder).
-		BorderForeground(colorDim).
-		Padding(0, 1).
-		Render(inputView)
-	b.WriteString(inputBox)
-	b.WriteString("\n")
+	headerStyle := lipgloss.NewStyle().Width(boxW).AlignHorizontal(lipgloss.Center)
+	title := headerStyle.Foreground(colorMuted).Bold(true).Render("共创规划")
+	subtitle := headerStyle.Foreground(colorDim).Italic(true).Render("先把需求聊清楚，再开始创作")
 
-	// quitPending 时优先显示退出确认提示，与 inputHints() 一致——
-	// 否则共创 modal 会盖住底栏，用户感受不到"再按一次 Ctrl+C 退出"。
+	var hintLine string
+	hintStyle := lipgloss.NewStyle().Width(boxW).AlignHorizontal(lipgloss.Center)
 	if quitPending {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Bold(true).Render("Press Ctrl+C again to exit"))
+		// quitPending 与 inputHints() 一致；否则共创 modal 盖住底栏，用户感受不到"再按一次 Ctrl+C"。
+		hintLine = hintStyle.Foreground(lipgloss.Color("243")).Bold(true).Render("Press Ctrl+C again to exit")
 	} else {
-		hint := "Enter 发送 · Esc 退出共创"
-		switch {
-		case state.awaiting:
-			hint = "等待 AI 回复 · ↑↓ / PgUpPgDn 滚动右侧 · Esc 退出共创"
-		case state.canStart():
-			hint = "Enter 继续补充 · Ctrl+S 开始创作 · ↑↓ / PgUpPgDn 滚动右侧 · Esc 退出共创"
-		default:
-			hint = "Enter 发送 · ↑↓ / PgUpPgDn 滚动右侧 · Esc 退出共创"
-		}
-		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render(hint))
+		hintLine = hintStyle.Foreground(colorDim).Italic(true).Render(coCreateHint(state))
 	}
 
+	body := renderCoCreateBody(boxW-4, contentH, state, errMsg, inputView, spinnerFrame)
 	box := lipgloss.NewStyle().
 		Width(boxW).
-		Height(boxH).
+		Height(contentH).
 		Border(baseBorder).
 		BorderForeground(colorAccent).
 		Padding(1, 2).
-		Render(b.String())
+		Render(body)
 
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+	stack := lipgloss.JoinVertical(lipgloss.Center, title, subtitle, "", box, "", hintLine)
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, stack)
+}
+
+// coCreateHint 根据状态生成简短键位提示，避免与 placeholder 重复语义。
+func coCreateHint(state *cocreateState) string {
+	switch {
+	case state == nil:
+		return "Enter 发送 · Esc 退出"
+	case state.awaiting:
+		return "AI 回复中 · ↑↓ 滚动右侧 · Esc 退出"
+	case state.canStart():
+		return "Enter 继续补充 · Ctrl+S 开始创作 · ↑↓ 滚动 · Esc 退出"
+	default:
+		return "Enter 发送 · ↑↓ 滚动 · Esc 退出"
+	}
 }
 
 func renderCoCreateConversationPanel(width, height int, state *cocreateState, errMsg string, spinnerFrame int) string {
-	// 用户/AI 用不同色调区分内容主体：
-	//   - 用户：colorAccent2（青绿），跟标签同色，整体识别感
-	//   - AI：bodyTextColor（终端默认），保持主信息清晰可读
-	userBodyStyle := lipgloss.NewStyle().Foreground(colorAccent2)
-	aiBodyStyle := lipgloss.NewStyle().Foreground(bodyTextColor)
+	// 不画自己的 border —— 右竖线由外层 leftCol 容器统一画。
+	// 内容宽 = 列总宽 - 2（仅 padding 0,1）；行内再扣 2 列前缀（"▌ "/"  "）。
+	contentW := width - 2
+	if contentW < 12 {
+		contentW = 12
+	}
+	wrapW := max(12, contentW-2)
+
+	userRole := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true).Render("你")
+	aiRole := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("AI")
+	userBody := lipgloss.NewStyle().Foreground(colorAccent2)
+	aiBody := lipgloss.NewStyle().Foreground(bodyTextColor)
+	thinkingStyle := lipgloss.NewStyle().Foreground(colorDim).Italic(true)
+	thinkingTag := lipgloss.NewStyle().Foreground(colorDim).Bold(true).Render("AI 思考")
+
 	var lines []string
 	for _, item := range state.session.History() {
-		role := "你"
-		roleStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
-		bodyStyle := userBodyStyle
-		if item.Role == "assistant" {
-			role = "AI"
-			roleStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-			bodyStyle = aiBodyStyle
-		}
-		lines = append(lines, roleStyle.Render(role))
-		for _, line := range wrapStreamText(strings.TrimSpace(item.Content), max(12, width-6)) {
-			lines = append(lines, "  "+bodyStyle.Render(line))
+		isUser := item.Role != "assistant"
+		if isUser {
+			lines = append(lines, userRole)
+			for _, line := range wrapStreamText(strings.TrimSpace(item.Content), wrapW) {
+				// 整行一次 Render，避免前缀颜色 reset 与正文颜色拼接处的 ANSI 控制符 bleed。
+				lines = append(lines, userBody.Render("▌ "+line))
+			}
+		} else {
+			lines = append(lines, aiRole)
+			for _, line := range wrapStreamText(strings.TrimSpace(item.Content), wrapW) {
+				lines = append(lines, aiBody.Render("  "+line))
+			}
 		}
 		lines = append(lines, "")
 	}
+
 	if state.awaiting {
-		// 思考流式：colorDim + 斜体，与创作面板的 thinking 区分一致。
 		if t := state.session.StreamThinking(); t != "" {
-			lines = append(lines, lipgloss.NewStyle().Foreground(colorDim).Bold(true).Render("AI 思考"))
-			for _, line := range wrapStreamText(t, max(12, width-6)) {
-				lines = append(lines, "  "+lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render(line))
+			lines = append(lines, thinkingTag)
+			for _, line := range wrapStreamText(t, wrapW) {
+				lines = append(lines, thinkingStyle.Render("  "+line))
 			}
 			lines = append(lines, "")
 		}
-		// 回复流式：colorMuted 斜体（reply preview 可能不完整，弱化展示）。
 		if state.streamReply() != "" {
-			lines = append(lines, lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("AI"))
-			for _, line := range wrapStreamText(state.streamReply(), max(12, width-6)) {
-				lines = append(lines, "  "+lipgloss.NewStyle().Foreground(colorMuted).Italic(true).Render(line))
+			lines = append(lines, aiRole)
+			for _, line := range wrapStreamText(state.streamReply(), wrapW) {
+				lines = append(lines, aiBody.Render("  "+line))
 			}
 			lines = append(lines, "")
 		}
-		// sparkle 装饰：复用创作面板的 ✦/✧/· 让用户始终看到"AI 在工作"
-		lines = append(lines, strings.TrimLeft(renderEventSparkle(spinnerFrame, width), " "))
+		// sparkle 装饰：让用户始终看到"AI 在工作"
+		lines = append(lines, strings.TrimLeft(renderEventSparkle(spinnerFrame, contentW), " "))
 	}
 	if errMsg != "" {
 		lines = append(lines, "")
@@ -310,10 +354,8 @@ func renderCoCreateConversationPanel(width, height int, state *cocreateState, er
 	content := strings.Join(lines, "\n")
 
 	style := lipgloss.NewStyle().
-		Width(width).
+		Width(contentW).
 		Height(height).
-		Border(baseBorder, false, true, false, false).
-		BorderForeground(colorDim).
 		Padding(0, 1)
 	return style.Render(panelTitleStyle.Render(":: 共创对话") + "\n" + content)
 }
@@ -327,24 +369,25 @@ func renderCoCreatePromptPanel(width, height int, state *cocreateState) string {
 		status = lipgloss.NewStyle().Foreground(colorMuted).Italic(true).Render("AI 整理中")
 	}
 
+	// 内容宽 = 列总宽 - 2（padding 0,1 占用 2 列，无 border）。
+	contentW := width - 2
+	if contentW < 8 {
+		contentW = 8
+	}
+
 	text := strings.TrimSpace(state.draftPrompt())
 	if text == "" {
 		text = "AI 会在这里持续整理出一段可直接进入创作的最终指令。"
 		text = lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render(text)
 	} else {
-		text = renderMarkdownPreview(text, max(12, width-6))
+		text = renderMarkdownPreview(text, max(12, contentW-2))
 	}
-
 	vpHeight := height - 5
 	if vpHeight < 3 {
 		vpHeight = 3
 	}
-	vpWidth := width - 2
-	if vpWidth < 8 {
-		vpWidth = 8
-	}
-	if state.promptVP.Width != vpWidth || state.promptVP.Height != vpHeight {
-		state.promptVP.Width = vpWidth
+	if state.promptVP.Width != contentW || state.promptVP.Height != vpHeight {
+		state.promptVP.Width = contentW
 		state.promptVP.Height = vpHeight
 	}
 	state.promptVP.MouseWheelEnabled = true
@@ -363,16 +406,14 @@ func renderCoCreatePromptPanel(width, height int, state *cocreateState) string {
 	}
 
 	style := lipgloss.NewStyle().
-		Width(width).
+		Width(contentW).
 		Height(height).
-		Border(baseBorder, false, false, false, false).
-		BorderForeground(colorDim).
 		Padding(0, 1)
 
 	body := panelTitleStyle.Render(":: 当前创作指令") + "\n" + status + "\n\n" + state.promptVP.View()
 	if hint != "" {
 		body += "\n\n" + lipgloss.NewStyle().
-			Width(vpWidth).
+			Width(contentW).
 			AlignHorizontal(lipgloss.Center).
 			Foreground(colorDim).
 			Italic(true).

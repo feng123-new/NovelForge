@@ -300,6 +300,13 @@ func (m *Model) refitTextareaHeight() {
 	if w <= 0 {
 		return
 	}
+	// 共创模式下 input 固定 1 行：textarea 多行内容会被 textarea 自身按光标
+	// 滚动展示。否则 inputBox 高度跟着内容变，会让左栏 conversation 收缩、
+	// input 在垂直方向漂移，破坏布局稳定性。
+	if m.cocreate != nil {
+		m.textarea.SetHeight(1)
+		return
+	}
 	text := m.textarea.Value()
 	if text == "" {
 		m.textarea.SetHeight(1)

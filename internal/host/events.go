@@ -193,11 +193,14 @@ type CoCreateMessage struct {
 	Content string `json:"content"`
 }
 
-// CoCreateReply 是共创对话的 LLM 回复。
+// CoCreateReply 是共创对话的 LLM 回复。Raw 保留模型完整三段原文，
+// 用于写回 history 让下一轮模型看到自己上一轮的 [DRAFT]，从而真正在
+// 已有草稿上累积更新（仅 Message 不含 [DRAFT]，会导致模型每轮凭对话重新归纳）。
 type CoCreateReply struct {
 	Message string
 	Prompt  string
 	Ready   bool
+	Raw     string
 }
 
 // ReplayDeltaText 从运行时队列项中提取可回放的流式文本。

@@ -48,7 +48,15 @@ func (s *CoCreateSession) ApplyReply(reply host.CoCreateReply) {
 	}
 	s.streamReply = ""
 	s.streamThinking = ""
-	if text := strings.TrimSpace(reply.Message); text != "" {
+	// history 里 assistant 存完整三段 Raw（含 [DRAFT]），下一轮模型才能看到
+	// 自己上一轮写的草稿、在它基础上累积更新；只存 Message 会让 [DRAFT] 完全
+	// 不进上下文，模型每轮只能凭对话重新归纳，早期细节容易丢。降级路径下
+	// Raw == Message，等价。
+	text := strings.TrimSpace(reply.Raw)
+	if text == "" {
+		text = strings.TrimSpace(reply.Message)
+	}
+	if text != "" {
 		s.history = append(s.history, host.CoCreateMessage{Role: "assistant", Content: text})
 	}
 	// 仅当 Prompt 非空才覆盖 draft：parse 降级路径会返回 Prompt=""，此时
