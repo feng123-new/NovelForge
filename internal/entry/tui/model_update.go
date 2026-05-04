@@ -433,6 +433,7 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		} else if strings.TrimSpace(m.streamRounds[len(m.streamRounds)-1]) != "" {
 			m.streamRounds = append(m.streamRounds, "")
 		}
+		m.trimStreamRounds()
 		m.streamRound = len(m.streamRounds)
 		m.refreshStreamViewport()
 		if m.streamScroll {
@@ -541,6 +542,16 @@ func (m *Model) applyEvent(ev host.Event) {
 	}
 }
 
+// trimStreamRounds 把 streamRounds 截断到 maxStreamRounds 段；超出从头丢弃。
+// 调用时机：每次 streamClear 新开轮次后、replay 灌完所有历史项后。
+func (m *Model) trimStreamRounds() {
+	if len(m.streamRounds) <= maxStreamRounds {
+		return
+	}
+	drop := len(m.streamRounds) - maxStreamRounds
+	m.streamRounds = m.streamRounds[drop:]
+}
+
 func (m *Model) rebuildEventIndex() {
 	m.eventIndex = make(map[string]int, len(m.events))
 	for i, e := range m.events {
@@ -586,6 +597,7 @@ func (m *Model) applyRuntimeReplay(items []domain.RuntimeQueueItem) {
 			m.streamRounds[len(m.streamRounds)-1] += text
 		}
 	}
+	m.trimStreamRounds()
 	m.streamRound = len(m.streamRounds)
 	m.refreshEventViewport()
 	m.refreshStreamViewport()

@@ -204,7 +204,7 @@ func BuildCoordinator(
 		Model:              editorModel,
 		SystemPrompt:       bundle.Prompts.Editor,
 		Tools:              editorTools,
-		MaxTurns:           10,
+		MaxTurns:           20,
 		MaxRetries:         subagentMaxRetries,
 		ToolsAreIdempotent: true,
 		OnMessage:          onMsg,

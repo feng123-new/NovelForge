@@ -16,6 +16,12 @@ import (
 
 const maxEvents = 500
 
+// maxStreamRounds 限制流式面板保留的轮次数。每个 LLM call 结束触发一次 streamClear
+// 开新轮，单章 writer 约 3~5 轮（agent header / 思考 / draft / commit），32 轮约等于
+// 回看最近 6~10 章的流式输出。已 commit 的章节正文落盘在 store/drafts，超出即丢以免
+// 每个 token delta 触发 O(全文) 重渲染。稳态内存上限约 512KB，远低于卡顿阈值。
+const maxStreamRounds = 32
+
 type focusPane int
 
 const (
