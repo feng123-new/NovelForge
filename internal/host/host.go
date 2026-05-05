@@ -653,6 +653,14 @@ func (h *Host) SwitchModel(role, provider, model string) error {
 			slog.Warn("保存配置失败", "module", "host", "err", err)
 		}
 	}
+	// 切到未登记模型时打一行 warn，提示用户走了 128k 兜底——长篇容易被提前压缩。
+	logRole := role
+	if logRole == "" {
+		logRole = "default"
+	}
+	window, source := h.cfg.ResolveContextWindow(model)
+	bootstrap.LogContextWindowChoice(logRole, model, window, source)
+
 	h.emitEvent(Event{
 		Time:     time.Now(),
 		Category: "SYSTEM",

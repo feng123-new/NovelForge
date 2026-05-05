@@ -129,7 +129,6 @@ func RunSetup() (Config, error) {
 		Providers: map[string]ProviderConfig{providerName: pc},
 		Roles:     map[string]RoleConfig{},
 		Style:     "default",
-		// ContextWindow 留空：按模型名自动解析（见 models.DefaultRegistry）
 	}
 
 	// 保存
@@ -217,8 +216,10 @@ func saveExampleConfig() {
   //   }
   // },
 
-  "style": "default",
-  "context_window": 128000
+  "style": "default"
+
+  // 上下文窗口由模型名自动解析（见 ~/.ainovel/models-cache.json，每 24h 从
+  // OpenRouter 刷新）。自定义代理 / 未登记模型兜底为 128k。
 }
 `
 	_ = os.WriteFile(filepath.Join(dir, "config.example.jsonc"), []byte(example), 0o644)

@@ -88,8 +88,8 @@ func BuildCoordinator(
 	// Writer 的 ContextManager 由工厂每次调用重建，窗口随模型 swap 动态跟随（见下方工厂）。
 	_, writerModelName, _ := models.CurrentSelection("writer")
 	writerContextWindow, writerSource := cfg.ResolveContextWindow(writerModelName)
-	logContextWindowChoice("coordinator", coordinatorModelName, coordinatorContextWindow, coordinatorSource)
-	logContextWindowChoice("writer", writerModelName, writerContextWindow, writerSource)
+	bootstrap.LogContextWindowChoice("coordinator", coordinatorModelName, coordinatorContextWindow, coordinatorSource)
+	bootstrap.LogContextWindowChoice("writer", writerModelName, writerContextWindow, writerSource)
 
 	baseOnMsg := store.Sessions.SubAgentLogger()
 	onMsg := func(agentName, task string, msg agentcore.AgentMessage) {
@@ -255,12 +255,3 @@ func decodeSaveFoundationResult(toolName string, result json.RawMessage) saveFou
 	return r
 }
 
-// logContextWindowChoice 打印某个角色的窗口决策。source=default 时发 Warn 提示用户显式配置。
-func logContextWindowChoice(role, model string, window int, source bootstrap.ContextWindowSource) {
-	attrs := []any{"module", "agent", "role", role, "model", model, "window", window, "source", source}
-	if source == bootstrap.CtxWindowDefault {
-		slog.Warn("未识别的模型，使用默认上下文窗口（如实际不同请在 config 中设置 context_window）", attrs...)
-		return
-	}
-	slog.Info("上下文窗口", attrs...)
-}
