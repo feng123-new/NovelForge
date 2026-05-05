@@ -28,19 +28,20 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cat > "$TMPDIR/prompt.txt" <<PROMPT_EOF
-You are a release note writer for a Go CLI tool called 'ainovel-cli' (an AI novel writing engine).
-Given the following git commits, generate clean release notes in Markdown.
+你是 Go 命令行工具 ainovel-cli（一款 AI 小说写作引擎）的发布说明撰写者。
+请根据下面的 Git 提交记录，生成简洁、清晰、面向用户的中文 Markdown 发布说明。
 
-Rules:
-- Group by: Features, Bug Fixes, Performance, Refactor, Other (skip empty groups)
-- Each item: one concise line, no commit hashes, no author names
-- Remove conventional commit prefixes (feat:, fix:, etc.)
-- Merge related commits into one entry
-- Use imperative mood (Add, Fix, Update)
-- Focus on user-visible changes such as release workflow, binary packaging, CLI/TUI behavior, writing pipeline, model support, and documentation
-- Output ONLY the markdown, no intro text
+规则：
+- 使用中文输出
+- 按以下分组组织内容：新功能、问题修复、性能优化、重构、其他；没有内容的分组不要输出
+- 每条内容一行，保持简洁，不要包含 commit hash 或作者名
+- 移除 conventional commit 前缀，例如 feat:、fix:、perf:、refactor: 等
+- 合并相近或重复的提交，避免逐条机械复述 commit
+- 使用面向用户的表达，突出实际变化和影响
+- 重点关注用户可感知的变化，例如发布流程、二进制打包、CLI/TUI 行为、写作流程、模型支持和文档
+- 只输出 Markdown 内容，不要输出开场白、解释或总结
 
-Commits (${RANGE}):
+提交记录（${RANGE}）：
 ${COMMITS}
 PROMPT_EOF
 
