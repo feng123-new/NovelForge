@@ -128,7 +128,7 @@ func (t *EditChapterTool) Execute(ctx context.Context, args json.RawMessage) (js
 		return result, nil
 	}
 	passthrough["chapter"] = a.Chapter
-	passthrough["next_step"] = "继续 edit_chapter 修改其他位置；全部改完后调用 check_consistency 再 commit_chapter"
+	passthrough["next_step"] = "edit 已落盘。仅在仍有硬伤时再次 edit_chapter；否则立即 check_consistency 然后 commit_chapter，不要做反复字句润色"
 	return json.Marshal(passthrough)
 }
 

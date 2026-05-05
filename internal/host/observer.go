@@ -420,8 +420,16 @@ func (o *observer) handleSubagentDelta(p *agentcore.ProgressPayload) {
 	o.ensureSubagentToolStarted(p.Agent, p.Tool)
 
 	cur, ok := o.streamExtractors[p.Agent]
-	// 工具名变了或上一轮已 Done（aborted / 已完成），一律重建
-	if !ok || cur.tool != p.Tool || cur.ext.Done() {
+	// 同工具调用 args 已闭合（顶层 } 命中）后，仍可能收到 trailing delta：
+	// 某些 provider（deepseek-v4-flash 实测）会把单次 args 拆成多个 chunk，
+	// 最末一个 chunk 在 `}` 之后还跟着空白或重复字符。此时若按"工具名匹配 +
+	// Done 即重建"处理，新 extractor 又会 emit 一次 ✻ header 并把尾段 token
+	// 当作新 args 解析。这些 delta 是冗余尾巴，丢弃即可。
+	if ok && cur.tool == p.Tool && cur.ext.Done() {
+		return
+	}
+	// 工具名变了或还没建过：新建。
+	if !ok || cur.tool != p.Tool {
 		ext := newToolExtractor(p.Tool)
 		if ext == nil {
 			delete(o.streamExtractors, p.Agent)
@@ -438,6 +446,12 @@ func (o *observer) handleSubagentDelta(p *agentcore.ProgressPayload) {
 			// 路径；用 ensureStreamParagraphBreak 只插空行不开 round，✻ 仍会被
 			// 前面的 thinking/正文包住，落到 renderChapterBlock 用默认色画掉。
 			o.streamClear()
+			// streamClear 防御性清空了 streamExtractors。当前 cur 还要继续 Feed
+			// 本工具调用后续的 delta，必须立刻把它重新登记回去；否则下一段 delta
+			// 来时会新建 extractor，从 args 中段开始解析（在嵌套对象的 `{` 处
+			// 才进入 psBeforeKey），把 timeline_events.time / foreshadow_updates.id
+			// 等当成顶层字段，TUI 上重复出现 ✻ header。
+			o.streamExtractors[p.Agent] = cur
 		}
 		o.emitStreamDelta(emitted, false)
 	}
