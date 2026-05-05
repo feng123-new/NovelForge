@@ -82,8 +82,24 @@ func (m Model) handleBlockingModalKey(msg tea.KeyMsg, next func(tea.KeyMsg) (tea
 		return m, tea.Tick(time.Second, func(time.Time) tea.Msg { return quitResetMsg{} }), true
 	}
 	m.quitPending = false
+	// 跨模态全局快捷键：modal 打开期间也要能切鼠标上报，否则共创/help/report 等
+	// 锁屏式 modal 下用户无法用原生拖拽选中复制。
+	if msg.Type == tea.KeyCtrlR {
+		next, cmd := m.toggleMouseReporting()
+		return next, cmd, true
+	}
 	model, cmd := next(msg)
 	return model, cmd, true
+}
+
+// toggleMouseReporting 切换鼠标上报开关。开 → 关让用户原生拖拽选中复制；
+// 关 → 开恢复点击切焦点 / 滚轮。base 路径与 blocking modal 路径共用。
+func (m Model) toggleMouseReporting() (Model, tea.Cmd) {
+	m.mouseOff = !m.mouseOff
+	if m.mouseOff {
+		return m, tea.DisableMouse
+	}
+	return m, tea.EnableMouseCellMotion
 }
 
 func (m Model) handleCommandPaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
@@ -155,12 +171,7 @@ func (m Model) handleBaseKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clearCommandPalette()
 		return m, nil
 	case tea.KeyCtrlR:
-		// 切换鼠标上报：开 → 关 让用户原生拖拽选中复制；关 → 开 恢复点击切焦点 / 滚轮
-		m.mouseOff = !m.mouseOff
-		if m.mouseOff {
-			return m, tea.DisableMouse
-		}
-		return m, tea.EnableMouseCellMotion
+		return m.toggleMouseReporting()
 	case tea.KeyTab:
 		if m.mode == modeNew {
 			if m.cocreate != nil {
