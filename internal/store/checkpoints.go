@@ -16,24 +16,30 @@ import (
 const checkpointsFile = "meta/checkpoints.jsonl"
 
 // CheckpointStore 管理 step 级 checkpoint 的追加与查询。
-// 存储格式为 JSONL（每行一条 JSON），只追加不修改。
+// 磁盘格式：meta/checkpoints.jsonl，只追加；查询走内存镜像。
+// 不变量：cache 是 checkpoints.jsonl 的镜像，由 Append/Reset 单点维护。
+// 并发：cache 受 io.mu 保护，写走 Lock、读走 RLock。
 type CheckpointStore struct {
 	io     *IO
 	seqGen atomic.Int64
+	cache  []domain.Checkpoint
 }
 
-// NewCheckpointStore 创建 checkpoint 存储并初始化序号。
+// NewCheckpointStore 创建 checkpoint 存储，从磁盘一次性加载已有 checkpoint 到 cache。
 func NewCheckpointStore(io *IO) *CheckpointStore {
 	cs := &CheckpointStore{io: io}
-	cs.initSeq()
+	cs.loadFromDisk()
 	return cs
 }
 
-// initSeq 从已有文件中获取最大 seq，以便续接。
-func (cs *CheckpointStore) initSeq() {
-	all := cs.loadAll()
+// loadFromDisk 一次性把磁盘 jsonl 读进 cache 并恢复 seqGen。
+func (cs *CheckpointStore) loadFromDisk() {
+	cs.io.mu.Lock()
+	defer cs.io.mu.Unlock()
+
+	cs.cache = readCheckpointsFile(cs.io.path(checkpointsFile))
 	var maxSeq int64
-	for _, cp := range all {
+	for _, cp := range cs.cache {
 		if cp.Seq > maxSeq {
 			maxSeq = cp.Seq
 		}
@@ -42,23 +48,23 @@ func (cs *CheckpointStore) initSeq() {
 }
 
 // Append 追加一条 checkpoint。
-// 幂等：如果同 Scope + Step + Digest 已存在，跳过写入。
+// 幂等：相同 Scope + Step + Digest 已存在则跳过写入，直接返回已有记录。
 func (cs *CheckpointStore) Append(scope domain.Scope, step, artifact, digest string) (*domain.Checkpoint, error) {
 	cs.io.mu.Lock()
 	defer cs.io.mu.Unlock()
 
-	// 幂等检查
 	if digest != "" {
-		all := cs.loadAllUnlocked()
-		for i := len(all) - 1; i >= 0; i-- {
-			cp := all[i]
+		for i := len(cs.cache) - 1; i >= 0; i-- {
+			cp := cs.cache[i]
 			if cp.Scope.Matches(scope) && cp.Step == step && cp.Digest == digest {
 				return &cp, nil
 			}
 		}
 	}
 
-	seq := cs.seqGen.Add(1)
+	// seq 写成功后才推进，避免写失败留下永久跳号。
+	// 已持 io.mu 写锁，Load+Store 之间不会被并发抢占。
+	seq := cs.seqGen.Load() + 1
 	cp := domain.Checkpoint{
 		Seq:        seq,
 		Scope:      scope,
@@ -76,6 +82,8 @@ func (cs *CheckpointStore) Append(scope domain.Scope, step, artifact, digest str
 	if err := cs.io.AppendLineUnlocked(checkpointsFile, data); err != nil {
 		return nil, err
 	}
+	cs.seqGen.Store(seq)
+	cs.cache = append(cs.cache, cp)
 	return &cp, nil
 }
 
@@ -94,10 +102,12 @@ func (cs *CheckpointStore) AppendArtifact(scope domain.Scope, step, artifact str
 
 // Latest 返回指定 scope 的最新 checkpoint。
 func (cs *CheckpointStore) Latest(scope domain.Scope) *domain.Checkpoint {
-	all := cs.loadAll()
-	for i := len(all) - 1; i >= 0; i-- {
-		if all[i].Scope.Matches(scope) {
-			return &all[i]
+	cs.io.mu.RLock()
+	defer cs.io.mu.RUnlock()
+	for i := len(cs.cache) - 1; i >= 0; i-- {
+		if cs.cache[i].Scope.Matches(scope) {
+			cp := cs.cache[i]
+			return &cp
 		}
 	}
 	return nil
@@ -105,9 +115,10 @@ func (cs *CheckpointStore) Latest(scope domain.Scope) *domain.Checkpoint {
 
 // LatestByStep 返回指定 scope + step 的最新 checkpoint。
 func (cs *CheckpointStore) LatestByStep(scope domain.Scope, step string) *domain.Checkpoint {
-	all := cs.loadAll()
-	for i := len(all) - 1; i >= 0; i-- {
-		cp := all[i]
+	cs.io.mu.RLock()
+	defer cs.io.mu.RUnlock()
+	for i := len(cs.cache) - 1; i >= 0; i-- {
+		cp := cs.cache[i]
 		if cp.Scope.Matches(scope) && cp.Step == step {
 			return &cp
 		}
@@ -117,37 +128,43 @@ func (cs *CheckpointStore) LatestByStep(scope domain.Scope, step string) *domain
 
 // LatestGlobal 返回全局最新 checkpoint（不区分 scope）。
 func (cs *CheckpointStore) LatestGlobal() *domain.Checkpoint {
-	all := cs.loadAll()
-	if len(all) == 0 {
+	cs.io.mu.RLock()
+	defer cs.io.mu.RUnlock()
+	if len(cs.cache) == 0 {
 		return nil
 	}
-	return &all[len(all)-1]
+	cp := cs.cache[len(cs.cache)-1]
+	return &cp
 }
 
-// All 返回全部 checkpoint 列表（按 seq 递增）。
+// All 返回全部 checkpoint 列表副本（按 seq 递增）。
 func (cs *CheckpointStore) All() []domain.Checkpoint {
-	return cs.loadAll()
+	cs.io.mu.RLock()
+	defer cs.io.mu.RUnlock()
+	if len(cs.cache) == 0 {
+		return nil
+	}
+	out := make([]domain.Checkpoint, len(cs.cache))
+	copy(out, cs.cache)
+	return out
 }
 
-// Reset 清空 checkpoint 文件。仅在新建小说时使用。
+// Reset 清空 checkpoint 文件与 cache。仅在新建小说时使用。
+// 先删文件再清内存：删除失败时保留 cache 与 seqGen，避免内存与磁盘状态错位。
 func (cs *CheckpointStore) Reset() error {
 	cs.io.mu.Lock()
 	defer cs.io.mu.Unlock()
+	if err := cs.io.RemoveFileUnlocked(checkpointsFile); err != nil {
+		return err
+	}
 	cs.seqGen.Store(0)
-	return cs.io.RemoveFileUnlocked(checkpointsFile)
+	cs.cache = nil
+	return nil
 }
 
-// loadAll 加读锁后解析全部行。
-func (cs *CheckpointStore) loadAll() []domain.Checkpoint {
-	cs.io.mu.RLock()
-	defer cs.io.mu.RUnlock()
-	return cs.loadAllUnlocked()
-}
-
-// loadAllUnlocked 在已持锁的情况下解析 JSONL。
-// 跳过格式错误的行以容忍尾部截断。
-func (cs *CheckpointStore) loadAllUnlocked() []domain.Checkpoint {
-	f, err := os.Open(cs.io.path(checkpointsFile))
+// readCheckpointsFile 解析 jsonl；跳过格式错误行以容忍尾部截断。
+func readCheckpointsFile(path string) []domain.Checkpoint {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
