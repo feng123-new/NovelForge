@@ -285,6 +285,42 @@ func TestSaveFoundationUpdateCompass(t *testing.T) {
 	}
 }
 
+func TestSaveFoundationUpdateCompassOverridesLastUpdated(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := s.Progress.Save(&domain.Progress{
+		NovelName:         "光斑",
+		Phase:             domain.PhaseWriting,
+		CompletedChapters: []int{1, 2, 3, 5, 4}, // 乱序，验证取 max 而非 len
+	}); err != nil {
+		t.Fatalf("Save progress: %v", err)
+	}
+
+	tool := NewSaveFoundationTool(s)
+	args, _ := json.Marshal(map[string]any{
+		"type": "update_compass",
+		"content": map[string]any{
+			"ending_direction": "主角面对最终抉择",
+			"open_threads":     []string{"线索A"},
+			"last_updated":     0, // LLM 通常忘填或留 0
+		},
+	})
+	if _, err := tool.Execute(context.Background(), args); err != nil {
+		t.Fatalf("Execute update_compass: %v", err)
+	}
+
+	compass, err := s.Outline.LoadCompass()
+	if err != nil {
+		t.Fatalf("LoadCompass: %v", err)
+	}
+	if compass.LastUpdated != 5 {
+		t.Fatalf("expected LastUpdated=5 (max of CompletedChapters), got %d", compass.LastUpdated)
+	}
+}
+
 func TestSaveFoundationUpdateCompassRequiresDirection(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)

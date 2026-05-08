@@ -198,10 +198,16 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		if err := decode("compass", &compass); err != nil {
 			return nil, err
 		}
+		// 工具层强制覆盖 LastUpdated 为当前已完成章节数，不信任 LLM 自填。
+		// LLM 通常忘填或留 0，会让 diag.CompassDrift 误报、Router 路由失真。
+		if p, _ := t.store.Progress.Load(); p != nil {
+			compass.LastUpdated = p.LatestCompleted()
+		}
 		if err := t.store.Outline.SaveCompass(compass); err != nil {
 			return nil, fmt.Errorf("save compass: %w", err)
 		}
 		result["ending_direction"] = compass.EndingDirection
+		result["last_updated"] = compass.LastUpdated
 
 	default:
 		return nil, fmt.Errorf("unknown type %q, expected premise/outline/layered_outline/characters/world_rules/expand_arc/append_volume/update_compass/mark_final", a.Type)

@@ -62,16 +62,18 @@ func (p *Progress) IsResumable() bool {
 
 // NextChapter 返回下一个要写的章节号。
 func (p *Progress) NextChapter() int {
-	if len(p.CompletedChapters) == 0 {
-		return 1
-	}
+	return p.LatestCompleted() + 1
+}
+
+// LatestCompleted 返回最大已完成章节号；无已完成章节时返回 0。
+func (p *Progress) LatestCompleted() int {
 	max := 0
 	for _, ch := range p.CompletedChapters {
 		if ch > max {
 			max = ch
 		}
 	}
-	return max + 1
+	return max
 }
 
 // ExtractNovelNameFromPremise 只按第一条非空行提取书名。
