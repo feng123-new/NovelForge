@@ -1,0 +1,51 @@
+{
+  // 默认 provider/model。运行时 /model 切换不会自动回写这里。
+  "provider": "openrouter",
+  "model": "google/gemini-2.5-flash",
+
+  // Provider 凭证库。key 自定义，用作 provider 字段引用。
+  // 已知 provider（openai/anthropic/gemini/openrouter/deepseek/qwen/glm/grok/mimo/ollama/bedrock）
+  // 可省略 type；自定义代理必须显式声明 type 指明 API 协议。
+  "providers": {
+    "openrouter": {
+      "api_key": "sk-or-v1-xxx",
+      "base_url": "https://openrouter.ai/api/v1",
+      // 可选。声明 /model 面板候选；省略时回退到配置中已出现过的同 provider 模型。
+      "models": ["google/gemini-3.0-flash", "google/gemini-3.1-pro"]
+    },
+    "anthropic": {
+      "api_key": "sk-ant-xxx",
+      "models": ["claude-sonnet-4", "claude-opus-4"]
+    },
+    "ollama": {
+      // ollama / bedrock / 显式 type 的自定义代理可以省略 api_key
+      "base_url": "http://localhost:11434",
+      "models": ["qwen3:14b"]
+    },
+    "my-proxy": {
+      "type": "openai",
+      "api_key": "sk-xxx",
+      "base_url": "https://proxy.example.com/v1",
+      "models": ["gpt-5.5"]
+    }
+  },
+
+  // 可选。按角色覆盖默认模型；未配的角色使用上面的 model。
+  // 角色：coordinator / architect / writer / editor。fallbacks 在主模型失败时按序尝试。
+  // "roles": {
+  //   "writer": {
+  //     "provider": "anthropic",
+  //     "model": "claude-sonnet-4",
+  //     "fallbacks": [{ "provider": "openrouter", "model": "google/gemini-3.0-pro" }]
+  //   },
+  //   "architect": { "provider": "openrouter", "model": "google/gemini-3.1-pro" }
+  // },
+
+  // 写作风格：default / suspense / fantasy / romance。
+  "style": "default"
+
+  // 可选。压缩窗口上限：effective = min(模型真窗口, compact_window)。
+  // 用于把名义 1M 窗口的模型钉在 300k 等合理区间，避免在注意力衰退区才触发压缩。
+  // 永不超过模型真窗口，切到小窗口模型也安全。省略 / 0 = 用模型真窗口。
+  // "compact_window": 300000
+}
