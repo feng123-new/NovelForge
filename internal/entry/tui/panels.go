@@ -1500,6 +1500,19 @@ func renderDetailContent(snap host.UISnapshot, contentW int) string {
 		b.WriteString("\n")
 	}
 
+	// 配角生态：累计已出场的次要角色总数 + 最近活跃前 5 名
+	if snap.SupportingCount > 0 {
+		b.WriteString(panelTitleStyle.Render(":: 配角生态"))
+		b.WriteString("\n")
+		b.WriteString(cardContentStyle.Render(truncate(fmt.Sprintf("已出场：%d 位", snap.SupportingCount), contentW)))
+		b.WriteString("\n")
+		for _, name := range snap.RecentSupporting {
+			b.WriteString(cardContentStyle.Render("· " + truncate(name, contentW-2)))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
 	// 前提
 	if snap.Premise != "" {
 		b.WriteString(panelTitleStyle.Render(":: 前提"))

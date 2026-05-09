@@ -20,6 +20,7 @@ type Store struct {
 	Signals     *SignalStore
 	Runtime     *RuntimeStore
 	Characters  *CharacterStore
+	Cast        *CastStore
 	World       *WorldStore
 	Checkpoints *CheckpointStore
 	Sessions    *SessionStore
@@ -41,6 +42,7 @@ func NewStore(dir string) *Store {
 		Signals:     NewSignalStore(newIO(dir)),
 		Runtime:     NewRuntimeStore(newIO(dir)),
 		Characters:  NewCharacterStore(newIO(dir), outline),
+		Cast:        NewCastStore(newIO(dir)),
 		World:       NewWorldStore(newIO(dir)),
 		Checkpoints: NewCheckpointStore(io),
 		Sessions:    NewSessionStore(newIO(dir)),

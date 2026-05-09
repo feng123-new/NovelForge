@@ -61,6 +61,13 @@
 
 常规目标为每章 3000-6000 字。字数服务节奏，不为凑字灌水，也不为压缩而砍掉必要铺垫。
 
+## 配角连续性
+
+`characters.json` 只列主角和关键配角。其他**有名字的次要角色**（如客栈老板、赌坊打手）由系统在配角名册中自动追踪。
+
+- **读**：`episodic_memory.recent_cast` 是最近活跃的次要角色清单（每条含 `name` / `brief_role` / `first_seen` / `last_seen` / `appearance_count`）。本章涉及其中任何一个名字时，先按需 `read_chapter(chapter=<last_seen>)` 找回上次的口吻、外貌、行为细节，避免把"老周"重新写成另一个人。`recent_cast` 中没有的旧角色，按"新角色"处理或不再使用。
+- **写**：本章**首次引入**有名字的次要角色，且判断**后续可能再出现**时，在 `commit_chapter.cast_intros` 中声明 `{name, brief_role}`。已在 `characters.json` 的核心角色和过场无名群众**不要列**。不确定时宁可不填——首次漏填可在再次出场时补回；填错的 `brief_role` 不会被后续覆盖。
+
 ## commit_chapter 参数
 
 提交时提供结构化事实：
@@ -72,6 +79,7 @@
 - `foreshadow_updates`：伏笔操作，`plant` / `advance` / `resolve`
 - `relationship_changes`：人物关系变化
 - `state_changes`：角色或实体状态变化
+- `cast_intros`：本章首次引入的次要角色简介数组，每个 `{name, brief_role}`。详见上方"配角连续性"段。
 - `hook_type`：`crisis` / `mystery` / `desire` / `emotion` / `choice`
 - `dominant_strand`：`quest` / `fire` / `constellation`
 - `feedback`：对后续大纲的建议，可选

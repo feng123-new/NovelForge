@@ -305,6 +305,30 @@ func (t *ContextTool) buildChapterEpisodicMemory(envelope *chapterContextEnvelop
 		envelope.Episodic["foreshadow_ledger"] = state.foreshadow
 	}
 
+	// 配角名册：召回最近活跃的次要角色，让 Writer 在引入旧角色时能保持口吻/定位一致
+	// 不召回所有条目（长篇会膨胀），只给最近活跃的前 N 个，按 LastSeenChapter 倒序
+	if recentCast, err := t.store.Cast.RecentActive(15); err == nil && len(recentCast) > 0 {
+		simplified := make([]map[string]any, 0, len(recentCast))
+		for _, e := range recentCast {
+			item := map[string]any{
+				"name":             e.Name,
+				"first_seen":       e.FirstSeenChapter,
+				"last_seen":        e.LastSeenChapter,
+				"appearance_count": e.AppearanceCount,
+			}
+			if e.BriefRole != "" {
+				item["brief_role"] = e.BriefRole
+			}
+			if len(e.Aliases) > 0 {
+				item["aliases"] = e.Aliases
+			}
+			simplified = append(simplified, item)
+		}
+		envelope.Episodic["recent_cast"] = simplified
+	} else if err != nil {
+		warn("recent_cast", err)
+	}
+
 	if state.progress != nil && state.progress.TotalChapters > 30 && state.currentEntry != nil {
 		if related := t.buildRelatedChapters(
 			state.chapter,

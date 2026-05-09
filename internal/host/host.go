@@ -554,6 +554,17 @@ func (h *Host) fillDetails(snap *UISnapshot, progress *domain.Progress) {
 			snap.Characters = append(snap.Characters, label)
 		}
 	}
+	if ledger, _ := h.store.Cast.Load(); len(ledger) > 0 {
+		snap.SupportingCount = len(ledger)
+		recent, _ := h.store.Cast.RecentActive(5)
+		for _, e := range recent {
+			label := e.Name
+			if e.BriefRole != "" {
+				label += "（" + e.BriefRole + "）"
+			}
+			snap.RecentSupporting = append(snap.RecentSupporting, label)
+		}
+	}
 	if progress != nil && len(progress.CompletedChapters) > 0 {
 		lastCh := progress.CompletedChapters[len(progress.CompletedChapters)-1]
 		wc := progress.ChapterWordCounts[lastCh]

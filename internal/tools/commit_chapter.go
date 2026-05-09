@@ -70,6 +70,10 @@ func (t *CommitChapterTool) Schema() map[string]any {
 		schema.Property("foreshadow_updates", schema.Array("伏笔操作", foreshadowSchema)),
 		schema.Property("relationship_changes", schema.Array("关系变化", relationshipSchema)),
 		schema.Property("state_changes", schema.Array("角色/实体状态变化", stateChangeSchema)),
+		schema.Property("cast_intros", schema.Array("本章首次引入且后续可能再出现的次要角色简介（不含主角及 characters.json 已有角色）", schema.Object(
+			schema.Property("name", schema.String("角色名")).Required(),
+			schema.Property("brief_role", schema.String("一句话定位（如：客栈老板/赌坊打手）")).Required(),
+		))),
 		schema.Property("hook_type", schema.Enum("章末钩子类型", "crisis", "mystery", "desire", "emotion", "choice")),
 		schema.Property("dominant_strand", schema.Enum("本章主导叙事线", "quest", "fire", "constellation")),
 		schema.Property("feedback", feedbackSchema),
@@ -86,6 +90,7 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 		ForeshadowUpdates   []domain.ForeshadowUpdate  `json:"foreshadow_updates"`
 		RelationshipChanges []domain.RelationshipEntry `json:"relationship_changes"`
 		StateChanges        []domain.StateChange       `json:"state_changes"`
+		CastIntros          []domain.CastIntro         `json:"cast_intros"`
 		HookType            string                     `json:"hook_type"`
 		DominantStrand      string                     `json:"dominant_strand"`
 		Feedback            *domain.OutlineFeedback    `json:"feedback"`
@@ -200,6 +205,16 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 			return nil, apperr.Wrap(err, apperr.CodeStoreWriteFailed, "tools.commit_chapter.append_state_changes", "append state changes")
 		}
 	}
+
+	// 4b. 累加配角名册：本章出场的非核心角色进 cast_ledger，供 novel_context 召回。
+	// 失败时只 warn 不阻断 commit——名册是次要数据，可通过下一章 commit 自愈。
+	if len(a.Characters) > 0 {
+		coreNames := loadCoreCharacterNameSet(t.store)
+		if err := t.store.Cast.MergeAppearances(a.Chapter, a.Characters, a.CastIntros, coreNames); err != nil {
+			slog.Warn("配角名册累加失败，跳过", "module", "commit", "chapter", a.Chapter, "err", err)
+		}
+	}
+
 	pending.Stage = domain.CommitStageStateApplied
 	pending.UpdatedAt = time.Now().Format(time.RFC3339)
 	if err := t.store.Signals.SavePendingCommit(pending); err != nil {
@@ -445,6 +460,28 @@ func (t *CommitChapterTool) buildSkipResult(chapter int, progress *domain.Progre
 	}
 
 	return json.Marshal(result)
+}
+
+// loadCoreCharacterNameSet 加载 characters.json 中已有的角色名集合（含别名）。
+// 用作 cast_ledger 的"已知核心"过滤集——核心角色不进次要名册。
+// 加载失败时返回 nil（merge 时所有 characters 都进 ledger，可接受）。
+func loadCoreCharacterNameSet(s *store.Store) map[string]bool {
+	chars, err := s.Characters.Load()
+	if err != nil || len(chars) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(chars)*2)
+	for _, c := range chars {
+		if c.Name != "" {
+			set[c.Name] = true
+		}
+		for _, alias := range c.Aliases {
+			if alias != "" {
+				set[alias] = true
+			}
+		}
+	}
+	return set
 }
 
 // applyCompletion 检查本次 commit 是否使整本书完成；若是则 MarkComplete。
