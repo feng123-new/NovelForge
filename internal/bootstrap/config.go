@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/voocel/agentcore/llm"
 	"github.com/voocel/ainovel-cli/internal/apperr"
 	"github.com/voocel/ainovel-cli/internal/models"
 	"github.com/voocel/ainovel-cli/internal/utils"
@@ -69,34 +70,19 @@ func (pc ProviderConfig) RequiresAPIKey(name string) bool {
 }
 
 // ProviderType 返回有效的 API 协议类型。
-// 优先使用显式 Type，否则从 provider 名称推断。
+// 优先使用显式 Type；否则要求 provider 名本身已在 litellm 注册表中。
 func (pc ProviderConfig) ProviderType(name string) (string, error) {
 	if pc.Type != "" {
 		return pc.Type, nil
 	}
-	if _, ok := knownProviderTypes[name]; ok {
+	if llm.IsProviderRegistered(name) {
 		return name, nil
 	}
 	return "", apperr.New(
 		apperr.CodeProviderInvalid,
 		"bootstrap.provider_type",
-		fmt.Sprintf("provider %q 缺少 type，且不在已知 provider 列表中", name),
+		fmt.Sprintf("provider %q 缺少 type，且不在 litellm 已知 provider 列表中", name),
 	)
-}
-
-// knownProviderTypes 已知 provider 名称到 API 协议类型的映射。
-var knownProviderTypes = map[string]bool{
-	"openai":     true,
-	"anthropic":  true,
-	"gemini":     true,
-	"openrouter": true,
-	"deepseek":   true,
-	"qwen":       true,
-	"glm":        true,
-	"grok":       true,
-	"mimo":       true,
-	"ollama":     true,
-	"bedrock":    true,
 }
 
 // ModelRef 表示一个 provider/model 组合。

@@ -12,7 +12,6 @@ import (
 	"github.com/voocel/agentcore"
 	"github.com/voocel/agentcore/llm"
 	"github.com/voocel/ainovel-cli/internal/apperr"
-	"github.com/voocel/litellm"
 )
 
 // 长输出 + 长 ctx 场景下，reasoning-aware provider（mimo / deepseek-r1 等）
@@ -302,14 +301,12 @@ func createModelFromConfig(providerKey, model string, pc ProviderConfig, cache m
 	if err != nil {
 		return nil, apperr.Wrap(err, apperr.CodeProviderInvalid, "bootstrap.create_model", "解析 provider 类型失败")
 	}
-	lcfg := litellm.ProviderConfig{APIKey: pc.APIKey}
-	if pc.BaseURL != "" {
-		lcfg.BaseURL = pc.BaseURL
-	}
-	lcfg.Resilience = litellm.DefaultResilienceConfig()
-	lcfg.Resilience.StreamIdleTimeout = streamIdleTimeout
 
-	client, err := litellm.NewWithProvider(providerType, lcfg)
+	m, err := llm.NewModel(providerType, model,
+		llm.WithAPIKey(pc.APIKey),
+		llm.WithBaseURL(pc.BaseURL),
+		llm.WithStreamIdleTimeout(streamIdleTimeout),
+	)
 	if err != nil {
 		return nil, apperr.Wrap(
 			err,
@@ -318,8 +315,6 @@ func createModelFromConfig(providerKey, model string, pc ProviderConfig, cache m
 			fmt.Sprintf("provider %s (%s)", providerKey, providerType),
 		)
 	}
-
-	m := llm.NewLiteLLMAdapter(model, client)
 	cache[cacheKey] = m
 	return m, nil
 }
