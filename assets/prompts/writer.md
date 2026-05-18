@@ -55,11 +55,19 @@
 - 关系变化要有事件触发，不要一章内从陌生跃迁到绝对信任。
 - 秘密分批释放，不提前解释大纲未要求的重大谜底。
 - 章末钩子可以是危机、选择、情绪余波、关系变化或未完成目标，不必每章都做夸张悬念。
-- 避免滥用“不禁”“竟然”“仿佛”“此外”“然而”、排比三连和四字成语堆砌。
+- 避免排比三连和四字成语堆砌；具体疲劳词阈值见 `working_memory.user_rules.structured.fatigue_words`，commit 时会被强制检查。
+
+## 用户偏好（user_rules）
+
+`working_memory.user_rules` 是用户/本书/题材的偏好，作为本节"写作标准"的**追加约束**：
+
+- `structured` 字段（chapter_words、forbidden_chars、forbidden_phrases、fatigue_words）是机械规则，commit 时会被强制检查。
+- `preferences` 字段是自然语言偏好（人设、文风、设定），创作时尽量同时满足项目默认与用户偏好。
+- 用户偏好与本节项目默认冲突时，**用户偏好优先**；但保持本节执行协议（plan→draft→check→commit）与产物落盘契约不变。
 
 ## 字数
 
-常规目标为每章 3000-6000 字。字数服务节奏，不为凑字灌水，也不为压缩而砍掉必要铺垫。
+字数范围以 `working_memory.user_rules.structured.chapter_words` 为准（默认 3000-6000）。字数服务节奏，不为凑字灌水，也不为压缩而砍掉必要铺垫。
 
 ## 配角连续性
 

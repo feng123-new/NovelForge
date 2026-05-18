@@ -3,13 +3,15 @@ package rules
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 )
 
 // Merge 把 loader 返回的多个来源合并成最终 Bundle。
 //
 // 合并规则：
-//   - 结构化字段：就近优先（后者覆盖前者），多来源声明同一字段且值不一致写 field_conflict
+//   - 普通结构化字段：就近优先（后者覆盖前者），多来源声明同一字段且值不一致写 field_conflict
+//   - fatigue_words：按词合并；同一词多来源声明且阈值不一致时，就近优先并写 field_conflict
 //   - Markdown 正文：按来源顺序拼接，每段加来源标题，不覆盖
 //   - sources：所有成功加载的文件路径
 //   - conflicts：解析期 conflicts + 合并期 field_conflict
@@ -46,7 +48,8 @@ func Merge(layers []Parsed) Bundle {
 		}
 	}
 
-	// 阶段 B：就近覆盖，得到最终结构化字段
+	// 阶段 B：合并结构化字段，得到最终结构化字段。
+	// 标量/list 字段保持就近覆盖；fatigue_words 是 map，按词叠加，便于用户只新增少量疲劳词。
 	for _, p := range layers {
 		if p.Structured.Genre != "" {
 			bundle.Structured.Genre = p.Structured.Genre
@@ -61,13 +64,17 @@ func Merge(layers []Parsed) Bundle {
 			bundle.Structured.ForbiddenPhrases = p.Structured.ForbiddenPhrases
 		}
 		if len(p.Structured.FatigueWords) > 0 {
-			bundle.Structured.FatigueWords = p.Structured.FatigueWords
+			bundle.Structured.FatigueWords = mergeFatigueWords(bundle.Structured.FatigueWords, p.Structured.FatigueWords)
 		}
 	}
 
 	// 阶段 C：构造 field_conflict（多来源 + 值不一致才算冲突）
 	for field, sources := range declarations {
 		if len(sources) < 2 {
+			continue
+		}
+		if field == "fatigue_words" {
+			bundle.Conflicts = append(bundle.Conflicts, fatigueWordConflicts(sources)...)
 			continue
 		}
 		if allEqual(field, sources) {
@@ -104,9 +111,76 @@ func Merge(layers []Parsed) Bundle {
 	return bundle
 }
 
+func mergeFatigueWords(dst, src map[string]int) map[string]int {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[string]int, len(src))
+	}
+	for word, limit := range src {
+		dst[word] = limit
+	}
+	return dst
+}
+
+func fatigueWordConflicts(sources []Parsed) []Conflict {
+	type declaration struct {
+		source string
+		limit  int
+	}
+	byWord := make(map[string][]declaration)
+	for _, p := range sources {
+		for word, limit := range p.Structured.FatigueWords {
+			if word == "" {
+				continue
+			}
+			byWord[word] = append(byWord[word], declaration{source: p.Source, limit: limit})
+		}
+	}
+
+	words := make([]string, 0, len(byWord))
+	for word := range byWord {
+		words = append(words, word)
+	}
+	sort.Strings(words)
+
+	var conflicts []Conflict
+	for _, word := range words {
+		ds := byWord[word]
+		if len(ds) < 2 {
+			continue
+		}
+		first := ds[0].limit
+		allSame := true
+		for _, d := range ds[1:] {
+			if d.limit != first {
+				allSame = false
+				break
+			}
+		}
+		if allSame {
+			continue
+		}
+		parts := make([]string, 0, len(ds))
+		for _, d := range ds {
+			parts = append(parts, fmt.Sprintf("%s=%d", d.source, d.limit))
+		}
+		winner := ds[len(ds)-1]
+		conflicts = append(conflicts, Conflict{
+			Source: winner.source,
+			Kind:   ConflictFieldConflict,
+			Field:  "fatigue_words." + word,
+			Detail: fmt.Sprintf("字段 fatigue_words[%q] 在多个来源声明且阈值不一致：%s；就近优先生效：%s",
+				word, strings.Join(parts, " | "), winner.source),
+		})
+	}
+	return conflicts
+}
+
 // allEqual 判定同一字段在多个来源中的值是否完全一致；一致则不报冲突。
 //
-// list / map 字段语义上不关心顺序，但实现上 yaml 反序列化已保留声明顺序，
+// list 字段语义上不关心顺序，但实现上 yaml 反序列化已保留声明顺序，
 // 完全相同的两份配置 reflect.DeepEqual 即返回 true，已满足"值一致"的判定。
 // 顺序不同但元素相同的特殊情况按"不一致"处理是可接受的（仍然 just info，不阻断）。
 func allEqual(field string, sources []Parsed) bool {

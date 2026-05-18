@@ -18,16 +18,6 @@ func newTestStore(t *testing.T) *store.Store {
 	return s
 }
 
-// TestAggregate_EmptyDefault_EmitsNothing 验证当前装配（Default() 为空）不产生任何 reminder。
-// 所有路由职责已下沉到 Host Flow Router。
-func TestAggregate_EmptyDefault_EmitsNothing(t *testing.T) {
-	s := newTestStore(t)
-	gen := Aggregate(s, Default()...)
-	if got := gen(context.Background(), agentcore.TurnInfo{TurnIndex: 0}); len(got) != 0 {
-		t.Fatalf("expected no reminders, got %d: %+v", len(got), got)
-	}
-}
-
 func TestStopGuard_AllowsStopOnlyWhenComplete(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.Progress.Init("test", 3); err != nil {

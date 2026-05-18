@@ -242,7 +242,6 @@ func BuildCoordinator(
 		agentcore.WithMaxToolErrors(0),
 		agentcore.WithMaxRetries(subagentMaxRetries),
 		agentcore.WithContextManager(coordinatorEngine),
-		agentcore.WithReminderGenerator(reminder.Aggregate(store, reminder.Default()...)),
 		agentcore.WithStopGuard(reminder.NewStopGuard(store, nil)),
 	)
 	return agent, askUser, restore, coordinatorEngine

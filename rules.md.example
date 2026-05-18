@@ -67,7 +67,8 @@ cp rules.md.example rules.md
 4. `assets/rules/genres/<genre>.md`（题材内置规则）
 5. `assets/rules/default.md`（项目默认）
 
-多来源声明同一字段且值不一致时，**就近优先**且写入 `conflicts` 让 editor 可见。
+普通结构化字段多来源声明且值不一致时，**就近优先**且写入 `conflicts` 让 editor 可见。
+`fatigue_words` 按词合并；同一词在多来源声明不同阈值时，就近优先并写入该词的 `conflicts`。
 
 ## 多本书并行的注意事项
 

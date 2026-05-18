@@ -81,8 +81,8 @@ func TestMerge_NearestWinsList(t *testing.T) {
 	}
 }
 
-func TestMerge_NearestWinsMap(t *testing.T) {
-	// genre fatigue {不禁:1}; project fatigue {竟然:2} → 项目优先，整 map 覆盖
+func TestMerge_FatigueWordsMergeByKey(t *testing.T) {
+	// genre fatigue {不禁:1}; project fatigue {竟然:2} → 按词合并，避免用户只新增一词时丢失默认规则
 	layers := []Parsed{
 		makeParsed("genre.md", SourceGenre, Structured{
 			FatigueWords: map[string]int{"不禁": 1},
@@ -92,8 +92,32 @@ func TestMerge_NearestWinsMap(t *testing.T) {
 		}, ""),
 	}
 	b := Merge(layers)
-	if !reflect.DeepEqual(b.Structured.FatigueWords, map[string]int{"竟然": 2}) {
-		t.Errorf("project map should fully replace, got %v", b.Structured.FatigueWords)
+	want := map[string]int{"不禁": 1, "竟然": 2}
+	if !reflect.DeepEqual(b.Structured.FatigueWords, want) {
+		t.Errorf("fatigue_words should merge by key, got %v want %v", b.Structured.FatigueWords, want)
+	}
+	if hasConflict(b.Conflicts, ConflictFieldConflict, "fatigue_words") {
+		t.Errorf("different fatigue_words keys should not produce field-level conflict, got %+v", b.Conflicts)
+	}
+}
+
+func TestMerge_FatigueWordsNearestWinsSameKey(t *testing.T) {
+	// 同一疲劳词多来源声明不同阈值 → 就近优先，并只针对该词报冲突
+	layers := []Parsed{
+		makeParsed("default.md", SourceDefault, Structured{
+			FatigueWords: map[string]int{"不禁": 1, "然而": 2},
+		}, ""),
+		makeParsed("project.md", SourceProject, Structured{
+			FatigueWords: map[string]int{"不禁": 3, "其实": 1},
+		}, ""),
+	}
+	b := Merge(layers)
+	want := map[string]int{"不禁": 3, "然而": 2, "其实": 1}
+	if !reflect.DeepEqual(b.Structured.FatigueWords, want) {
+		t.Errorf("fatigue_words should merge with nearest value for same key, got %v want %v", b.Structured.FatigueWords, want)
+	}
+	if !hasConflict(b.Conflicts, ConflictFieldConflict, "fatigue_words.不禁") {
+		t.Errorf("expected per-word field_conflict for 不禁, got %+v", b.Conflicts)
 	}
 }
 
