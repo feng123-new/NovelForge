@@ -3,6 +3,7 @@ package host
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -60,6 +61,11 @@ type observer struct {
 	agents  map[string]*agentState
 	agentMu sync.Mutex
 
+	// aborting 由 Host 在 Abort()/Close() 入口置位、Start/Resume/Continue 清位。
+	// 置位期间所有 context-cancel 衍生的错误事件被抑制（既是用户期望，也避免与
+	// "用户手动暂停"事件重复）。真实异常（非 cancel）仍照常上报。
+	aborting atomic.Bool
+
 	streamThinking        bool
 	lastThinkingByAgent   map[string]string          // agent → 最近的累积 thinking 文本（用于提取增量 delta）
 	dispatchStarts        map[string]*activeCall     // dispatched agent → 进行中的 DISPATCH 调用
@@ -111,6 +117,23 @@ func (o *observer) finalize() {
 		a.state = "idle"
 		a.tool = ""
 	}
+}
+
+// setAborting 由 Host 在 Abort/Close/Start 等生命周期切换处调用，控制
+// "context canceled" 类衍生事件是否需要抑制（避免与"用户手动暂停"重复）。
+func (o *observer) setAborting(v bool) { o.aborting.Store(v) }
+
+// isCancellationNoise 判断一个错误是否为 abort 引发的衍生噪声。
+// 仅当 Host 处于 aborting 态时返回 true 才有意义——非 abort 期间的
+// context.Canceled 可能反映真实问题（如外部 ctx 被取消），仍应上报。
+func (o *observer) isCancellationNoise(err error, msg string) bool {
+	if !o.aborting.Load() {
+		return false
+	}
+	if err != nil && errors.Is(err, context.Canceled) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(msg), "context canceled")
 }
 
 // emitAndLog 用于调用类事件的"开始"态：发给 TUI 但不写入 runtime queue，
@@ -175,6 +198,11 @@ func (o *observer) handle(ev agentcore.Event) {
 	case agentcore.EventError:
 		if ev.Err != nil {
 			fullMsg := ev.Err.Error()
+			if o.isCancellationNoise(ev.Err, fullMsg) {
+				// 用户主动 abort 衍生的 ctx-cancel 错误；已有"用户手动暂停"事件，不再重复刷屏。
+				slog.Debug("suppressed cancel-derived error", "module", "agent", "msg", fullMsg)
+				return
+			}
 			fields := []any{"module", "agent", "category", "ERROR"}
 			if kind := errorKind(ev.Err, fullMsg); kind != "" {
 				fields = append(fields, "kind", kind)
@@ -629,9 +657,21 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 		if agent != "coordinator" {
 			depth = 1
 		}
-		summary := fmt.Sprintf("%s 失败", ev.Tool)
+		errText := ""
 		if len(ev.Result) > 0 {
-			errText := string(ev.Result)
+			errText = string(ev.Result)
+		}
+		// 用户主动 abort 衍生的 ctx-cancel：状态清理仍要走（dispatch / tool 行必须落回完成态），
+		// 但跳过独立 ERROR 行 + 错误日志，与 EventError 路径保持一致。
+		if o.isCancellationNoise(nil, errText) {
+			slog.Debug("suppressed cancel-derived tool error", "module", "agent", "tool", ev.Tool, "msg", errText)
+			flushOrphanSubagentTool(true)
+			emitDispatchFinish(true)
+			emitToolFinish(true)
+			return
+		}
+		summary := fmt.Sprintf("%s 失败", ev.Tool)
+		if errText != "" {
 			fields := []any{"module", "agent", "tool", ev.Tool}
 			if kind := errorKind(nil, errText); kind != "" {
 				fields = append(fields, "kind", kind)
@@ -659,6 +699,12 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 	}
 
 	if errEv, fullErr := o.subagentResultErrorEvent(ev); errEv != nil {
+		if o.isCancellationNoise(nil, fullErr) {
+			slog.Debug("suppressed cancel-derived subagent error", "module", "agent", "tool", ev.Tool, "msg", fullErr)
+			flushOrphanSubagentTool(true)
+			emitDispatchFinish(true)
+			return
+		}
 		fields := []any{"module", "agent", "tool", ev.Tool}
 		if kind := errorKind(nil, fullErr); kind != "" {
 			fields = append(fields, "kind", kind)

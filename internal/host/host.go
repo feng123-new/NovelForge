@@ -141,6 +141,7 @@ func (h *Host) StartPrepared(promptText string) error {
 
 	slog.Info("开始创作", "module", "host", "prompt_len", len(promptText))
 	h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "开始创作", Level: "info"})
+	h.observer.setAborting(false)
 	// 先重置去重并启用路由，再启动 Prompt，避免首轮事件先于 Enable 抵达
 	h.router.ResetDedupe()
 	h.router.Enable()
@@ -182,6 +183,7 @@ func (h *Host) Resume() (string, error) {
 		h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "一致性告警: " + w, Level: "warn"})
 	}
 	h.refreshWriterRestore()
+	h.observer.setAborting(false)
 	h.router.ResetDedupe()
 	h.router.Enable()
 	if err := h.coordinator.Prompt(prompt); err != nil {
@@ -207,12 +209,15 @@ func (h *Host) Continue(text string) error {
 	running := h.lifecycle == lifecycleRunning
 	h.mu.Unlock()
 
+	h.emitEvent(Event{Time: time.Now(), Category: "USER", Summary: "[继续] " + text, Level: "info"})
+
 	if running {
 		h.coordinator.FollowUp(agentcore.UserMsg(text))
 		return nil
 	}
 	// 停机后 → 注入并自动恢复
 	h.refreshWriterRestore()
+	h.observer.setAborting(false)
 	_, err := h.coordinator.Inject(agentcore.UserMsg(text))
 	if err != nil {
 		return fmt.Errorf("inject: %w", err)
@@ -230,15 +235,16 @@ func (h *Host) Steer(text string) {
 	running := h.lifecycle == lifecycleRunning
 	h.mu.Unlock()
 
+	h.emitEvent(Event{Time: time.Now(), Category: "USER", Summary: "[用户干预] " + text, Level: "info"})
+
 	msg := agentcore.UserMsg("[用户干预] " + text)
 	if running {
 		if _, err := h.coordinator.Inject(msg); err != nil {
 			slog.Error("steer inject 失败", "module", "host", "err", err)
 		}
-		h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "干预已提交: " + truncate(text, 40), Level: "info"})
 		return
 	}
-	// 停机：持久化待下次启动
+	// 停机：持久化待下次启动 + 反馈系统状态（"已保存"是 USER 事件之外的系统提示）
 	_ = h.store.RunMeta.SetPendingSteer(text)
 	h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "干预已保存，下次启动时生效", Level: "info"})
 }
@@ -254,6 +260,9 @@ func (h *Host) Abort() bool {
 	if !running {
 		return false
 	}
+	// 置位必须在 coordinator.Abort 之前：cancel 传播会立刻引发 stream init / subagent
+	// 失败事件，observer 凭此标志识别为 abort 衍生噪声并抑制。
+	h.observer.setAborting(true)
 	h.coordinator.Abort()
 	h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "用户手动暂停当前创作", Level: "warn"})
 	return true
@@ -261,6 +270,7 @@ func (h *Host) Abort() bool {
 
 // Close 终止 coordinator 并关闭事件通道。
 func (h *Host) Close() {
+	h.observer.setAborting(true)
 	h.coordinator.AbortSilent()
 	if h.routerDetach != nil {
 		h.routerDetach()
