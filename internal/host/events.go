@@ -16,12 +16,12 @@ import (
 //
 // SYSTEM / ERROR / CONTEXT 等非调用类事件 ID 为空，每条独立追加。
 type Event struct {
-	ID         string        // 同一次调用的开始/结束共用；非调用事件为空
-	Time       time.Time     // 首次发出时间（开始时刻）
-	FinishedAt time.Time     // 零值 = 进行中；非零 = 已完成
-	Failed     bool          // 已完成但失败（仅完成态有意义）
-	Category   string        // DISPATCH / TOOL / SYSTEM / REVIEW / CHECK / ERROR / CONTEXT
-	Agent      string        // 产生事件的 agent
+	ID         string    // 同一次调用的开始/结束共用；非调用事件为空
+	Time       time.Time // 首次发出时间（开始时刻）
+	FinishedAt time.Time // 零值 = 进行中；非零 = 已完成
+	Failed     bool      // 已完成但失败（仅完成态有意义）
+	Category   string    // DISPATCH / TOOL / SYSTEM / REVIEW / CHECK / ERROR / CONTEXT
+	Agent      string    // 产生事件的 agent
 	Summary    string
 	Level      string        // info / warn / error / success
 	Depth      int           // 0 = coordinator 层, 1 = sub-agent 层
@@ -43,20 +43,20 @@ type UISnapshot struct {
 	Style              string
 	RuntimeState       string // idle / running / pausing / paused / completed
 	StatusLabel        string
-	Phase             string
-	Flow              string
-	CurrentChapter    int
-	TotalChapters     int
-	CompletedCount    int
-	TotalWordCount    int
-	InProgressChapter int
-	PendingRewrites   []int
-	RewriteReason     string
-	PendingSteer      string
-	RecoveryLabel     string
-	IsRunning         bool
-	Agents            []AgentSnapshot
-	Tasks             []TaskSnapshot
+	Phase              string
+	Flow               string
+	CurrentChapter     int
+	TotalChapters      int
+	CompletedCount     int
+	TotalWordCount     int
+	InProgressChapter  int
+	PendingRewrites    []int
+	RewriteReason      string
+	PendingSteer       string
+	RecoveryLabel      string
+	IsRunning          bool
+	Agents             []AgentSnapshot
+	Tasks              []TaskSnapshot
 
 	// 上下文
 	ContextTokens         int
@@ -97,6 +97,7 @@ type UISnapshot struct {
 
 	// 缓存 per-role 维度，按 CacheRead 降序，已过滤未消费 token 的 role
 	CachePerAgent []AgentCacheStat
+	CachePerModel []AgentCacheStat
 
 	// 基础设定
 	Premise          string
@@ -164,6 +165,7 @@ type AgentSnapshot struct {
 // Recent* 是滑动窗（最近 N 次调用）的命中数据，对比累计可识别"前期拖累"vs"稳态低命中"。
 type AgentCacheStat struct {
 	Role            string
+	Model           string
 	Input           int
 	Output          int
 	CacheRead       int

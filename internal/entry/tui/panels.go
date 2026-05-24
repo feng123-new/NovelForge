@@ -138,14 +138,6 @@ func renderStatePanel(snap host.UISnapshot, width, height int) string {
 	if label, ch := inProgressDisplay(snap); label != "" {
 		overview.WriteString(renderField(label, fmt.Sprintf("第 %d 章", ch)))
 	}
-	if snap.TotalInputTokens > 0 || snap.TotalOutputTokens > 0 {
-		tokens := fmt.Sprintf("in %s · out %s",
-			formatNumber(snap.TotalInputTokens), formatNumber(snap.TotalOutputTokens))
-		overview.WriteString(renderField("用量", tokens))
-		if cost := formatCostUSD(snap.TotalCostUSD); cost != "" {
-			overview.WriteString(renderField("成本", cost))
-		}
-	}
 	if headline := snapshotHeadline(tasks, snap); headline != "" {
 		label := "当前"
 		if !snap.IsRunning {
@@ -155,8 +147,17 @@ func renderStatePanel(snap host.UISnapshot, width, height int) string {
 	}
 	sections = append(sections, renderSidebarSection("概览", overview.String(), contentW))
 
-	if body := renderCacheSidebar(snap, contentW); body != "" {
-		sections = append(sections, renderSidebarSection("缓存", body, contentW))
+	if len(agents) > 0 {
+		var agentBody strings.Builder
+		for _, agent := range agents {
+			agentBody.WriteString(renderAgentLine(agent, contentW))
+			agentBody.WriteString("\n")
+		}
+		if len(idleAgents) > 0 {
+			agentBody.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("待命: " + truncate(strings.Join(idleAgents, " · "), max(8, contentW-2))))
+			agentBody.WriteString("\n")
+		}
+		sections = append(sections, renderSidebarSection("运行角色", agentBody.String(), contentW))
 	}
 
 	if len(snap.PendingRewrites) > 0 {
@@ -173,17 +174,12 @@ func renderStatePanel(snap host.UISnapshot, width, height int) string {
 			renderHighlightField("待处理", truncate(snap.PendingSteer, contentW-10)), contentW))
 	}
 
-	if len(agents) > 0 {
-		var agentBody strings.Builder
-		for _, agent := range agents {
-			agentBody.WriteString(renderAgentLine(agent, contentW))
-			agentBody.WriteString("\n")
-		}
-		if len(idleAgents) > 0 {
-			agentBody.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("待命: " + truncate(strings.Join(idleAgents, " · "), max(8, contentW-2))))
-			agentBody.WriteString("\n")
-		}
-		sections = append(sections, renderSidebarSection("运行角色", agentBody.String(), contentW))
+	if body := renderUsageSidebar(snap, contentW); body != "" {
+		sections = append(sections, renderSidebarSection("用量", body, contentW))
+	}
+
+	if body := renderCacheSidebar(snap, contentW); body != "" {
+		sections = append(sections, renderSidebarSection("缓存", body, contentW))
 	}
 
 	if body := renderContextSidebar(snap, contentW); body != "" {
@@ -458,6 +454,90 @@ func snapshotFlowLabel(flow string) string {
 	default:
 		return flow
 	}
+}
+
+func renderUsageSidebar(snap host.UISnapshot, width int) string {
+	if snap.TotalInputTokens <= 0 && snap.TotalOutputTokens <= 0 && snap.TotalCostUSD <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(renderField("输入", formatTokensCompact(snap.TotalInputTokens)))
+	b.WriteString(renderField("输出", formatTokensCompact(snap.TotalOutputTokens)))
+	if cost := formatCostUSD(snap.TotalCostUSD); cost != "" {
+		b.WriteString(renderField("费用", cost))
+	}
+	if saved := formatCostUSD(snap.TotalSavedUSD); saved != "" {
+		b.WriteString(renderField("节省", saved))
+	}
+
+	agentStats := usageStatsByCost(snap.CachePerAgent)
+	if len(agentStats) > 0 {
+		b.WriteString(renderUsageGroupHeader("角色", width))
+		limit := min(len(agentStats), 4)
+		for i := 0; i < limit; i++ {
+			a := agentStats[i]
+			b.WriteString(renderUsageLine(agentDisplayName(a.Role), eventAgentColor(a.Role), a.Input, a.Output, a.Cost, width))
+			b.WriteString("\n")
+		}
+	}
+	modelStats := usageStatsByCost(snap.CachePerModel)
+	if len(modelStats) > 0 {
+		b.WriteString(renderUsageGroupHeader("模型", width))
+		limit := min(len(modelStats), 4)
+		for i := 0; i < limit; i++ {
+			a := modelStats[i]
+			b.WriteString(renderUsageLine(modelDisplayName(a.Model), bodyTextColor, a.Input, a.Output, a.Cost, width))
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+func usageStatsByCost(in []host.AgentCacheStat) []host.AgentCacheStat {
+	out := append([]host.AgentCacheStat(nil), in...)
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Cost != out[j].Cost {
+			return out[i].Cost > out[j].Cost
+		}
+		return out[i].Input+out[i].Output > out[j].Input+out[j].Output
+	})
+	return out
+}
+
+func renderUsageGroupHeader(label string, width int) string {
+	line := lipgloss.NewStyle().Foreground(colorDim).
+		Render(strings.Repeat("·", max(8, width-lipgloss.Width(label)-3)))
+	return lipgloss.NewStyle().Foreground(colorMuted).Render(label+" ") + line + "\n"
+}
+
+func renderUsageLine(name string, color lipgloss.TerminalColor, input, output int, cost float64, width int) string {
+	nameW := 11
+	if width < 24 {
+		nameW = 8
+	}
+	nameCell := lipgloss.NewStyle().Foreground(color).Width(nameW).
+		Render(truncate(name, nameW))
+	tokens := formatTokensCompact(input + output)
+	right := tokens
+	if costStr := formatCostUSD(cost); costStr != "" {
+		right += " · " + costStr
+	}
+	return fitInlineLine(nameCell+lipgloss.NewStyle().Foreground(colorDim).Render(right), width)
+}
+
+func modelDisplayName(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return "unknown"
+	}
+	parts := strings.Split(model, "/")
+	if len(parts) >= 3 {
+		return strings.Join(parts[1:], "/")
+	}
+	if len(parts) == 2 {
+		return parts[1]
+	}
+	return model
 }
 
 // renderCacheSidebar 渲染左栏"缓存"区块。

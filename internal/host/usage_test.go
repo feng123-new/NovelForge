@@ -98,6 +98,75 @@ func Test_UsageTracker_ArchitectAliasNormalized(t *testing.T) {
 	}
 }
 
+func Test_UsageTracker_PerModelAccumulates(t *testing.T) {
+	tk := NewUsageTracker(nil, nil)
+	tk.accumulate("writer", "openrouter", "model-a", agentcore.Usage{Input: 1000, Output: 200, CacheRead: 700})
+	tk.accumulate("editor", "openrouter", "model-b", agentcore.Usage{Input: 500, Output: 100})
+	tk.accumulate("writer", "openrouter", "model-a", agentcore.Usage{Input: 300, Output: 80, CacheRead: 200})
+
+	perModel := tk.PerModel()
+	if len(perModel) != 2 {
+		t.Fatalf("per-model len=%d want 2", len(perModel))
+	}
+	seen := map[string]AgentUsage{}
+	for _, m := range perModel {
+		seen[m.Model] = m
+	}
+	if seen["openrouter/model-a"].Input != 1300 || seen["openrouter/model-a"].CacheRead != 900 {
+		t.Errorf("model-a totals = %+v", seen["openrouter/model-a"])
+	}
+	if seen["openrouter/model-b"].Output != 100 {
+		t.Errorf("model-b totals = %+v", seen["openrouter/model-b"])
+	}
+
+	snap := tk.Snapshot()
+	restored := NewUsageTracker(nil, nil)
+	restored.applyState(snap)
+	if got := restored.PerModel(); len(got) != 2 {
+		t.Fatalf("restored per-model len=%d want 2: %+v", len(got), got)
+	}
+}
+
+func Test_UsageTracker_RecordUsesActualUsageModel(t *testing.T) {
+	tk := NewUsageTracker(nil, nil)
+	tk.Record("writer", agentcore.Message{
+		Role: agentcore.RoleAssistant,
+		Usage: &agentcore.Usage{
+			Provider: "openrouter",
+			Model:    "google/gemini-2.5-pro",
+			Input:    1000,
+			Output:   200,
+		},
+	})
+
+	perModel := tk.PerModel()
+	if len(perModel) != 1 {
+		t.Fatalf("per-model len=%d want 1: %+v", len(perModel), perModel)
+	}
+	if perModel[0].Model != "openrouter/google/gemini-2.5-pro" {
+		t.Fatalf("model key = %q, want openrouter/google/gemini-2.5-pro", perModel[0].Model)
+	}
+	if perModel[0].Input != 1000 || perModel[0].Output != 200 {
+		t.Fatalf("model totals = %+v", perModel[0])
+	}
+}
+
+func Test_UsageTracker_ProviderOnlyDoesNotInventModelKey(t *testing.T) {
+	tk := NewUsageTracker(nil, nil)
+	tk.Record("writer", agentcore.Message{
+		Role: agentcore.RoleAssistant,
+		Usage: &agentcore.Usage{
+			Provider: "openrouter",
+			Input:    1000,
+			Output:   200,
+		},
+	})
+
+	if got := tk.PerModel(); len(got) != 0 {
+		t.Fatalf("provider-only usage must not create model stats without a model, got %+v", got)
+	}
+}
+
 // Test_UsageTracker_RecentWindowReflectsLatest 验证滑动窗反映"最近 N 次"，
 // 不被早期低命中拖累 — 这正是 P1 要解决的"前期拖累 vs 稳态低命中"问题。
 func Test_UsageTracker_RecentWindowReflectsLatest(t *testing.T) {
@@ -308,4 +377,3 @@ func Test_UsageTracker_AccumulatesAnyRoleWithUsage(t *testing.T) {
 		t.Errorf("有 Usage 不应计入 missing")
 	}
 }
-

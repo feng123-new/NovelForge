@@ -4,7 +4,7 @@ import "time"
 
 // UsageSchemaVersion 是 meta/usage.json 的兼容版本号。
 // 未来若 AgentUsageTotals 字段语义变化，递增此值；UsageStore.Load 见到不同版本应忽略并触发 replay 重建。
-const UsageSchemaVersion = 1
+const UsageSchemaVersion = 2
 
 // UsageState 是累计 token / cost 用量的可持久化快照。
 // 内存中由 UsageTracker 维护，定期 debounce 落盘到 meta/usage.json。
@@ -17,6 +17,7 @@ type UsageState struct {
 	UpdatedAt    time.Time                   `json:"updated_at"`
 	Overall      AgentUsageTotals            `json:"overall"`
 	PerAgent     map[string]AgentUsageTotals `json:"per_agent"`
+	PerModel     map[string]AgentUsageTotals `json:"per_model,omitempty"`
 	MissingUsage int                         `json:"missing_assistant_usage"`
 }
 

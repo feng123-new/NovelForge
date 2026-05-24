@@ -16,9 +16,8 @@ import (
 // sessionRecord 是 meta/sessions/*.jsonl 单条记录的轻量解析形态——只取
 // 累计 usage 需要的字段。Content 等大字段跳过解析，节省启动期 IO。
 //
-// Meta 字段（_meta）由 SessionStore 在写入时附加，含当时生效的 provider/model。
-// 老版本 jsonl 没有这个字段 → Meta=nil，replay 时退回 ModelSet 当前查表，
-// 这也是 "session 加 _meta 之前的历史 cost 仍为估算" 的兼容门。
+// Usage.Provider/Model 由 agentcore/litellm 透传真实响应模型；Meta 字段（_meta）
+// 是旧日志兼容兜底，老版本 jsonl 两者都没有时 replay 才退回 ModelSet 当前查表。
 type sessionRecord struct {
 	Role  agentcore.Role     `json:"role"`
 	Usage *agentcore.Usage   `json:"usage,omitempty"`
@@ -36,9 +35,8 @@ type sessionRecordMeta struct {
 // 调用约束：仅在 meta/usage.json 缺失（首次升级或 schema 变更）时调用一次，做
 // 历史数据回填。日常持久化走 SaveNow / autoSaveLoop。
 //
-// 已知精度损失：session log 里没记"当时这条消息用的是哪个模型"。回放时只能拿
-// 当前 ModelSet 给每个 role 反推单价；如果运行中切过模型，历史 cost 会和真实
-// 账单有差。Token 数本身是精确的——回放后即便 cost 估算偏差，也胜过完全没有累计。
+// 已知精度损失：旧 session log 如果既没有 Usage.Provider/Model，也没有 _meta，
+// 回放时只能拿当前 ModelSet 给每个 role 反推单价；新日志使用真实响应模型。
 func (t *UsageTracker) ReplaySessions(rootDir string) (int, error) {
 	if t == nil {
 		return 0, nil
@@ -124,11 +122,16 @@ func (t *UsageTracker) replayFile(path, agentName string) (int, error) {
 		if rec.Role != agentcore.RoleAssistant || rec.Usage == nil {
 			continue
 		}
-		modelName := ""
+		provider, modelName := usageActualModel(rec.Usage)
 		if rec.Meta != nil {
-			modelName = rec.Meta.Model
+			if provider == "" {
+				provider = rec.Meta.Provider
+			}
+			if modelName == "" {
+				modelName = rec.Meta.Model
+			}
 		}
-		t.accumulate(role, modelName, *rec.Usage)
+		t.accumulate(role, provider, modelName, *rec.Usage)
 		count++
 	}
 	if err := scanner.Err(); err != nil {

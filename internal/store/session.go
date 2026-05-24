@@ -109,8 +109,11 @@ func (s *SessionStore) logEntry(rel string, msg agentcore.AgentMessage, meta *se
 	}
 	compacted := compactMessage(m)
 	entry := sessionLogEntry{Message: compacted}
-	if meta != nil && compacted.Role == agentcore.RoleAssistant && compacted.Usage != nil {
-		entry.Meta = meta
+	if compacted.Role == agentcore.RoleAssistant && compacted.Usage != nil {
+		entry.Meta = usageMeta(compacted.Usage)
+		if entry.Meta == nil {
+			entry.Meta = meta
+		}
 	}
 	data, err := json.Marshal(entry)
 	if err != nil {
@@ -118,6 +121,16 @@ func (s *SessionStore) logEntry(rel string, msg agentcore.AgentMessage, meta *se
 	}
 	data = append(data, '\n')
 	return s.io.AppendLine(rel, data)
+}
+
+func usageMeta(usage *agentcore.Usage) *sessionLogMeta {
+	if usage == nil || (usage.Provider == "" && usage.Model == "") {
+		return nil
+	}
+	return &sessionLogMeta{
+		Provider: usage.Provider,
+		Model:    usage.Model,
+	}
 }
 
 // subAgentPath 根据 agentName+task 生成文件路径。

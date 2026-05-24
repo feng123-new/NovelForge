@@ -38,6 +38,7 @@ type UsageTracker struct {
 	mu       sync.Mutex
 	overall  agentTotals
 	perAgent map[string]*agentTotals // key 为 agentRoleName 归一后的 role 名
+	perModel map[string]*agentTotals // key 为 provider/model；provider 未知时退化为 model
 	modelSet *bootstrap.ModelSet
 	store    *storepkg.Store // 可为 nil（测试场景），nil 时所有持久化方法静默 noop
 
@@ -81,6 +82,7 @@ func NewUsageTracker(set *bootstrap.ModelSet, store *storepkg.Store) *UsageTrack
 		modelSet: set,
 		store:    store,
 		perAgent: make(map[string]*agentTotals, 4),
+		perModel: make(map[string]*agentTotals, 4),
 		saveCh:   make(chan struct{}, 1),
 	}
 }
@@ -105,9 +107,16 @@ func (t *UsageTracker) Record(agentName string, msg agentcore.AgentMessage) {
 		}
 		return
 	}
-	// 实时路径 modelName="" → resolveCost 从 ModelSet 拿"当前生效"模型；
-	// 切换模型后下一条消息自动用新单价，无需任何额外处理。
-	t.accumulate(agentRoleName(agentName), "", *m.Usage)
+	role := agentRoleName(agentName)
+	provider, modelName := usageActualModel(m.Usage)
+	t.accumulate(role, provider, modelName, *m.Usage)
+}
+
+func usageActualModel(u *agentcore.Usage) (provider, modelName string) {
+	if u == nil {
+		return "", ""
+	}
+	return strings.TrimSpace(u.Provider), strings.TrimSpace(u.Model)
 }
 
 // flagMissingUsage 累计一次"看似真 LLM 响应却没拿到 usage"事件，整会话只打一次
@@ -137,12 +146,13 @@ func (t *UsageTracker) notifyDirty() {
 	}
 }
 
-// accumulate 把一条带 Usage 的消息累计到 overall 和 per-role 两份计数。
-// modelName 为空表示"用当前 ModelSet 拿 role 对应模型"（实时路径）；非空表示
-// "强制按指定模型算价"（replay 路径用 session jsonl 里的 _meta.model）。
+// accumulate 把一条带 Usage 的消息累计到 overall / per-role / per-model 三份计数。
+// provider/model 为空表示"用当前 ModelSet 拿 role 对应模型"（实时路径）；非空表示
+// "强制按指定模型算价"（replay 路径用 session jsonl 里的 _meta）。
 // resolveCost 在锁外执行（它只读 modelSet/Registry），锁内只做加法。
-func (t *UsageTracker) accumulate(role, modelName string, u agentcore.Usage) {
-	cost, saved, capable := t.resolveCost(role, modelName, u)
+func (t *UsageTracker) accumulate(role, provider, modelName string, u agentcore.Usage) {
+	provider, modelName = t.effectiveModel(role, provider, modelName)
+	cost, saved, capable := t.resolveCost(modelName, u)
 
 	t.mu.Lock()
 	addUsage(&t.overall, u, cost, saved, capable)
@@ -153,9 +163,50 @@ func (t *UsageTracker) accumulate(role, modelName string, u agentcore.Usage) {
 		t.perAgent[role] = per
 	}
 	addUsage(per, u, cost, saved, capable)
+
+	if key := modelUsageKey(provider, modelName); key != "" {
+		perModel := t.perModel[key]
+		if perModel == nil {
+			perModel = &agentTotals{}
+			t.perModel[key] = perModel
+		}
+		addUsage(perModel, u, cost, saved, capable)
+	}
 	t.mu.Unlock()
 
 	t.notifyDirty()
+}
+
+func (t *UsageTracker) effectiveModel(role, provider, modelName string) (string, string) {
+	provider = strings.TrimSpace(provider)
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		if t != nil && t.modelSet != nil {
+			p, m, _ := t.modelSet.CurrentSelection(role)
+			return p, m
+		}
+		return "", ""
+	}
+	if provider == "" && t != nil && t.modelSet != nil {
+		p, m, _ := t.modelSet.CurrentSelection(role)
+		if m == modelName {
+			provider = p
+		}
+	}
+	return provider, modelName
+}
+
+func modelUsageKey(provider, modelName string) string {
+	provider = strings.TrimSpace(provider)
+	modelName = strings.TrimSpace(modelName)
+	switch {
+	case modelName == "":
+		return ""
+	case provider == "":
+		return modelName
+	default:
+		return provider + "/" + modelName
+	}
 }
 
 // addUsage 把单次调用的 token 与成本叠加到一份 totals 上。
@@ -267,10 +318,14 @@ func (t *UsageTracker) Snapshot() domain.UsageState {
 		UpdatedAt:    time.Now(),
 		Overall:      totalsSnapshot(&t.overall),
 		PerAgent:     make(map[string]domain.AgentUsageTotals, len(t.perAgent)),
+		PerModel:     make(map[string]domain.AgentUsageTotals, len(t.perModel)),
 		MissingUsage: t.missingAssistantUsage,
 	}
 	for role, v := range t.perAgent {
 		state.PerAgent[role] = totalsSnapshot(v)
+	}
+	for model, v := range t.perModel {
+		state.PerModel[model] = totalsSnapshot(v)
 	}
 	return state
 }
@@ -369,6 +424,15 @@ func (t *UsageTracker) applyState(state domain.UsageState) {
 			t.perAgent[role] = &tot
 		}
 	}
+	if state.PerModel == nil {
+		t.perModel = make(map[string]*agentTotals, 4)
+	} else {
+		t.perModel = make(map[string]*agentTotals, len(state.PerModel))
+		for model, v := range state.PerModel {
+			tot := totalsFromState(v)
+			t.perModel[model] = &tot
+		}
+	}
 	t.missingAssistantUsage = state.MissingUsage
 }
 
@@ -406,6 +470,7 @@ func totalsFromState(s domain.AgentUsageTotals) agentTotals {
 // AgentUsage 是一个 agent 的累计用量快照（向 UI 暴露）。
 type AgentUsage struct {
 	Role            string
+	Model           string
 	Input           int
 	Output          int
 	CacheRead       int
@@ -454,17 +519,45 @@ func (t *UsageTracker) PerAgent() []AgentUsage {
 	return out
 }
 
+// PerModel 返回各模型累计用量。结果按成本降序，其次按输入量降序。
+func (t *UsageTracker) PerModel() []AgentUsage {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]AgentUsage, 0, len(t.perModel))
+	for model, v := range t.perModel {
+		if v.Input == 0 && v.Output == 0 {
+			continue
+		}
+		out = append(out, AgentUsage{
+			Model:        model,
+			Input:        v.Input,
+			Output:       v.Output,
+			CacheRead:    v.CacheRead,
+			CacheWrite:   v.CacheWrite,
+			Cost:         v.Cost,
+			Saved:        v.Saved,
+			CacheCapable: v.CacheCapable,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Cost != out[j].Cost {
+			return out[i].Cost > out[j].Cost
+		}
+		return out[i].Input > out[j].Input
+	})
+	return out
+}
+
 // resolveCost 同时返回本次消息的 cost / saved / capable。
 //   - cost: 注册表命中按 4 项累乘；未命中回落 provider 自带 cost
 //   - saved: 仅注册表命中、CacheRead > 0、且 InputCost > CacheReadCost 时 > 0
 //   - capable: 注册表命中且该模型 CacheReadCostPer1M > 0 → 已知支持 prompt caching
 //
-// modelName 优先用调用方传入的（replay 时来自 session jsonl 的 _meta.model）；
-// 留空时从 ModelSet 按 role 查当前生效模型（实时路径）。
-func (t *UsageTracker) resolveCost(role, modelName string, u agentcore.Usage) (cost, saved float64, capable bool) {
-	if modelName == "" && t.modelSet != nil {
-		_, modelName, _ = t.modelSet.CurrentSelection(role)
-	}
+// modelName 优先用调用方传入的（replay 时来自 session jsonl 的 _meta.model）。
+func (t *UsageTracker) resolveCost(modelName string, u agentcore.Usage) (cost, saved float64, capable bool) {
 	if entry, ok := models.DefaultRegistry().Resolve(modelName); ok {
 		c := computeCost(u, *entry)
 		s := computeSaved(u, *entry)

@@ -29,19 +29,19 @@ import (
 // 职责：启动/恢复/干预注入/事件投影/模型管理。
 // 不做任何调度决策，不做空闲续跑。
 type Host struct {
-	cfg              bootstrap.Config
-	bundle           assets.Bundle
-	store            *storepkg.Store
-	models           *bootstrap.ModelSet
-	coordinator      *agentcore.Agent
+	cfg               bootstrap.Config
+	bundle            assets.Bundle
+	store             *storepkg.Store
+	models            *bootstrap.ModelSet
+	coordinator       *agentcore.Agent
 	coordinatorCtxMgr *corecontext.ContextEngine // 切 default/coordinator 模型时联动 SetContextWindow + SetReserveTokens
-	askUser          *tools.AskUserTool
-	writerRestore    *ctxpack.WriterRestorePack
-	observer         *observer
-	router           *flow.Dispatcher
-	routerDetach     func()
-	usage            *UsageTracker
-	usageCancel      context.CancelFunc // 停掉 autoSaveLoop 并触发最后一次 flush
+	askUser           *tools.AskUserTool
+	writerRestore     *ctxpack.WriterRestorePack
+	observer          *observer
+	router            *flow.Dispatcher
+	routerDetach      func()
+	usage             *UsageTracker
+	usageCancel       context.CancelFunc // 停掉 autoSaveLoop 并触发最后一次 flush
 
 	events   chan Event
 	streamCh chan string
@@ -458,18 +458,32 @@ func (h *Host) Snapshot() UISnapshot {
 			RecentSamples:   a.RecentSamples,
 		})
 	}
+	perModel := h.usage.PerModel()
+	modelStats := make([]AgentCacheStat, 0, len(perModel))
+	for _, a := range perModel {
+		modelStats = append(modelStats, AgentCacheStat{
+			Model:        a.Model,
+			Input:        a.Input,
+			Output:       a.Output,
+			CacheRead:    a.CacheRead,
+			CacheWrite:   a.CacheWrite,
+			Cost:         a.Cost,
+			Saved:        a.Saved,
+			CacheCapable: a.CacheCapable,
+		})
+	}
 
 	snap := UISnapshot{
-		Provider:              provider,
-		ModelName:             model,
-		ModelContextWindow:    modelWindow,
-		Style:                 h.cfg.Style,
-		RuntimeState:          string(state),
-		IsRunning:             state == lifecycleRunning,
-		TotalInputTokens:      tokIn,
-		TotalOutputTokens:     tokOut,
-		TotalCacheReadTokens:  cacheRead,
-		TotalCacheWriteTokens: cacheWrite,
+		Provider:               provider,
+		ModelName:              model,
+		ModelContextWindow:     modelWindow,
+		Style:                  h.cfg.Style,
+		RuntimeState:           string(state),
+		IsRunning:              state == lifecycleRunning,
+		TotalInputTokens:       tokIn,
+		TotalOutputTokens:      tokOut,
+		TotalCacheReadTokens:   cacheRead,
+		TotalCacheWriteTokens:  cacheWrite,
 		TotalCostUSD:           cost,
 		TotalSavedUSD:          saved,
 		OverallCacheCapable:    overallCapable,
@@ -477,6 +491,7 @@ func (h *Host) Snapshot() UISnapshot {
 		OverallRecentInput:     recentInput,
 		OverallRecentSamples:   recentSamples,
 		CachePerAgent:          cacheStats,
+		CachePerModel:          modelStats,
 		MissingAssistantUsage:  h.usage.MissingAssistantUsage(),
 	}
 
