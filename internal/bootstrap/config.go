@@ -13,7 +13,7 @@ import (
 )
 
 // DefaultContextWindow 模型未在 registry 登记时的兜底窗口大小。
-const DefaultContextWindow = 128000
+const DefaultContextWindow = 200000
 
 // CompactRatio 触发上下文压缩的相对阈值：tokens >= window * CompactRatio 时压缩。
 // 0.85 是经验值，给"下一轮 prompt + 大工具结果"留 15% 头部空间，同时让大窗口

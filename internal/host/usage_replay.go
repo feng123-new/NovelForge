@@ -16,8 +16,10 @@ import (
 // sessionRecord 是 meta/sessions/*.jsonl 单条记录的轻量解析形态——只取
 // 累计 usage 需要的字段。Content 等大字段跳过解析，节省启动期 IO。
 //
-// Usage.Provider/Model 由 agentcore/litellm 透传真实响应模型；Meta 字段（_meta）
-// 是旧日志兼容兜底，老版本 jsonl 两者都没有时 replay 才退回 ModelSet 当前查表。
+// 模型归属三级降级：
+//  1. Usage.Provider/Model — agentcore/litellm 透传的真实响应模型（首选）
+//  2. Meta(_meta)          — 上游未透传时，写入侧由 ModelLookup 补的"当时生效"模型
+//  3. 都没有                — replay 退回 effectiveModel 用当前 ModelSet 反推（精度受损）
 type sessionRecord struct {
 	Role  agentcore.Role     `json:"role"`
 	Usage *agentcore.Usage   `json:"usage,omitempty"`
@@ -35,8 +37,8 @@ type sessionRecordMeta struct {
 // 调用约束：仅在 meta/usage.json 缺失（首次升级或 schema 变更）时调用一次，做
 // 历史数据回填。日常持久化走 SaveNow / autoSaveLoop。
 //
-// 已知精度损失：旧 session log 如果既没有 Usage.Provider/Model，也没有 _meta，
-// 回放时只能拿当前 ModelSet 给每个 role 反推单价；新日志使用真实响应模型。
+// 精度依赖见 sessionRecord 注释的三级降级——第 3 级（Usage 和 _meta 都缺）
+// 在更老日志或上游异常时才会触发。
 func (t *UsageTracker) ReplaySessions(rootDir string) (int, error) {
 	if t == nil {
 		return 0, nil

@@ -102,7 +102,9 @@ func (t *SaveReviewTool) Execute(_ context.Context, args json.RawMessage) (json.
 		}
 	}
 
-	// 根据最终 verdict 更新 Progress
+	// 根据最终 verdict 更新 Progress。
+	// 写失败必须早返回——后续会 append review checkpoint，若此处吞 err 会让 Coordinator
+	// 看到 saved:true 但 Store 仍处于旧 Flow / 缺失 PendingRewrites 的中间态。
 	progress, _ := t.store.Progress.Load()
 	affected := r.AffectedChapters
 	if finalVerdict == "rewrite" || finalVerdict == "polish" {
@@ -113,10 +115,16 @@ func (t *SaveReviewTool) Execute(_ context.Context, args json.RawMessage) (json.
 		if finalVerdict == "polish" {
 			flow = domain.FlowPolishing
 		}
-		_ = t.store.Progress.SetPendingRewrites(affected, r.Summary)
-		_ = t.store.Progress.SetFlow(flow)
+		if err := t.store.Progress.SetPendingRewrites(affected, r.Summary); err != nil {
+			return nil, fmt.Errorf("set pending rewrites: %w", err)
+		}
+		if err := t.store.Progress.SetFlow(flow); err != nil {
+			return nil, fmt.Errorf("set flow %s: %w", flow, err)
+		}
 	} else {
-		_ = t.store.Progress.SetFlow(domain.FlowWriting)
+		if err := t.store.Progress.SetFlow(domain.FlowWriting); err != nil {
+			return nil, fmt.Errorf("set flow writing: %w", err)
+		}
 	}
 
 	// 读取更新后的 Progress 快照作为事实
