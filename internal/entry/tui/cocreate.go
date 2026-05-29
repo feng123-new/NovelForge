@@ -75,6 +75,9 @@ type cocreateState struct {
 	convVP     viewport.Model
 	promptVP   viewport.Model
 	convFollow bool // true: 流式新内容自动滚到底；用户上滚后置 false 停止跟随
+	// focusPrompt 决定 ↑↓/PgUp/PgDn/Home/End 滚哪一栏：false=左对话栏（默认），
+	// true=右创作指令栏。欢迎页已关鼠标上报（保留原生复制），右栏溢出靠 Tab 切焦点后键盘滚。
+	focusPrompt bool
 }
 
 func newCoCreateState(initial string) *cocreateState {

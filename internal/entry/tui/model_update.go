@@ -96,11 +96,24 @@ func (m Model) handleBlockingModalKey(msg tea.KeyMsg, next func(tea.KeyMsg) (tea
 // toggleMouseReporting 切换鼠标上报开关。开 → 关让用户原生拖拽选中复制；
 // 关 → 开恢复点击切焦点 / 滚轮。base 路径与 blocking modal 路径共用。
 func (m Model) toggleMouseReporting() (Model, tea.Cmd) {
+	// 欢迎页(modeNew)本就不开鼠标上报，原生拖拽即可复制；此处忽略 Ctrl+R，
+	// 避免误开上报反而破坏原生复制。鼠标上报由 enterRunning 在进入工作台时打开。
+	if m.mode == modeNew {
+		return m, nil
+	}
 	m.mouseOff = !m.mouseOff
 	if m.mouseOff {
 		return m, tea.DisableMouse
 	}
 	return m, tea.EnableMouseCellMotion
+}
+
+// enterRunning 进入创作工作台：开启鼠标上报（工作台需要点击切面板 / 滚轮 /
+// 拖拽侧边栏）。返回的命令需由调用方 Batch 进最终返回值。
+func (m *Model) enterRunning() tea.Cmd {
+	m.mode = modeRunning
+	m.mouseOff = false
+	return tea.EnableMouseCellMotion
 }
 
 func (m Model) handleCommandPaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
@@ -402,9 +415,10 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		m.applyRuntimeReplay(msg.replay)
 		if msg.resumed && m.mode == modeNew {
-			m.mode = modeRunning
+			enableMouse := m.enterRunning()
 			m.resizeTextarea()
 			m.textarea.Placeholder = defaultSteerPlaceholder()
+			return m, tea.Batch(fetchSnapshot(m.runtime), enableMouse), true
 		}
 		return m, fetchSnapshot(m.runtime), true
 	case askUserMsg:
@@ -589,10 +603,10 @@ func (m Model) handleStartResultMsg(msg startResultMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == modeNew {
 		m.cocreate = nil
-		m.mode = modeRunning
+		enableMouse := m.enterRunning()
 		m.resizeTextarea()
 		m.textarea.Placeholder = defaultSteerPlaceholder()
-		return m, tea.Batch(fetchSnapshot(m.runtime), m.textarea.Focus())
+		return m, tea.Batch(fetchSnapshot(m.runtime), m.textarea.Focus(), enableMouse)
 	}
 
 	return m, fetchSnapshot(m.runtime)

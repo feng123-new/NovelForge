@@ -381,7 +381,7 @@ func (h *Host) emitEvent(ev Event) {
 	// 所有事件的唯一 slog 入口。observer 翻译的 agentcore 事件和 Host 自发的
 	// SYSTEM 事件（Start/Abort/Resume…）都在这里落日志，避免 ESC abort 与外部
 	// 终止在 tui.log 上无法区分。
-	if ev.Summary != "" {
+	if ev.Summary != "" || ev.Detail != "" {
 		level := slog.LevelInfo
 		switch ev.Level {
 		case "warn":
@@ -389,8 +389,16 @@ func (h *Host) emitEvent(ev Event) {
 		case "error":
 			level = slog.LevelError
 		}
-		slog.Log(context.Background(), level, ev.Summary,
-			"module", "event", "category", ev.Category, "agent", ev.Agent)
+		// 日志记完整 Detail（排查用，不截断）；Detail 为空才回退到 Summary。
+		msg := ev.Detail
+		if msg == "" {
+			msg = ev.Summary
+		}
+		attrs := []any{"module", "event", "category", ev.Category, "agent", ev.Agent}
+		if ev.Kind != "" {
+			attrs = append(attrs, "kind", ev.Kind)
+		}
+		slog.Log(context.Background(), level, msg, attrs...)
 	}
 	select {
 	case h.events <- ev:

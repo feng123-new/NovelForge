@@ -23,6 +23,8 @@ type Event struct {
 	Category   string    // DISPATCH / TOOL / SYSTEM / REVIEW / CHECK / ERROR / CONTEXT
 	Agent      string    // 产生事件的 agent
 	Summary    string
+	Detail     string        // 完整文案，写入日志不截断供排查；为空回退 Summary。UI 只读 Summary
+	Kind       string        // 错误分类（如 stream_idle），随日志输出供过滤/告警；为空不输出
 	Level      string        // info / warn / error / success
 	Depth      int           // 0 = coordinator 层, 1 = sub-agent 层
 	Duration   time.Duration // 完成时的执行耗时

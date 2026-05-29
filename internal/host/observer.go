@@ -186,10 +186,13 @@ func (o *observer) handle(ev agentcore.Event) {
 			if ev.RetryInfo.Err != nil {
 				msg = ev.RetryInfo.Err.Error()
 			}
+			prefix := fmt.Sprintf("重试 (%d/%d): ", ev.RetryInfo.Attempt, ev.RetryInfo.MaxRetries)
 			retryEv := Event{
 				Time:     time.Now(),
 				Category: "SYSTEM",
-				Summary:  fmt.Sprintf("重试 (%d/%d): %s", ev.RetryInfo.Attempt, ev.RetryInfo.MaxRetries, truncate(msg, 80)),
+				Summary:  prefix + truncate(msg, 80),
+				Detail:   prefix + msg,
+				Kind:     errorKind(ev.RetryInfo.Err, msg),
 				Level:    "warn",
 			}
 			o.emitEv(retryEv)
@@ -203,15 +206,12 @@ func (o *observer) handle(ev agentcore.Event) {
 				slog.Debug("suppressed cancel-derived error", "module", "agent", "msg", fullMsg)
 				return
 			}
-			fields := []any{"module", "agent", "category", "ERROR"}
-			if kind := errorKind(ev.Err, fullMsg); kind != "" {
-				fields = append(fields, "kind", kind)
-			}
-			slog.Error(fullMsg, fields...)
 			errEv := Event{
 				Time:     time.Now(),
 				Category: "ERROR",
 				Summary:  truncate(fullMsg, 120),
+				Detail:   fullMsg,
+				Kind:     errorKind(ev.Err, fullMsg),
 				Level:    "error",
 			}
 			o.emitEv(errEv)
@@ -377,15 +377,16 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 	case agentcore.ProgressThinking:
 		o.handleThinkingProgress(ev)
 	case agentcore.ProgressRetry:
+		prefix := fmt.Sprintf("重试 (%d/%d): ", ev.Progress.Attempt, ev.Progress.MaxRetries)
 		retryEv := Event{
 			Time:     time.Now(),
 			Category: "SYSTEM",
 			Agent:    ev.Progress.Agent,
-			Summary: fmt.Sprintf("重试 (%d/%d): %s",
-				ev.Progress.Attempt, ev.Progress.MaxRetries,
-				truncate(ev.Progress.Message, 80)),
-			Level: "warn",
-			Depth: 1,
+			Summary:  prefix + truncate(ev.Progress.Message, 80),
+			Detail:   prefix + ev.Progress.Message,
+			Kind:     errorKind(nil, ev.Progress.Message),
+			Level:    "warn",
+			Depth:    1,
 		}
 		o.emitEv(retryEv)
 		o.persistEvent(retryEv)
@@ -419,6 +420,8 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 			Category: "ERROR",
 			Agent:    ev.Progress.Agent,
 			Summary:  fmt.Sprintf("%s 错误: %s", ev.Progress.Tool, truncate(msg, 100)),
+			Detail:   fmt.Sprintf("%s 错误: %s", ev.Progress.Tool, msg),
+			Kind:     errorKind(nil, msg),
 			Level:    "error",
 			Depth:    1,
 		}
@@ -671,16 +674,12 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 			return
 		}
 		summary := fmt.Sprintf("%s 失败", ev.Tool)
+		detail := summary
+		kind := ""
 		if errText != "" {
-			fields := []any{"module", "agent", "tool", ev.Tool}
-			if kind := errorKind(nil, errText); kind != "" {
-				fields = append(fields, "kind", kind)
-			}
-			slog.Error(fmt.Sprintf("%s → %s: %s", agent, ev.Tool, errText), fields...)
-			if len(errText) > 120 {
-				errText = errText[:120] + "..."
-			}
-			summary += ": " + errText
+			kind = errorKind(nil, errText)
+			detail = fmt.Sprintf("%s → %s: %s", agent, ev.Tool, errText)
+			summary += ": " + truncate(errText, 120)
 		}
 		flushOrphanSubagentTool(true)
 		emitDispatchFinish(true)
@@ -690,6 +689,8 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 			Category: "ERROR",
 			Agent:    agent,
 			Summary:  summary,
+			Detail:   detail,
+			Kind:     kind,
 			Level:    "error",
 			Depth:    depth,
 		}
@@ -705,11 +706,6 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 			emitDispatchFinish(true)
 			return
 		}
-		fields := []any{"module", "agent", "tool", ev.Tool}
-		if kind := errorKind(nil, fullErr); kind != "" {
-			fields = append(fields, "kind", kind)
-		}
-		slog.Error(fullErr, fields...)
 		if dispatchTarget != "" && dispatchTarget != "subagent" {
 			errEv.Agent = dispatchTarget
 		}
@@ -847,6 +843,8 @@ func (o *observer) subagentResultErrorEvent(ev agentcore.Event) (*Event, string)
 		Category: "ERROR",
 		Agent:    "coordinator",
 		Summary:  fmt.Sprintf("%s 失败: %s", target, truncate(errMsg, 120)),
+		Detail:   fullErr,
+		Kind:     errorKind(nil, errMsg),
 		Level:    "error",
 	}, fullErr
 }

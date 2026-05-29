@@ -25,7 +25,10 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle) error {
 	defer rt.Close()
 
 	m := NewModel(rt, bridge)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// 不在启动时全局开启鼠标上报：欢迎页用不到鼠标，关闭上报可保留终端原生
+	// 拖拽选中复制。进入创作工作台（modeRunning）时再由 enterRunning 打开上报，
+	// 以支持点击切面板 / 滚轮 / 拖拽侧边栏。
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err = p.Run()
 	return err
 }

@@ -425,20 +425,29 @@ func (m *Model) inputHints() string {
 	if m.quitPending {
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Bold(true).Render("Press Ctrl+C again to exit")
 	}
+	// 欢迎页(modeNew)不开鼠标上报，终端原生拖拽即可复制，无需 Ctrl+R 提示；
+	// 工作台才开上报，复制需 Ctrl+R 临时关闭。
 	suffix := " · Ctrl+R 切到选中复制模式"
-	if m.mouseOff {
-		// 鼠标已关：用强调色提示用户当前处于"自由拖拽选中"状态，按 Ctrl+R 可以恢复
+	if m.mode == modeNew {
+		suffix = ""
+	}
+	if m.mouseOff && m.mode != modeNew {
+		// 工作台手动切到选中复制：用强调色提示当前处于"自由拖拽选中"状态，按 Ctrl+R 恢复
 		return lipgloss.NewStyle().Foreground(colorAccent).Bold(true).
 			Render("✂ 选中复制模式：可拖拽选中文本复制 · Ctrl+R 退出恢复鼠标交互")
 	}
 	if m.cocreate != nil {
+		scrollHint := " · Tab 滚动:对话"
+		if m.cocreate.focusPrompt {
+			scrollHint = " · Tab 滚动:创作指令"
+		}
 		switch {
 		case m.cocreate.awaiting:
-			return dimStyle.Render("等待 AI 回复 · Esc 退出共创" + suffix)
+			return dimStyle.Render("等待 AI 回复 · Esc 退出共创" + scrollHint + suffix)
 		case m.cocreate.canStart():
-			return dimStyle.Render("Enter 发送 · Ctrl+S 开始创作 · Esc 退出共创" + suffix)
+			return dimStyle.Render("Enter 发送 · Ctrl+S 开始创作 · Esc 退出共创" + scrollHint + suffix)
 		default:
-			return dimStyle.Render("Enter 发送 · Esc 退出共创" + suffix)
+			return dimStyle.Render("Enter 发送 · Esc 退出共创" + scrollHint + suffix)
 		}
 	}
 	if m.mode == modeNew {
@@ -641,16 +650,29 @@ func (m Model) handleCoCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	state := m.cocreate
 
-	// 键盘 ↑↓/PgUp/PgDn/Home/End 滚左侧对话面板（用户回看主体）；右侧创作指令
-	// 面板用鼠标滚轮滚（鼠标 handler 按 X 坐标自动分流）。上滚关 follow，
-	// 滚到底重新打开 follow（流式跟随）。
+	// 键盘 ↑↓/PgUp/PgDn/Home/End 滚动；Tab 在左对话栏 ↔ 右创作指令栏间切换滚动焦点
+	// （默认左栏，用户回看主体）。欢迎页已关鼠标上报以保留原生复制，右栏溢出时靠 Tab
+	// 切焦点后用键盘滚。左栏：上滚关 follow，滚到底重开 follow（流式跟随）。
 	switch msg.Type {
+	case tea.KeyTab:
+		state.focusPrompt = !state.focusPrompt
+		return m, nil
 	case tea.KeyUp, tea.KeyPgUp:
+		if state.focusPrompt {
+			var cmd tea.Cmd
+			state.promptVP, cmd = state.promptVP.Update(msg)
+			return m, cmd
+		}
 		state.convFollow = false
 		var cmd tea.Cmd
 		state.convVP, cmd = state.convVP.Update(msg)
 		return m, cmd
 	case tea.KeyDown, tea.KeyPgDown:
+		if state.focusPrompt {
+			var cmd tea.Cmd
+			state.promptVP, cmd = state.promptVP.Update(msg)
+			return m, cmd
+		}
 		var cmd tea.Cmd
 		state.convVP, cmd = state.convVP.Update(msg)
 		if state.convVP.AtBottom() {
@@ -658,10 +680,18 @@ func (m Model) handleCoCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	case tea.KeyHome:
+		if state.focusPrompt {
+			state.promptVP.GotoTop()
+			return m, nil
+		}
 		state.convFollow = false
 		state.convVP.GotoTop()
 		return m, nil
 	case tea.KeyEnd:
+		if state.focusPrompt {
+			state.promptVP.GotoBottom()
+			return m, nil
+		}
 		state.convFollow = true
 		state.convVP.GotoBottom()
 		return m, nil
