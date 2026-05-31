@@ -826,11 +826,7 @@ func (h *Host) ImportFrom(ctx context.Context, opts imp.Options) (<-chan imp.Eve
 	return imp.Run(ctx, deps, opts)
 }
 
-// Export 导出已完成章节为外部文件（当前仅支持 TXT）。
-//
-// 与 ImportFrom 不同：导出是只读操作（不动 Progress / Checkpoint），
-// 因此**不要求 Coordinator 空闲**——写作中途也可以随时导出"现阶段成品"。
-// 只读到 Progress.CompletedChapters + 章节终稿 + 大纲 + premise 的一致快照。
+// Simulate 读取 simulate 目录并生成或增量更新仿写画像。
 func (h *Host) Simulate(ctx context.Context) (<-chan sim.Event, error) {
 	h.mu.Lock()
 	if h.lifecycle == lifecycleRunning {
@@ -854,6 +850,7 @@ func (h *Host) Simulate(ctx context.Context) (<-chan sim.Event, error) {
 	return sim.Run(ctx, deps, sim.Options{SourceDir: filepath.Join(wd, "simulate")})
 }
 
+// ImportSimulationProfile 导入此前生成的仿写画像。
 func (h *Host) ImportSimulationProfile(ctx context.Context, path string) (<-chan sim.Event, error) {
 	h.mu.Lock()
 	if h.lifecycle == lifecycleRunning {
@@ -864,6 +861,11 @@ func (h *Host) ImportSimulationProfile(ctx context.Context, path string) (<-chan
 	return sim.RunImport(ctx, h.store, path)
 }
 
+// Export 导出已完成章节为外部文件（当前仅支持 TXT）。
+//
+// 与 ImportFrom 不同：导出是只读操作（不动 Progress / Checkpoint），
+// 因此**不要求 Coordinator 空闲**——写作中途也可以随时导出"现阶段成品"。
+// 只读到 Progress.CompletedChapters + 章节终稿 + 大纲 + premise 的一致快照。
 func (h *Host) Export(ctx context.Context, opts exp.Options) (*exp.Result, error) {
 	return exp.Run(ctx, exp.Deps{Store: h.store}, opts)
 }
