@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -19,6 +21,7 @@ import (
 	"github.com/voocel/ainovel-cli/internal/host/exp"
 	"github.com/voocel/ainovel-cli/internal/host/flow"
 	"github.com/voocel/ainovel-cli/internal/host/imp"
+	"github.com/voocel/ainovel-cli/internal/host/sim"
 	modelreg "github.com/voocel/ainovel-cli/internal/models"
 	"github.com/voocel/ainovel-cli/internal/rules"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
@@ -828,6 +831,39 @@ func (h *Host) ImportFrom(ctx context.Context, opts imp.Options) (<-chan imp.Eve
 // 与 ImportFrom 不同：导出是只读操作（不动 Progress / Checkpoint），
 // 因此**不要求 Coordinator 空闲**——写作中途也可以随时导出"现阶段成品"。
 // 只读到 Progress.CompletedChapters + 章节终稿 + 大纲 + premise 的一致快照。
+func (h *Host) Simulate(ctx context.Context) (<-chan sim.Event, error) {
+	h.mu.Lock()
+	if h.lifecycle == lifecycleRunning {
+		h.mu.Unlock()
+		return nil, fmt.Errorf("coordinator 运行中，请先暂停后再生成仿写画像")
+	}
+	h.mu.Unlock()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("get working dir: %w", err)
+	}
+	deps := sim.Deps{
+		Store: h.store,
+		LLM:   h.models.ForRole("architect"),
+		Prompts: sim.Prompts{
+			Source: h.bundle.Prompts.SimulationSource,
+			Merge:  h.bundle.Prompts.SimulationMerge,
+		},
+	}
+	return sim.Run(ctx, deps, sim.Options{SourceDir: filepath.Join(wd, "simulate")})
+}
+
+func (h *Host) ImportSimulationProfile(ctx context.Context, path string) (<-chan sim.Event, error) {
+	h.mu.Lock()
+	if h.lifecycle == lifecycleRunning {
+		h.mu.Unlock()
+		return nil, fmt.Errorf("coordinator 运行中，请先暂停后再导入仿写画像")
+	}
+	h.mu.Unlock()
+	return sim.RunImport(ctx, h.store, path)
+}
+
 func (h *Host) Export(ctx context.Context, opts exp.Options) (*exp.Result, error) {
 	return exp.Run(ctx, exp.Deps{Store: h.store}, opts)
 }
