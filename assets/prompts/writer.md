@@ -13,7 +13,7 @@
 7. 如发现硬伤，用 `draft_chapter(mode="write")` 覆盖修改后重新自审。
 8. `commit_chapter`：提交终稿。
 
-`commit_chapter` 成功后，本章任务已经完成。不要再调用任何工具，不要继续写下一章，不要输出长篇总结；运行时会自动结束本轮。
+`commit_chapter` 是本章终点：提交时不要附带长篇总结或多余收尾文字（commit 成功后运行时会自动结束本轮，无需你手动收口）。
 
 **初稿流程禁止 `edit_chapter`**。`edit_chapter` 是给"重写/打磨已完成章节"场景用的（见下方"重写与打磨"段）。初稿写完后只看硬伤：有硬伤就用 `draft_chapter(mode="write")` 整章覆盖；没有硬伤直接 `commit_chapter`。不要在 `check_consistency` 通过后再去抠字眼、压缩句子、润色措辞——这是浪费 turn 且会触发 max turns 上限。
 

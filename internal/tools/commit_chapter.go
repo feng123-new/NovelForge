@@ -429,6 +429,18 @@ func (t *CommitChapterTool) executeRewriteCommit(
 	}
 	drained := len(remaining) == 0
 
+	// 队列清空后再判完结：分层长篇若"最后一章恰好走返工路径"，完结只能在此触发
+	// （主路径 applyCompletion 不经过 rewrite 提交）——补上旧模型这处时序缺口。
+	bookComplete := false
+	if drained && latest != nil && latest.Layered && t.layeredBookComplete(latest) {
+		if cerr := t.store.Progress.MarkComplete(); cerr == nil {
+			bookComplete = true
+			if p, _ := t.store.Progress.Load(); p != nil {
+				flow = string(p.Flow)
+			}
+		}
+	}
+
 	// 同主路径：rewrite/polish 也做机械检查并附 rule_violations
 	violations := t.checkRules(content, wordCount)
 	return json.Marshal(map[string]any{
@@ -440,6 +452,7 @@ func (t *CommitChapterTool) executeRewriteCommit(
 		"queue_drained":   drained,
 		"next_chapter":    nextChapter,
 		"flow":            flow,
+		"book_complete":   bookComplete,
 		"rule_violations": violations,
 	})
 }
@@ -504,10 +517,21 @@ func loadCoreCharacterNameSet(s *store.Store) map[string]bool {
 	return set
 }
 
-// applyCompletion 仅处理非分层模式：写完约定总章数 → MarkComplete。
-// 分层模式的全书完结统一走 architect 显式调用 save_foundation type=complete_book。
+// applyCompletion 判断本次 commit 是否使全书完结，若是则 MarkComplete 并返回 true。
+//   - 非分层：写完约定总章数即完结。
+//   - 分层：架构师显式 save_foundation type=complete_book 是主路径；这里再加一道
+//     确定性兜底——当全书已客观满足完结条件（见 layeredBookComplete）时自动收尾。
+//     防止模型在终点既不 append_volume 也不 complete_book，导致"写手裸跑越界章节 →
+//     越界守卫拦截 → 反复重试"的 livelock（《凡骨》ch204..347 案例的根因）。
 func (t *CommitChapterTool) applyCompletion(result *domain.CommitResult, progress *domain.Progress) bool {
-	if progress == nil || progress.Layered {
+	if progress == nil {
+		return false
+	}
+	if progress.Layered {
+		if t.layeredBookComplete(progress) {
+			_ = t.store.Progress.MarkComplete()
+			return true
+		}
 		return false
 	}
 	if progress.TotalChapters > 0 && result.NextChapter > progress.TotalChapters {
@@ -515,4 +539,41 @@ func (t *CommitChapterTool) applyCompletion(result *domain.CommitResult, progres
 		return true
 	}
 	return false
+}
+
+// layeredBookComplete 用客观事实判断分层长篇是否真正写完，对照 architect-long.md 完结判定
+// 清单里可量化的几项 + 结构性事实。全部满足才算完结；任一不满足都让位给架构师继续
+// expand_arc / append_volume，绝不抢在故事没写完时收尾。无 compass 时保守判为未完结。
+func (t *CommitChapterTool) layeredBookComplete(progress *domain.Progress) bool {
+	// 1. 返工队列必须清空
+	if len(progress.PendingRewrites) > 0 {
+		return false
+	}
+	volumes, err := t.store.Outline.LoadLayeredOutline()
+	if err != nil || len(volumes) == 0 {
+		return false
+	}
+	// 2. 不能还有骨架弧待展开（计划内仍有内容要写）
+	for i := range volumes {
+		for j := range volumes[i].Arcs {
+			if !volumes[i].Arcs[j].IsExpanded() {
+				return false
+			}
+		}
+	}
+	// 3. 已展开章节必须全部写完
+	expanded := len(domain.FlattenOutline(volumes))
+	if expanded == 0 || len(progress.CompletedChapters) < expanded {
+		return false
+	}
+	// 4. 活跃伏笔必须归零（承诺已兑现）
+	if active, aerr := t.store.World.LoadActiveForeshadow(); aerr != nil || len(active) > 0 {
+		return false
+	}
+	// 5. 指南针活跃长线必须收束（无 compass / 长线未清都交回架构师裁定）
+	compass, cerr := t.store.Outline.LoadCompass()
+	if cerr != nil || compass == nil || len(compass.OpenThreads) > 0 {
+		return false
+	}
+	return true
 }

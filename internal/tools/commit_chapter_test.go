@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 
@@ -289,5 +290,129 @@ func TestCommitChapterLayeredRejectsOutOfRangeChapter(t *testing.T) {
 	progress, _ := s.Progress.Load()
 	if len(progress.CompletedChapters) != 0 {
 		t.Fatalf("CompletedChapters should stay empty, got %v", progress.CompletedChapters)
+	}
+}
+
+// TestCommitChapterLayeredAutoCompletesWhenDone 验证分层模式确定性完结兜底：
+// 大纲全部展开并写完 + 无骨架弧 + 无返工 + 活跃伏笔为零 + 指南针长线收束时，
+// 最后一章 commit 自动推 Phase=Complete，不依赖架构师主动调 complete_book。
+// 这是 9bf26a5 删掉分层自动完结后引入的 livelock 的修复（终卷末尾模型既不 append
+// 也不 complete → 写手裸跑越界死循环）。
+func TestCommitChapterLayeredAutoCompletesWhenDone(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := s.Progress.Init("test", 0); err != nil {
+		t.Fatalf("InitProgress: %v", err)
+	}
+
+	// 单卷单弧两章，全部展开（无骨架弧）
+	foundation := NewSaveFoundationTool(s)
+	layeredArgs, _ := json.Marshal(map[string]any{
+		"type": "layered_outline",
+		"content": []map[string]any{{
+			"index": 1, "title": "卷一", "theme": "主题",
+			"arcs": []map[string]any{{
+				"index": 1, "title": "弧一", "goal": "目标",
+				"chapters": []map[string]any{
+					{"title": "首章", "core_event": "起", "hook": "续"},
+					{"title": "次章", "core_event": "承", "hook": "终"},
+				},
+			}},
+		}},
+		"scale": "long",
+	})
+	if _, err := foundation.Execute(context.Background(), layeredArgs); err != nil {
+		t.Fatalf("Execute layered: %v", err)
+	}
+	// 指南针长线已收束（OpenThreads 空）
+	if err := s.Outline.SaveCompass(domain.StoryCompass{EndingDirection: "主角归乡"}); err != nil {
+		t.Fatalf("SaveCompass: %v", err)
+	}
+	_ = s.Progress.UpdatePhase(domain.PhaseWriting)
+
+	tool := NewCommitChapterTool(s)
+	commit := func(ch int) map[string]any {
+		if err := s.Drafts.SaveDraft(ch, fmt.Sprintf("第 %d 章正文内容，用于测试确定性完结。", ch)); err != nil {
+			t.Fatalf("SaveDraft %d: %v", ch, err)
+		}
+		args, _ := json.Marshal(map[string]any{
+			"chapter": ch, "summary": "摘要", "characters": []string{"主角"}, "key_events": []string{"事件"},
+		})
+		raw, err := tool.Execute(context.Background(), args)
+		if err != nil {
+			t.Fatalf("Execute ch%d: %v", ch, err)
+		}
+		var out map[string]any
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("Unmarshal ch%d: %v", ch, err)
+		}
+		return out
+	}
+
+	// 第 1 章：未写完，不应完结
+	if bc, _ := commit(1)["book_complete"].(bool); bc {
+		t.Fatal("写完第 1 章不应触发完结")
+	}
+	if p, _ := s.Progress.Load(); p.Phase == domain.PhaseComplete {
+		t.Fatal("写完第 1 章 phase 不应为 complete")
+	}
+
+	// 第 2 章（最后一章）：应自动完结
+	if bc, _ := commit(2)["book_complete"].(bool); !bc {
+		t.Fatal("写完最后一章应自动完结")
+	}
+	if p, _ := s.Progress.Load(); p.Phase != domain.PhaseComplete {
+		t.Fatalf("expected phase=complete, got %s", p.Phase)
+	}
+}
+
+// TestCommitChapterLayeredNoAutoCompleteWithOpenThreads 验证保守性：仍有活跃长线时
+// 即使章节写满也不自动完结，把"是否继续"的裁定权留给架构师。
+func TestCommitChapterLayeredNoAutoCompleteWithOpenThreads(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := s.Progress.Init("test", 0); err != nil {
+		t.Fatalf("InitProgress: %v", err)
+	}
+
+	foundation := NewSaveFoundationTool(s)
+	layeredArgs, _ := json.Marshal(map[string]any{
+		"type": "layered_outline",
+		"content": []map[string]any{{
+			"index": 1, "title": "卷一", "theme": "主题",
+			"arcs": []map[string]any{{
+				"index": 1, "title": "弧一", "goal": "目标",
+				"chapters": []map[string]any{{"title": "首章", "core_event": "起", "hook": "续"}},
+			}},
+		}},
+		"scale": "long",
+	})
+	if _, err := foundation.Execute(context.Background(), layeredArgs); err != nil {
+		t.Fatalf("Execute layered: %v", err)
+	}
+	// 仍有未收束的活跃长线
+	if err := s.Outline.SaveCompass(domain.StoryCompass{EndingDirection: "主角归乡", OpenThreads: []string{"宿敌未除"}}); err != nil {
+		t.Fatalf("SaveCompass: %v", err)
+	}
+	_ = s.Progress.UpdatePhase(domain.PhaseWriting)
+
+	if err := s.Drafts.SaveDraft(1, "唯一一章的正文，但长线未收束。"); err != nil {
+		t.Fatalf("SaveDraft: %v", err)
+	}
+	tool := NewCommitChapterTool(s)
+	args, _ := json.Marshal(map[string]any{
+		"chapter": 1, "summary": "摘要", "characters": []string{"主角"}, "key_events": []string{"事件"},
+	})
+	if _, err := tool.Execute(context.Background(), args); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if p, _ := s.Progress.Load(); p.Phase == domain.PhaseComplete {
+		t.Fatal("活跃长线未收束时不应自动完结")
 	}
 }
