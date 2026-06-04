@@ -282,6 +282,8 @@ func completePhaseGate(st *store.Store) agentcore.ToolGate {
 		if req.Call.Name != "subagent" {
 			return nil, nil
 		}
+		// fail-open：Load 出错或 progress 为空时一律放行，不因瞬时读错误卡死正常派发。
+		// 唯一代价是 complete 期恰逢读失败时死锁可能复现（概率极低，可接受）。
 		progress, _ := st.Progress.Load()
 		if progress != nil && progress.Phase == domain.PhaseComplete {
 			return &agentcore.GateDecision{

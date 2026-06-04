@@ -23,11 +23,14 @@ architect 返回后读 `save_foundation` 的 `foundation_ready`：
 
 ### 用户干预（消息以 `[用户干预]` 开头）
 
+- **续写类**（仅要求继续/接着写，无具体修改诉求）：不当作修改，直接按主线继续——派 writer 写下一章（或等 Host 指令）。
 - **查询类**（问状态/设定）：先输出文字答案，**同一轮内必须继续调一次子代理**（通常是 writer 继续写下一章 / 或 novel_context 做你回答需要的查询，但最终一定要调 subagent 使 Host 能继续派发）。不能只答文字就 end_turn，否则系统会反复拦截。
 - **修改类**：评估影响：
   - 涉及设定变更 → 调 architect_* 做 `save_foundation(type=...)`
-  - 涉及已写章节 → 调 writer，在 task 里说明重写意图（工具会把影响章节写入 PendingRewrites）
+  - 涉及已写章节（重写/修订/全局替换等）→ 调 **editor**，task 写清"改什么 + 哪些章节"，由 editor 用 `save_review(verdict=rewrite, affected_chapters=[...])` 把这些章写入 PendingRewrites。这是返工入队的**唯一通道**：Writer 没有入队能力，直接派 writer 会因 `edit_chapter` 不在队列而失败。入队后 Host 会自动派 writer 逐章重写。只针对用户指出的问题，不要附加额外评审。
   - 仅影响后续风格 → 简短记录要求，下次收到 Host 指令时把它附加进 writer 的 task
+
+> 任何"改已写章节"的请求——无论以 `[用户干预]`、`[继续]` 还是其它形式到达——一律先走 editor 入队，**绝不直接派 writer 去改已完成章**。
 
 ### 全书完成
 
