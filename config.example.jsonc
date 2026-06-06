@@ -19,7 +19,8 @@
     },
     "ollama": {
       // ollama / bedrock / 显式 type 的自定义代理可以省略 api_key
-      "base_url": "http://localhost:11434",
+      // base_url 需带 /v1（ollama 的 OpenAI 兼容端点在 /v1 下）
+      "base_url": "http://localhost:11434/v1",
       "models": ["qwen3:14b"]
     },
     "my-proxy": {
