@@ -307,7 +307,7 @@ output/novel/meta/simulation_profile.json
 
 在 TUI 中输入 `/export` 可把已完成的章节合并导出，默认 TXT，写到 `{novelDir}/{NovelName}.txt`。导出是只读操作，写作中途也可以随时拿"现阶段成品"，不影响 Coordinator 运行。
 
-格式由**输出路径后缀**决定（命令永远只这一行，零新增参数）：
+格式由**输出路径后缀**决定（`.txt` / `.epub`）：
 
 ```text
 /export                            # 默认 TXT，{novelDir}/{NovelName}.txt
@@ -317,7 +317,7 @@ output/novel/meta/simulation_profile.json
 /export from=10 ~/x.epub --overwrite
 ```
 
-- **TXT** — 标题页（`《书名》` + premise）→ 卷分隔 → 弧分隔 → 章节正文，长篇分层模式自动加卷/弧分隔。
+- **TXT** — `《书名》` → 卷分隔 → 章节正文（长篇分层模式自动加卷分隔）。两类内部数据**不进导出**：premise（创作蓝图，含目标读者 / 写作禁区等后台信息，写给作者与引擎看的）、弧分隔（读者视角下弧是过细的内部结构）。导出器统一生成"第 N 章 标题"，正文里 writer 自带的重复标题（`# 第N章…` 或 `# 章节名`）会被剥掉。
 - **EPUB** — EPUB 3 标准容器，含封面页、目录、按章拆分的 XHTML，标识符基于内容稳定派生（重导出同一本书阅读器识别为更新版本）。不带封面图。
 
 范围内未完成的章节会跳过并显示在结果里，不算错误。
@@ -395,7 +395,7 @@ output/novel/meta/simulation_profile.json
 
 内置一份去 AI 味基线（`assets/` 下，出厂默认）：机械黑名单 `rules/default.md`（套句 / 疲劳词，commit 时确定性检查）+ 语义判据 `references/anti-ai-tone.md`（注入 writer / editor 规避与举证）。
 
-想叠加自己的偏好**无需改源码**：在 `~/.ainovel/rules/` 目录（全局，放任意 `.md`，按文件名字典序合并）或项目根 `./rules.md`（本书）里——front matter 加机械禁词，markdown 正文写语义偏好，就近覆盖、与内置基线叠加生效。完整字段见 [`rules.md.example`](rules.md.example)。
+想叠加自己的偏好**无需改源码**：在 `~/.ainovel/rules/` 目录（全局，放任意 `.md`，按文件名字典序合并）或项目根 `./rules.md`（本书）里，**用大白话写偏好即可**（如「主角别写成圣母」「多用身体感知」），editor 会按语义审阅——零格式、零 YAML。想要「字数 / 禁词」这类硬性确定检查，再**可选地**在文件顶部加一段 front matter。就近覆盖、与内置基线叠加生效；完整字段见 [`rules.md.example`](rules.md.example)。
 
 ## 输出结构
 

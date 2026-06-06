@@ -447,9 +447,12 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if msg.complete {
 			m.abortPending = false
 			m.mode = modeDone
-			m.textarea.Placeholder = "创作已完成"
-			m.textarea.Blur()
-		} else if m.abortPending {
+			// 完成态不锁输入框：仅停止自动续写（handleEnter 在 modeDone 落到空操作），
+			// 但 /export、/model 等命令仍需可用，输入框必须保持聚焦（issue #27）。
+			m.textarea.Placeholder = "创作已完成 · 可 /export 导出，或输入 / 查看命令"
+			return m, tea.Batch(fetchSnapshot(m.runtime), listenDone(m.runtime), m.textarea.Focus()), true
+		}
+		if m.abortPending {
 			m.abortPending = false
 			m.snapshot.RuntimeState = "paused"
 			m.syncRuntimePlaceholder()

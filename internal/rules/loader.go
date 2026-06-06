@@ -154,26 +154,33 @@ func DefaultHomeRulesDir() string {
 
 // homeRulesReadme 是首次引导时写入 ~/.ainovel/rules/README.txt 的说明。
 // 刻意用 .txt 后缀而非 .md——loader 只扫描 .md，这份说明不会被当成规则注入 LLM。
-const homeRulesReadme = `这里放全局写作偏好规则，跨所有书生效。
+const homeRulesReadme = `这里放全局写作偏好，跨所有书生效。
 
-怎么加：在本目录新建任意 .md 文件（例如 my-style.md），会按文件名字典序合并加载。
-点开头的隐藏文件、非 .md 文件都会被忽略，所以这份 README.txt 不会被当成规则。
+最简单：新建一个 .md 文件（如 my-style.md），用大白话写偏好就行——
+不需要任何格式、不需要 YAML：
 
-每个 .md 文件分两层：
+    # 角色
+    - 主角林尘别写成圣母，外冷内热即可
+    # 风格
+    - 多用身体感知（指节发白）替代情绪标签（紧张）
+    - 对话别太书面
 
-  1) 顶部 YAML front matter —— 机械规则，commit_chapter 强制检查
-       ---
-       chapter_words: 3000-6000          # 章节字数范围（min-max）
-       forbidden_phrases: ["某种程度上"]  # 禁用短语，出现即报错
-       fatigue_words: {不禁: 1}           # 疲劳词，每章超阈值告警
-       ---
+这些会原样交给 editor 按语义审阅。多个 .md 按文件名字典序合并；
+点开头的隐藏文件、非 .md 文件都会被忽略（所以这份 README.txt 不会被当成规则）。
 
-  2) 下方 Markdown 正文 —— 自然语言偏好，editor 审阅时语义判断
-       # 风格
-       - 多用身体感知（指节发白）替代情绪标签（紧张）
+进阶（可选）：想要"字数 / 禁词"这类硬性、确定的机械检查，
+可在文件顶部加一段 YAML front matter——commit_chapter 会逐字计数、强制报错：
 
-加载优先级（高 → 低）：
-  ./rules.md（本书）  >  ~/.ainovel/rules/*.md（这里，全局）  >  内置默认
+    ---
+    chapter_words: 3000-6000          # 章节字数范围
+    forbidden_phrases: ["某种程度上"]  # 禁用短语，出现即报错
+    fatigue_words: {不禁: 1}           # 疲劳词，每章超阈值告警
+    ---
+    （下面照常写大白话偏好）
+
+不写也没关系：常见 AI 套句、疲劳词的机械基线已内置，开箱即用。
+
+加载优先级（高 → 低）：./rules.md（本书） > ~/.ainovel/rules/*.md（这里） > 内置默认
 `
 
 // EnsureHomeRulesDir 尽力创建 ~/.ainovel/rules/ 目录并写入 README.txt 引导，

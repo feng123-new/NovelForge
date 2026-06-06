@@ -341,10 +341,7 @@ func (m Model) handleReportKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
 		m.report = nil
-		if m.mode != modeDone {
-			return m, m.textarea.Focus()
-		}
-		return m, nil
+		return m, m.textarea.Focus()
 	case tea.KeyUp:
 		m.report.viewport.ScrollUp(1)
 		return m, nil
