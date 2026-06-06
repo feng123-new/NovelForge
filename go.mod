@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/voocel/agentcore v1.6.11
-	github.com/voocel/litellm v1.6.14
+	github.com/voocel/litellm v1.6.15
 	gopkg.in/yaml.v3 v3.0.1
 )
 
