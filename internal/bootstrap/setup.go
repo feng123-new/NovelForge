@@ -46,7 +46,7 @@ var setupProviders = []setupProvider{
 	{name: "qwen", label: "Qwen"},
 	{name: "glm", label: "GLM"},
 	{name: "grok", label: "Grok"},
-	{name: "ollama", label: "Ollama", baseURL: "http://localhost:11434", apiKeyOptional: true},
+	{name: "ollama", label: "Ollama", baseURL: "http://localhost:11434/v1", apiKeyOptional: true},
 	{name: "bedrock", label: "Bedrock", apiKeyOptional: true},
 	{name: "custom", label: "Custom Proxy", needType: true, apiKeyOptional: true},
 }
@@ -183,7 +183,7 @@ func saveExampleConfig() {
       "models": ["gemini-2.5-flash", "gemini-2.5-pro"]
     },
     "ollama": {
-      "base_url": "http://localhost:11434",
+      "base_url": "http://localhost:11434/v1",
       "models": ["qwen3:14b"]
     },
     "bedrock": {

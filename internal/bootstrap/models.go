@@ -21,6 +21,13 @@ import (
 // 仍小于 RequestTimeout 10 分钟，网络真死时仍能兜底。
 const streamIdleTimeout = 5 * time.Minute
 
+// keylessAPIKeyPlaceholder 是给免鉴权 provider 注入的占位 api_key。
+// litellm 在创建客户端时会无条件要求 api_key 非空（连 ollama 这类本地、
+// 免鉴权 provider 也不例外），这与本项目 RequiresAPIKey 的约定冲突。
+// 对约定为免 key 的 provider 注入该占位值即可通过 litellm 的构造校验；
+// ollama 会忽略 Authorization 头，免鉴权代理同理，不影响实际请求。
+const keylessAPIKeyPlaceholder = "no-key"
+
 // FailoverEvent 表示一次显式 provider 切换。
 // Reason 为短标签（rate_limit / timeout / stream_idle / network），用于结构化日志。
 type FailoverEvent struct {
@@ -270,8 +277,15 @@ func createModelFromConfig(providerKey, model string, pc ProviderConfig, cache m
 		return nil, fmt.Errorf("解析 provider 类型失败: %w", err)
 	}
 
+	apiKey := pc.APIKey
+	if apiKey == "" && !pc.RequiresAPIKey(providerKey) {
+		// 免鉴权 provider（ollama / 显式 type 的代理等）允许不填 api_key，
+		// 但 litellm 构造客户端时仍要求非空，这里注入占位值绕过该校验。
+		apiKey = keylessAPIKeyPlaceholder
+	}
+
 	m, err := llm.NewModel(providerType, model,
-		llm.WithAPIKey(pc.APIKey),
+		llm.WithAPIKey(apiKey),
 		llm.WithBaseURL(pc.BaseURL),
 		llm.WithStreamIdleTimeout(streamIdleTimeout),
 	)

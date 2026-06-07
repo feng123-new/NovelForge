@@ -376,7 +376,7 @@ output/novel/meta/simulation_profile.json
   "model": "qwen3:latest",
   "providers": {
     "ollama": {
-      "base_url": "http://localhost:11434"
+      "base_url": "http://localhost:11434/v1"
     }
   }
 }
