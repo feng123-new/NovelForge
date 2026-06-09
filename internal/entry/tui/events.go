@@ -195,9 +195,10 @@ func abortRuntime(rt *host.Host) tea.Cmd {
 func loadReport(dir string, reqID int) tea.Cmd {
 	return func() tea.Msg {
 		s := store.NewStore(dir)
-		rep := diag.Analyze(s)
-		// 复用 rep 补抓运行时信号并写出脱敏诊断文件（导出失败不影响屏上报告）。
-		exportPath, _ := diag.WriteExport(s, rep)
+		// Diagnose = 创作诊断 + 运行时检测，运行时 Finding 也进屏上报告。
+		rep, rc := diag.Diagnose(s)
+		// 复用 rep+rc 写出脱敏诊断文件（导出失败不影响屏上报告）。
+		exportPath, _ := diag.WriteExport(s, rep, rc)
 		return reportLoadedMsg{
 			reqID:      reqID,
 			report:     rep,

@@ -14,15 +14,16 @@ import (
 // ExportRelPath 是脱敏诊断文件相对 output 目录的固定位置（覆盖式一份）。
 const ExportRelPath = "meta/diag-export.md"
 
-// Export 抓取 + 脱敏 + 渲染 + 落盘，返回写出的绝对路径。供 headless / 外部调用。
+// Export 完整诊断 + 渲染 + 落盘，返回写出的绝对路径。供 headless / 外部调用。
 func Export(s *store.Store) (string, error) {
-	return WriteExport(s, Analyze(s))
+	rep, rc := Diagnose(s)
+	return WriteExport(s, rep, rc)
 }
 
-// WriteExport 复用已算好的创作 Report，补抓运行时信号后写出诊断文件。
-// 供 /diag 命令复用屏上报告的 Report，避免重复 Analyze。
-func WriteExport(s *store.Store, rep Report) (string, error) {
-	data := RenderExport(rep, CaptureRuntime(s))
+// WriteExport 把已算好的 Report + RuntimeCapture 渲染落盘，不重复抓取。
+// 供 /diag 命令复用 Diagnose 的结果。
+func WriteExport(s *store.Store, rep Report, rc RuntimeCapture) (string, error) {
+	data := RenderExport(rep, rc)
 	abs := filepath.Join(s.Dir(), filepath.FromSlash(ExportRelPath))
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return "", err
@@ -56,8 +57,24 @@ func RenderExport(rep Report, rc RuntimeCapture) []byte {
 		fmt.Fprintf(&b, "- %s → `%s` / `%s`\n", m.Agent, orDash(m.Provider), orDash(m.Model))
 	}
 
-	// 2. 运行时信号
-	b.WriteString("\n## 2. 运行时信号\n\n")
+	// 2. 诊断发现（创作 + 运行时检测，severity 优先）
+	b.WriteString("\n## 2. 诊断发现\n\n")
+	if len(rep.Findings) == 0 {
+		b.WriteString("未发现问题。\n")
+	} else {
+		for _, f := range rep.Findings {
+			fmt.Fprintf(&b, "- [%s] %s\n", f.Severity, f.Title)
+			if f.Evidence != "" {
+				fmt.Fprintf(&b, "  - 证据：%s\n", f.Evidence)
+			}
+			if f.Suggestion != "" {
+				fmt.Fprintf(&b, "  - → %s\n", f.Suggestion)
+			}
+		}
+	}
+
+	// 3. 运行时信号（原始聚合）
+	b.WriteString("\n## 3. 运行时信号\n\n")
 	wrote := false
 	if rc.CurrentStep != "" {
 		fmt.Fprintf(&b, "- 当前 step `%s`\n", rc.CurrentStep)
@@ -97,22 +114,6 @@ func RenderExport(rep Report, rc RuntimeCapture) []byte {
 	}
 	if !wrote {
 		b.WriteString("- 无明显运行时异常信号。\n")
-	}
-
-	// 3. 创作诊断
-	b.WriteString("\n## 3. 创作诊断\n\n")
-	if len(rep.Findings) == 0 {
-		b.WriteString("未发现问题。\n")
-	} else {
-		for _, f := range rep.Findings {
-			fmt.Fprintf(&b, "- [%s] %s\n", f.Severity, f.Title)
-			if f.Evidence != "" {
-				fmt.Fprintf(&b, "  - 证据：%s\n", f.Evidence)
-			}
-			if f.Suggestion != "" {
-				fmt.Fprintf(&b, "  - → %s\n", f.Suggestion)
-			}
-		}
 	}
 
 	// 4. 行为骨架尾巴

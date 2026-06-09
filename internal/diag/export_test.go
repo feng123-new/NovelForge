@@ -70,7 +70,8 @@ func TestExport_DeathLoopShape(t *testing.T) {
 
 	dir := writeSession(t, "coordinator.jsonl", msgs)
 	s := store.NewStore(dir)
-	out := string(RenderExport(Analyze(s), CaptureRuntime(s)))
+	rep, rc := Diagnose(s)
+	out := string(RenderExport(rep, rc))
 
 	if strings.Contains(out, sentinel) {
 		t.Fatalf("小说正文出包了！导出包含 sentinel:\n%s", out)
@@ -84,6 +85,13 @@ func TestExport_DeathLoopShape(t *testing.T) {
 	if !strings.Contains(out, "×14") {
 		t.Errorf("重复聚合未列出 ×14\n%s", out)
 	}
+	// Phase 2：运行时检测应把这个循环判成 critical 的 RepeatedToolError。
+	if !strings.Contains(out, "工具错误循环") {
+		t.Errorf("运行时检测未产出 RepeatedToolError\n%s", out)
+	}
+	if !strings.Contains(out, "[critical]") {
+		t.Errorf("14 次重复应升为 critical\n%s", out)
+	}
 }
 
 // TestExport_NumberVsStringArg 证明标量与字符串投影能区分类型：
@@ -91,9 +99,38 @@ func TestExport_DeathLoopShape(t *testing.T) {
 func TestExport_NumberVsStringArg(t *testing.T) {
 	intDir := writeSession(t, "coordinator.jsonl", []agentcore.Message{commitCall(`7`)})
 	si := store.NewStore(intDir)
-	outInt := string(RenderExport(Analyze(si), CaptureRuntime(si)))
+	repInt, rcInt := Diagnose(si)
+	outInt := string(RenderExport(repInt, rcInt))
 	if !strings.Contains(outInt, "chapter: 7") || strings.Contains(outInt, `chapter: "7"`) {
 		t.Errorf("数字参数应渲染为 chapter: 7（不带引号）\n%s", outInt)
+	}
+}
+
+// TestProjectValue_ProseArgRedacted 守护脱敏边界：标识符型短值保留、
+// 中文/带空格的短值（如 dispatch task、chapter title）一律打码。
+func TestProjectValue_ProseArgRedacted(t *testing.T) {
+	keep := map[string]string{
+		`"7"`:       `"7"`,       // 字符串化数字（#34 信号）
+		`"premise"`: `"premise"`, // 枚举
+		`"writer"`:  `"writer"`,  // 角色名
+		`7`:         `7`,         // 数字标量
+		`true`:      `true`,      // bool 标量
+	}
+	for in, want := range keep {
+		if got := projectValue([]byte(in)); got != want {
+			t.Errorf("应保留 %s：got %q want %q", in, got, want)
+		}
+	}
+	// 含中文 / 空格 → 必须打码，且不含原文。
+	prose := []string{`"第7章 雪夜的真相"`, `"雪夜杀机"`, `"主角揭穿阴谋"`}
+	for _, in := range prose {
+		got := projectValue([]byte(in))
+		if !strings.HasPrefix(got, "<redacted") {
+			t.Errorf("中文/带空格短值应打码：%s → %q", in, got)
+		}
+		if strings.Contains(got, "雪夜") || strings.Contains(got, "主角") {
+			t.Errorf("打码后仍含正文：%s → %q", in, got)
+		}
 	}
 }
 
@@ -102,7 +139,8 @@ func TestWriteExport_WritesFile(t *testing.T) {
 	dir := writeSession(t, "coordinator.jsonl", []agentcore.Message{commitCall(`"7"`), errResult("boom")})
 	s := store.NewStore(dir)
 
-	path, err := WriteExport(s, Analyze(s))
+	rep, rc := Diagnose(s)
+	path, err := WriteExport(s, rep, rc)
 	if err != nil {
 		t.Fatalf("WriteExport: %v", err)
 	}

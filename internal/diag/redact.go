@@ -98,8 +98,8 @@ func redactArgs(raw json.RawMessage) map[string]string {
 
 // projectValue 按 JSON 类型投影单个参数值：
 //   - 标量（数字 / bool / null）：原值即结构信号，保留（chapter: 7）
-//   - 短单行字符串：带引号保留，暴露类型（chapter: "7" ← #34 的字符串化数字信号）
-//   - 长 / 多行字符串、对象、数组：打码为 <redacted …>
+//   - 短的标识符型字符串：带引号保留，暴露类型（chapter: "7" ← #34 的字符串化数字信号）
+//   - 含中文 / 空格 / 长文本的字符串、对象、数组：打码为 <redacted …>（正文零出包）
 //   - 已是 [session_compact: …] 占位：安全且有信息，原样保留
 func projectValue(raw json.RawMessage) string {
 	s := strings.TrimSpace(string(raw))
@@ -115,7 +115,9 @@ func projectValue(raw json.RawMessage) string {
 		if strings.HasPrefix(str, store.CompactTag) {
 			return str
 		}
-		if utf8.RuneCountInString(str) <= 32 && !strings.ContainsAny(str, "\n\r") {
+		// 只保留"像标识符/数字/枚举"的短值（chapter:"7"、type:"premise"、agent:"writer"）；
+		// 任何含中文、空格或其他符号的字符串都视为正文，一律打码。
+		if utf8.RuneCountInString(str) <= 32 && isStructuralToken(str) {
 			return strconv.Quote(str)
 		}
 		return redactPlaceholder(str)
@@ -126,6 +128,23 @@ func projectValue(raw json.RawMessage) string {
 	default:
 		return s
 	}
+}
+
+// isStructuralToken 判断字符串是否"像标识符"——纯 ASCII 的字母 / 数字 / `_-.:/`，
+// 无空格、无中文。用来区分结构信号（保留）与正文片段（打码）。
+func isStructuralToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '_' || r == '-' || r == '.' || r == ':' || r == '/':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func redactPlaceholder(s string) string {
