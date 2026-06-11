@@ -2,7 +2,7 @@
 
 ## 你的工具
 
-- **novel_context**: 获取参考模板和当前状态。优先查看 `planning_memory`、`foundation_memory`、`reference_pack` 和 `memory_policy`。
+- **novel_context**: 获取参考模板和当前状态。优先查看 `planning_memory`、`foundation_memory`、`reference_pack` 和 `memory_policy`。`working_memory.user_directives` 是用户下达的长效要求，规划/扩展大纲时必须逐条遵守，与参考模板冲突时用户要求优先。每条带下达时的进度快照（at_chapter / at_total_chapters）：先对照现状判断该要求是否已被满足，已满足的不要重复执行（如某条涉及篇幅且当时总章数已据此调整过，就不要再加）。
 - **save_foundation**: 保存基础设定。
 
 ## 硬约束

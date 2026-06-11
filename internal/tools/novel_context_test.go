@@ -708,3 +708,79 @@ func TestContextToolOmitsRewriteBriefForNormalChapter(t *testing.T) {
 		t.Fatal("expected no rewrite_brief for chapter outside PendingRewrites")
 	}
 }
+
+func TestContextToolInjectsUserDirectivesOnBothPaths(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := s.Progress.Init("test", 3); err != nil {
+		t.Fatalf("InitProgress: %v", err)
+	}
+	if _, err := s.Directives.Add(domain.UserDirective{Text: "对话占比提高", Chapter: 2, TotalChapters: 3}); err != nil {
+		t.Fatalf("AddDirective: %v", err)
+	}
+
+	tool := NewContextTool(s, References{}, "default", rules.LoadOptions{})
+	for name, chapter := range map[string]int{"writer": 1, "architect": 0} {
+		args, _ := json.Marshal(map[string]any{"chapter": chapter})
+		result, err := tool.Execute(context.Background(), args)
+		if err != nil {
+			t.Fatalf("[%s] Execute: %v", name, err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(result, &payload); err != nil {
+			t.Fatalf("[%s] Unmarshal: %v", name, err)
+		}
+		working, ok := payload["working_memory"].(map[string]any)
+		if !ok {
+			t.Fatalf("[%s] missing working_memory", name)
+		}
+		directives, ok := working["user_directives"].([]any)
+		if !ok || len(directives) != 1 {
+			t.Fatalf("[%s] expected 1 directive, got %v", name, working["user_directives"])
+		}
+		entry, _ := directives[0].(map[string]any)
+		if entry["text"] != "对话占比提高" || entry["at_chapter"] != float64(2) || entry["at_total_chapters"] != float64(3) {
+			t.Errorf("[%s] unexpected directive entry: %v", name, entry)
+		}
+		if _, hasCreatedAt := entry["created_at"]; hasCreatedAt {
+			t.Errorf("[%s] created_at 是审计信息，不应进 LLM", name)
+		}
+	}
+}
+
+func TestContextToolInjectsEmptyUserDirectives(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := s.Progress.Init("test", 3); err != nil {
+		t.Fatalf("InitProgress: %v", err)
+	}
+
+	tool := NewContextTool(s, References{}, "default", rules.LoadOptions{})
+	args, _ := json.Marshal(map[string]any{"chapter": 0})
+	result, err := tool.Execute(context.Background(), args)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(result, &payload); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	working, ok := payload["working_memory"].(map[string]any)
+	if !ok {
+		t.Fatal("missing working_memory")
+	}
+	// 空列表也注入 []（字段稳定，同 user_rules 先例），不能是 null/缺失
+	directives, ok := working["user_directives"].([]any)
+	if !ok {
+		t.Fatalf("expected stable empty array, got %T", working["user_directives"])
+	}
+	if len(directives) != 0 {
+		t.Errorf("expected empty list, got %v", directives)
+	}
+}

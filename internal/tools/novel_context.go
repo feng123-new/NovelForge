@@ -93,7 +93,7 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 		// Writer 路径：加载全量基础数据 + 章节上下文
 		t.buildBaseContext(result, warn)
 		seed := newChapterContextEnvelope()
-		state := t.prepareChapterContext(a.Chapter, &seed, result, warn)
+		state := t.prepareChapterContext(a.Chapter, &seed, warn)
 		seed.apply(result)
 		t.buildChapterContext(result, state, warn)
 	} else {
@@ -112,6 +112,7 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 	}
 
 	t.buildUserRules(result)
+	t.buildUserDirectives(result, warn)
 
 	if len(warnings) > 0 {
 		result["_warnings"] = warnings
