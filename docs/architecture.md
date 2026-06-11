@@ -479,6 +479,8 @@ assets/
 
 改 `writer.md` 立刻产生风格变化；新增 editor 评审维度向后兼容（save_review 接收结构化 JSON）。新增一篇参考资料 md 需三处接线（`tools.References` 字段 + `assets/load.go` 的 `loadReferences` + `novel_context.go` 的 `writerReferences`/`architectReferences` 注入），不是放进目录即自动加载——`References` 是显式字段映射，便于按角色/章节裁剪。
 
+**全书级风格统计（`internal/stylestat`）**：弧内评审窗口对"句式 tic 章均几十次、章末形态同构、跨章逐字复读"这类全书级固化天然失明——单章看每处都正常。`novel_context` 章节路径对全部已完成章节跑确定性统计（句式模式类/近窗高频短语/跨章重复句/章末形态/标题格式混用），注入 `episodic_memory.style_stats`：editor 在 aesthetic 维度按数字裁定，writer 据此自避免。**统计归代码，裁定归 LLM**——阈值不写死在代码里，数字是否成病由模型按题材判断。与其并列的产品底线 `rules.Lint`（markdown 残留/非中文片段）在 commit_chapter 始终执行，仅返事实。
+
 ---
 
 ## 12. 总结
