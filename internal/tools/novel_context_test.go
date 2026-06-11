@@ -622,3 +622,89 @@ func containsRecallSummary(items []domain.RecallItem, want string) bool {
 	}
 	return false
 }
+
+func TestContextToolInjectsRewriteBriefForPendingRewriteChapter(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := s.Progress.Init("test", 3); err != nil {
+		t.Fatalf("InitProgress: %v", err)
+	}
+	if err := s.Progress.SetPendingRewrites([]int{2}, "节奏拖沓，需要压缩前半段"); err != nil {
+		t.Fatalf("SetPendingRewrites: %v", err)
+	}
+	if err := s.World.SaveReview(domain.ReviewEntry{
+		Chapter: 2,
+		Scope:   "chapter",
+		Verdict: "rewrite",
+		Summary: "前半段铺垫过长，冲突迟迟不出现。",
+		Issues: []domain.ConsistencyIssue{
+			{Type: "pacing", Severity: "error", Description: "前 2000 字无推进"},
+		},
+		ContractMisses: []string{"未兑现试炼开场"},
+	}); err != nil {
+		t.Fatalf("SaveReview: %v", err)
+	}
+
+	tool := NewContextTool(s, References{}, "default", rules.LoadOptions{})
+	args, err := json.Marshal(map[string]any{"chapter": 2})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	result, err := tool.Execute(context.Background(), args)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(result, &payload); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	brief, ok := payload["rewrite_brief"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected rewrite_brief in chapter context, got %T", payload["rewrite_brief"])
+	}
+	if got := brief["reason"]; got != "节奏拖沓，需要压缩前半段" {
+		t.Fatalf("expected rewrite reason, got %v", got)
+	}
+	if got, _ := brief["review_summary"].(string); !strings.Contains(got, "铺垫过长") {
+		t.Fatalf("expected review summary from chapter review, got %v", brief["review_summary"])
+	}
+	if issues, _ := brief["issues"].([]any); len(issues) == 0 {
+		t.Fatalf("expected review issues in rewrite_brief, got %v", brief["issues"])
+	}
+	if misses, _ := brief["contract_misses"].([]any); len(misses) == 0 {
+		t.Fatalf("expected contract misses in rewrite_brief, got %v", brief["contract_misses"])
+	}
+}
+
+func TestContextToolOmitsRewriteBriefForNormalChapter(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := s.Progress.Init("test", 3); err != nil {
+		t.Fatalf("InitProgress: %v", err)
+	}
+
+	tool := NewContextTool(s, References{}, "default", rules.LoadOptions{})
+	args, err := json.Marshal(map[string]any{"chapter": 2})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	result, err := tool.Execute(context.Background(), args)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(result, &payload); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if _, ok := payload["rewrite_brief"]; ok {
+		t.Fatal("expected no rewrite_brief for chapter outside PendingRewrites")
+	}
+}

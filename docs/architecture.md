@@ -52,7 +52,7 @@ UI、诊断、事件日志都是从事件流 / 只读工件投影出来的被动
 
 **铁律一：工具只返事实，不返跨调度指令**。`commit_chapter` 返回 `arc_end_reached` / `next_skeleton_arc` 等结构化字段；不夹带 `[系统]` 类指令字符串。子代理内的 `next_step` 字段是事实陈述的内联指引（"我刚保存了 plan，下一步是 draft"），不算违反——见 §6.4。
 
-**铁律二：流程路由由 Flow Router 承担**。`internal/host/flow/router.go` 的 `Route(state) → *Instruction` 是纯函数，订阅 `EventToolExecEnd` 后通过 `FollowUp` 下达。返回 nil 表示"裁定场景，让 LLM 自主"。
+**铁律二：流程路由由 Flow Router 承担**。`internal/host/flow/router.go` 的 `Route(state) → *Instruction` 是纯函数，订阅 `EventToolExecEnd` 后通过 `FollowUp` 下达。返回 nil 表示"裁定场景，让 LLM 自主"。**指令通道不沉默**：Route 连续算出同一指令（说明上次派发后状态未推进）时，Dispatcher 附"第 N 次下达"事实重发而非静默吞掉——"路由结果重复"是只有 Host 能观测到的事实，沉默会让 Coordinator 落入"无指令不得行动 / StopGuard 不许停"的双重矛盾。不设阈值、不熔断，如何脱困由 LLM 裁定。
 
 **铁律三：Coordinator 不能物理 end_turn，除非 Phase=Complete**。StopGuard 在 agentcore 层拦截 `end_turn` 注入 user message；连续 5 次拦不住升级 terminate。三个子代理（architect / writer / editor）有各自的 `CheckpointDeltaGuard`。
 
