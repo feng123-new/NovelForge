@@ -209,7 +209,7 @@ func (h *Host) StartPrepared(promptText string) error {
 	// 先重置重复追踪并启用路由，再启动 Prompt，避免首轮事件先于 Enable 抵达
 	h.router.ResetRepeat()
 	h.router.Enable()
-	if err := h.coordinator.Prompt(promptText); err != nil {
+	if err := h.coordinator.Prompt(context.Background(), promptText); err != nil {
 		return fmt.Errorf("prompt: %w", err)
 	}
 	// 主动派发一次首条指令：若已进入写作阶段（Phase=Writing），Host 立即下达；
@@ -253,7 +253,7 @@ func (h *Host) Resume() (string, error) {
 	h.observer.setAborting(false)
 	h.router.ResetRepeat()
 	h.router.Enable()
-	if err := h.coordinator.Prompt(prompt); err != nil {
+	if err := h.coordinator.Prompt(context.Background(), prompt); err != nil {
 		return "", fmt.Errorf("resume prompt: %w", err)
 	}
 	// 主动派发一次首条指令，避免 Coordinator 对恢复 prompt 只回文字而 StopGuard 反复拦截。

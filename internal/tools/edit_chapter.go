@@ -37,7 +37,7 @@ func NewEditChapterTool(s *store.Store) *EditChapterTool {
 func (t *EditChapterTool) Name() string  { return "edit_chapter" }
 func (t *EditChapterTool) Label() string { return "编辑章节" }
 
-// ReadOnly 明确声明写工具（配合 ConcurrencySafer 防止被并发调度）。
+// ReadOnly 明确声明写工具（配合 ConcurrencySafeTool 防止被并发调度）。
 func (t *EditChapterTool) ReadOnly(_ json.RawMessage) bool { return false }
 
 // ConcurrencySafe 显式禁止并发：同章节多次 edit_chapter 并行会读-改-写竞态，
