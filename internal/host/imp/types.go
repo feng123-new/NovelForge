@@ -21,9 +21,6 @@ type Options struct {
 	// SourcePath 必填。单个 txt/md 文件路径。
 	SourcePath string
 
-	// CustomRegex 可选。覆盖默认章节切分正则。
-	CustomRegex string
-
 	// ResumeFrom 可选。从第 N 章开始导入；0 / 1 表示从头。
 	// 若 > 1，会跳过 Foundation 反推（认为已落盘）。
 	ResumeFrom int

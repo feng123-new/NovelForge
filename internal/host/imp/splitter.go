@@ -9,13 +9,12 @@ import (
 	"github.com/voocel/ainovel-cli/internal/utils"
 )
 
-// 默认章节标题正则。覆盖常见中文（第N章/回/话/卷、卷N、序章/楔子/尾声/番外 等）
-// 与英文（Chapter N、Prologue、Epilogue）标题，兼容 Markdown 标题前缀（# / ##）
-// 与起点系 txt 的「正文 第N章」前缀。
-// 其它格式（自定义编号、剧本式等）由 Options.CustomRegex 覆盖。
+// 默认章节标题正则。覆盖常见中文（第N章/回/话/卷/节/幕、卷N、序章/楔子/尾声/番外/外传 等）
+// 与英文（Chapter N、Prologue、Epilogue）标题，兼容 Markdown 标题前缀（# / ##）、
+// 起点系 txt 的「正文 第N章」前缀、以及【】〖〗包裹的标题。
 //
 // 命名分组：副标题组优先于关键词组（提取时按 priority 顺序回退）：
-//   - cn    编号章节副标题（第X章/回/话/卷 之后的文字）
+//   - cn    编号章节副标题（第X章/回/话/卷/节/幕 之后的文字）
 //   - vol   独立卷副标题（卷X 之后的文字）
 //   - sp    特殊单元副标题（序章/楔子/尾声/番外 之后的文字）
 //   - en    英文章节副标题（Chapter X / Prologue / Epilogue 之后的文字）
@@ -26,25 +25,30 @@ import (
 // 而中文排版的标题分隔常用 U+3000（「第一章　风起」）。
 const ws = `\s\x{3000}`
 
+// cnNum 是章节编号可用的数字字符：阿拉伯 / 全角 / 中文小写 / 中文大写繁体（壹贰叁…萬）。
+const cnNum = `零〇○Ｏ０一二三四五六七八九十百千万两壹贰貳叁參肆伍陆陸柒捌玖拾佰仟萬兩\d`
+
+// sub 是副标题捕获：取到行尾，但不吞掉右包裹符（】〗），留给结尾的可选闭括号。
+const sub = `[^】〗\n]*`
+
 var defaultChapterRegex = regexp.MustCompile(
-	`(?im)^#{0,2}[` + ws + `]*(?:正文[` + ws + `]*)?(?:` +
-		`第\s*(?:[零〇○Ｏ０一二三四五六七八九十百千万\d]+)\s*(?:章|回|话|卷)` +
-		`(?:[:：．\.` + ws + `]+(?P<cn>.*))?` +
+	`(?im)^#{0,2}[` + ws + `]*(?:正文[` + ws + `]*)?[【〖]?[` + ws + `]*(?:` +
+		`第\s*(?:[` + cnNum + `]+)\s*(?:章|回|话|卷|节|幕)` +
+		`(?:[:：．\.` + ws + `]+(?P<cn>` + sub + `))?` +
 		`|` +
-		`卷\s*(?:[零〇○Ｏ０一二三四五六七八九十百千万\d]+)` +
-		`(?:[:：．\.` + ws + `]+(?P<vol>.*))?` +
+		`卷\s*(?:[` + cnNum + `]+)` +
+		`(?:[:：．\.` + ws + `]+(?P<vol>` + sub + `))?` +
 		`|` +
-		`(?P<spkw>序章|序幕|楔子|引子|前言|序言|尾声|终章|后记|番外)` +
-		`(?:[:：．\.` + ws + `]+(?P<sp>.*))?` +
+		`(?P<spkw>序章|序幕|楔子|引子|前言|序言|尾声|终章|后记|番外|外传)` +
+		`(?:[:：．\.` + ws + `]+(?P<sp>` + sub + `))?` +
 		`|` +
 		`(?:Chapter\s+(?:\d+|[IVXLCDM]+)|(?P<enkw>Prologue|Epilogue))` +
-		`(?:[:：．\.` + ws + `]+(?P<en>.*))?` +
-		`)[` + ws + `]*$`,
+		`(?:[:：．\.` + ws + `]+(?P<en>` + sub + `))?` +
+		`)[` + ws + `]*[】〗]?[` + ws + `]*$`,
 )
 
 // SplitFile 把单个文本文件切分成章节列表。
-// 自定义正则需包含至少一个捕获组用于提取标题；未命中时回退默认正则。
-func SplitFile(path string, customRegex string) ([]Chapter, error) {
+func SplitFile(path string) ([]Chapter, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read source: %w", err)
@@ -53,16 +57,7 @@ func SplitFile(path string, customRegex string) ([]Chapter, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, fmt.Errorf("source file is empty: %s", path)
 	}
-
-	pattern := defaultChapterRegex
-	if strings.TrimSpace(customRegex) != "" {
-		re, err := regexp.Compile("(?m)" + customRegex)
-		if err != nil {
-			return nil, fmt.Errorf("invalid custom regex: %w", err)
-		}
-		pattern = re
-	}
-	return splitText(text, pattern), nil
+	return splitText(text, defaultChapterRegex), nil
 }
 
 // splitText 是纯函数版切分，便于单测。
@@ -115,7 +110,7 @@ func extractTitle(line string, pattern *regexp.Regexp, loc []int, fallbackNum in
 			return t
 		}
 	}
-	// 自定义正则：取第一个非空命名捕获或匿名捕获
+	// 兜底：取第一个非空捕获组（防御性，默认正则的命名组已覆盖各分支）
 	for i := 1; i < len(subnames); i++ {
 		if loc[2*i] < 0 {
 			continue

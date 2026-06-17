@@ -54,7 +54,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (<-chan Event, error) {
 
 		// ── 1. 切分 ──
 		emit(StageSplitting, 0, 0, "切分章节...", nil)
-		chapters, err := SplitFile(opts.SourcePath, opts.CustomRegex)
+		chapters, err := SplitFile(opts.SourcePath)
 		if err != nil {
 			emit(StageError, 0, 0, "切分失败", err)
 			return
@@ -62,8 +62,9 @@ func Run(ctx context.Context, deps Deps, opts Options) (<-chan Event, error) {
 		total := len(chapters)
 		if total == 0 {
 			emit(StageError, 0, 0,
-				"未识别到任何章节：默认支持「第N章/回/话/卷」「卷N」「序章/楔子/尾声/番外」「Chapter N / Prologue」等标题。"+
-					"若你的小说用其它格式，请加 regex 参数自定义，例如 /import 路径 regex=^第.+話$",
+				"未识别到任何章节：支持「第N章/回/话/卷/节/幕」「卷N」「序章/楔子/尾声/番外/外传」"+
+					"「Chapter N / Prologue」等标题，兼容 Markdown #、全角空格、【】包裹与 GBK 编码。"+
+					"请确认文件确为分章小说文本。",
 				fmt.Errorf("no chapters matched"))
 			return
 		}

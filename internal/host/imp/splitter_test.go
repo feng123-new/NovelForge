@@ -236,7 +236,7 @@ func TestSplitFile_ReadsAndSplits(t *testing.T) {
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := SplitFile(path, "")
+	got, err := SplitFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestSplitFile_EmptyError(t *testing.T) {
 	if err := os.WriteFile(path, []byte("   \n  \n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := SplitFile(path, "")
+	_, err := SplitFile(path)
 	if err == nil {
 		t.Fatal("want error for empty file")
 	}
@@ -268,7 +268,7 @@ func TestSplitFile_GBKEncoded(t *testing.T) {
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := SplitFile(path, "")
+	got, err := SplitFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestSplitFile_UTF8BOM(t *testing.T) {
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := SplitFile(path, "")
+	got, err := SplitFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,21 +296,53 @@ func TestSplitFile_UTF8BOM(t *testing.T) {
 	}
 }
 
-func TestSplitFile_CustomRegex(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "custom.txt")
-	src := "===Section Alpha===\nA body.\n\n===Section Beta===\nB body.\n"
-	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := SplitFile(path, `^===Section\s+(.+)===$`)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestSplitText_SectionAndAct(t *testing.T) {
+	src := `第一节 开端
+正文一。
+
+第二幕 高潮
+正文二。`
+	got := splitText(src, defaultChapterRegex)
 	if len(got) != 2 {
 		t.Fatalf("want 2, got %d", len(got))
 	}
-	if got[0].Title != "Alpha" || got[1].Title != "Beta" {
-		t.Errorf("custom titles: %+v", got)
+	if got[0].Title != "开端" || got[1].Title != "高潮" {
+		t.Errorf("titles: %+v", got)
+	}
+}
+
+func TestSplitText_UppercaseNumbers(t *testing.T) {
+	src := `第壹章 起
+正文一。
+
+第贰拾章 终
+正文二。`
+	got := splitText(src, defaultChapterRegex)
+	if len(got) != 2 {
+		t.Fatalf("want 2, got %d", len(got))
+	}
+	if got[0].Title != "起" || got[1].Title != "终" {
+		t.Errorf("titles: %+v", got)
+	}
+}
+
+func TestSplitText_BracketWrapped(t *testing.T) {
+	src := `【第一章 风起】
+正文一。
+
+〖第二章 云涌〗
+正文二。
+
+【楔子】
+楔子正文。`
+	got := splitText(src, defaultChapterRegex)
+	if len(got) != 3 {
+		t.Fatalf("want 3, got %d", len(got))
+	}
+	if got[0].Title != "风起" || got[1].Title != "云涌" {
+		t.Errorf("titles: %+v", got)
+	}
+	if got[2].Title != "楔子" {
+		t.Errorf("bracket spkw title: %q", got[2].Title)
 	}
 }

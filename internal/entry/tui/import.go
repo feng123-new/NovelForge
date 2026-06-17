@@ -250,10 +250,8 @@ func parseImportArgs(args []string) (imp.Options, error) {
 				return imp.Options{}, fmt.Errorf("from 需为非负整数：%q", v)
 			}
 			opts.ResumeFrom = n
-		case "regex":
-			opts.CustomRegex = v
 		default:
-			return imp.Options{}, fmt.Errorf("未知参数 %q（支持：from / regex）", k)
+			return imp.Options{}, fmt.Errorf("未知参数 %q（支持：from）", k)
 		}
 	}
 	return opts, nil

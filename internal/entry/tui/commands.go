@@ -102,7 +102,7 @@ func commandRegistryInstance() commandRegistry {
 		{
 			Name:        "import",
 			Group:       "writing",
-			Usage:       "/import <path> [from=N] [regex=...]",
+			Usage:       "/import <path> [from=N]",
 			Description: "反推外部小说续写",
 			NeedsIdle:   true,
 			Run: func(m Model, args []string) (tea.Model, tea.Cmd) {
