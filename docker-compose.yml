@@ -1,0 +1,8 @@
+services:
+  ainovel:
+    image: ghcr.io/star8521/ainovel-cli:latest
+    restart: unless-stopped
+    volumes:
+      - ./config:/root/.ainovel
+      - ./workspace:/workspace
+    command: tail -f /dev/null
