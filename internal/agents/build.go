@@ -42,19 +42,48 @@ const subagentMaxRetries = 5
 // 每条 agent 消息都会调一次，由 Host 层负责聚合。nil 表示不追踪。
 type UsageRecorder func(agentName string, msg agentcore.AgentMessage)
 
+// ApplyThinking 把某具体角色的思考强度应用到 live agent（运行时 /model 调整用）。
+// coordinator → Agent.SetThinkingLevel；architect → 两个 architect_* 子代理；
+// writer/editor → 对应子代理。空 level = 沿用模型/provider 默认。其它 role 名忽略。
+type ApplyThinking func(role string, level agentcore.ThinkingLevel)
+
+// ParseThinkingLevel 把配置字符串转 agentcore.ThinkingLevel。
+// "" 合法（= 不覆盖/继承）；其余须是 off/minimal/low/medium/high/xhigh 之一，
+// 否则返回 error（启动时降级当空并 warn，运行时把 error 回显给用户）。
+func ParseThinkingLevel(s string) (agentcore.ThinkingLevel, error) {
+	lv := agentcore.ThinkingLevel(strings.ToLower(strings.TrimSpace(s)))
+	switch lv {
+	case "", agentcore.ThinkingOff, agentcore.ThinkingMinimal, agentcore.ThinkingLow,
+		agentcore.ThinkingMedium, agentcore.ThinkingHigh, agentcore.ThinkingXHigh:
+		return lv, nil
+	default:
+		return "", fmt.Errorf("无效思考强度 %q（可选：off/minimal/low/medium/high/xhigh）", s)
+	}
+}
+
+// roleThinking 解析某角色生效的思考强度；非法值降级为空（不覆盖）并 warn。
+func roleThinking(cfg bootstrap.Config, role string) agentcore.ThinkingLevel {
+	lv, err := ParseThinkingLevel(cfg.ResolveThinking(role))
+	if err != nil {
+		slog.Warn("忽略无效思考强度配置", "module", "agent", "role", role, "err", err)
+		return ""
+	}
+	return lv
+}
+
 // BuildCoordinator 组装 Coordinator Agent 及其 SubAgent。
-// 返回 Agent、AskUserTool、WriterRestorePack 以及 Coordinator 的 ContextEngine
-// 引用——Host 层 /model 切换时需要直接调 SetContextWindow + SetReserveTokens
-// 联动新模型的窗口（writer/architect/editor 走 ContextManagerFactory 自动重建，
-// 不需要 ref；只有常驻的 coordinator 需要）。
-// Host 层通过 Agent.Subscribe 获取事件流,不再需要 emit 回调。
+// 返回 Agent、AskUserTool、WriterRestorePack、Coordinator 的 ContextEngine 引用，
+// 以及 ApplyThinking 闭包——Host 层 /model 切换时需要直接调 SetContextWindow +
+// SetReserveTokens 联动新模型的窗口（writer/architect/editor 走 ContextManagerFactory
+// 自动重建，不需要 ref；只有常驻的 coordinator 需要），并通过 ApplyThinking 联动各角色
+// 思考强度。Host 层通过 Agent.Subscribe 获取事件流,不再需要 emit 回调。
 func BuildCoordinator(
 	cfg bootstrap.Config,
 	store *store.Store,
 	models *bootstrap.ModelSet,
 	bundle assets.Bundle,
 	recordUsage UsageRecorder,
-) (*agentcore.Agent, *tools.AskUserTool, *ctxpack.WriterRestorePack, *corecontext.ContextEngine) {
+) (*agentcore.Agent, *tools.AskUserTool, *ctxpack.WriterRestorePack, *corecontext.ContextEngine, ApplyThinking) {
 	// 共享工具
 	rulesOpts := rules.DefaultOptions(bundle.RulesFS)
 	contextTool := tools.NewContextTool(store, bundle.References, cfg.Style, rulesOpts)
@@ -134,6 +163,7 @@ func BuildCoordinator(
 	architectStopGuardFactory := func(_, _ string) agentcore.StopGuard {
 		return reminder.NewArchitectStopGuard(store)
 	}
+	architectThinking := roleThinking(cfg, "architect")
 	architectShort := subagent.Config{
 		Name:               "architect_short",
 		Description:        "短篇规划师：为单卷、单冲突、高密度故事生成紧凑设定与扁平大纲",
@@ -142,6 +172,7 @@ func BuildCoordinator(
 		Tools:              architectTools,
 		MaxTurns:           15,
 		MaxRetries:         subagentMaxRetries,
+		ThinkingLevel:      architectThinking,
 		ToolsAreIdempotent: true,
 		OnMessage:          onMsg,
 		StopAfterToolResult: func(toolName string, result json.RawMessage) bool {
@@ -158,6 +189,7 @@ func BuildCoordinator(
 		Tools:              architectTools,
 		MaxTurns:           20,
 		MaxRetries:         subagentMaxRetries,
+		ThinkingLevel:      architectThinking,
 		ToolsAreIdempotent: true,
 		OnMessage:          onMsg,
 		StopAfterToolResult: func(toolName string, result json.RawMessage) bool {
@@ -188,6 +220,7 @@ func BuildCoordinator(
 		Tools:              writerTools,
 		MaxTurns:           30,
 		MaxRetries:         subagentMaxRetries,
+		ThinkingLevel:      roleThinking(cfg, "writer"),
 		ToolsAreIdempotent: true,
 		StopAfterTools:     []string{"commit_chapter"},
 		OnMessage:          onMsg,
@@ -232,6 +265,7 @@ func BuildCoordinator(
 		Tools:              editorTools,
 		MaxTurns:           20,
 		MaxRetries:         subagentMaxRetries,
+		ThinkingLevel:      roleThinking(cfg, "editor"),
 		ToolsAreIdempotent: true,
 		OnMessage:          onMsg,
 		// 仅摘要类终态产物命中即停；save_review 不再硬停——StopAfterTool 退出会绕过
@@ -272,7 +306,25 @@ func BuildCoordinator(
 		// phase=complete 时硬拦截 subagent 派发，防止 Writer 死循环。
 		agentcore.WithToolGate(completePhaseGate(store)),
 	)
-	return agent, askUser, restore, coordinatorEngine
+	// Coordinator 思考强度：无条件应用解析结果。未配置时为空（不发 thinking，用 provider
+	// 默认），与各子代理（Config.ThinkingLevel 默认空）一致——避免覆盖 agentcore 默认
+	// ThinkingLow 而对所有 provider 强制发 low（含会被强制开思考的 GLM/Ollama）。
+	agent.SetThinkingLevel(roleThinking(cfg, "coordinator"))
+
+	// 运行时联动各角色思考强度：coordinator 走 Agent，子代理走 subagentTool override。
+	applyThinking := func(role string, level agentcore.ThinkingLevel) {
+		switch role {
+		case "coordinator":
+			agent.SetThinkingLevel(level)
+		case "architect":
+			subagentTool.SetThinkingLevel("architect_short", level)
+			subagentTool.SetThinkingLevel("architect_long", level)
+		case "writer", "editor":
+			subagentTool.SetThinkingLevel(role, level)
+		}
+	}
+
+	return agent, askUser, restore, coordinatorEngine, applyThinking
 }
 
 // completePhaseGate 返回一个 ToolGate：phase=complete 时拒绝所有 subagent 派发。

@@ -93,6 +93,9 @@ type RoleConfig struct {
 	Provider  string     `json:"provider"`            // 主 provider 名称（Providers map 中的 key）
 	Model     string     `json:"model"`               // 主模型名（原样透传，不做任何解析）
 	Fallbacks []ModelRef `json:"fallbacks,omitempty"` // 显式备用 provider/model 列表
+	// Thinking 该角色的思考强度（off/minimal/low/medium/high/xhigh），空=继承顶层默认。
+	// 由 agents.ParseThinkingLevel 校验后应用，越级值视为空。
+	Thinking string `json:"thinking,omitempty"`
 }
 
 // knownRoles 支持的角色名。
@@ -111,6 +114,9 @@ type Config struct {
 	// 默认 LLM 配置
 	Provider  string `json:"provider"` // 默认 provider（Providers map 中的 key）
 	ModelName string `json:"model"`    // 默认模型名
+	// Thinking 顶层默认思考强度（off/minimal/low/medium/high/xhigh），空=不覆盖（沿用模型/provider 默认）。
+	// 角色未单独配置 thinking 时回落到此值。
+	Thinking string `json:"thinking,omitempty"`
 
 	// Provider 凭证库
 	Providers map[string]ProviderConfig `json:"providers,omitempty"`
@@ -333,6 +339,18 @@ func (c Config) ResolveContextWindow(modelName string) (int, ContextWindowSource
 		return rw, CtxWindowRegistry
 	}
 	return DefaultContextWindow, CtxWindowDefault
+}
+
+// ResolveThinking 返回某角色生效的思考强度原始串（off/minimal/low/medium/high/xhigh 或空）。
+// 优先级：角色级 Roles[role].Thinking → 顶层默认 Thinking → ""（不覆盖，沿用模型/provider 默认）。
+// role 为空或 "default" 时直接取顶层默认。值的合法性由 agents.ParseThinkingLevel 把关。
+func (c Config) ResolveThinking(role string) string {
+	if role != "" && role != "default" {
+		if rc, ok := c.Roles[role]; ok && rc.Thinking != "" {
+			return rc.Thinking
+		}
+	}
+	return c.Thinking
 }
 
 // LogContextWindowChoice 打印某个角色的窗口决策。source=default 时发 Warn 提示

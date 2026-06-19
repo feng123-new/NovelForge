@@ -15,6 +15,7 @@ const (
 	modelFocusRole modelSwitchFocus = iota
 	modelFocusProvider
 	modelFocusModel
+	modelFocusThinking
 )
 
 type modelRoleOption struct {
@@ -30,11 +31,35 @@ var modelRoleOptions = []modelRoleOption{
 	{Key: "editor", Label: "Editor"},
 }
 
+// thinkingOptions 是 /model 面板可选的思考强度档位。Key 为 agentcore 档位值。
+// 空 = 继承（不发 thinking，沿用模型/provider 默认）；off = 显式关闭思考（对默认
+// 就思考的模型如 GLM-5.x/deepseek-reasoner 才有意义，支持的 provider 会下发 disabled）。
+var thinkingOptions = []struct{ Key, Label string }{
+	{"", "默认(继承)"},
+	{"off", "关闭"},
+	{"minimal", "最小"},
+	{"low", "低"},
+	{"medium", "中"},
+	{"high", "高"},
+	{"xhigh", "极高"},
+}
+
+func thinkingIndexOf(level string) int {
+	level = strings.ToLower(strings.TrimSpace(level))
+	for i, o := range thinkingOptions {
+		if o.Key == level {
+			return i
+		}
+	}
+	return 0 // 未知值 → 继承
+}
+
 type modelSwitchState struct {
 	focus       modelSwitchFocus
 	roleIdx     int
 	providerIdx int
 	modelIdx    int
+	thinkingIdx int
 	providers   []string
 	models      []string
 	message     string
@@ -92,8 +117,22 @@ func (s *modelSwitchState) model() string {
 	return s.models[s.modelIdx]
 }
 
+func (s *modelSwitchState) thinkingKey() string {
+	if s.thinkingIdx < 0 || s.thinkingIdx >= len(thinkingOptions) {
+		return ""
+	}
+	return thinkingOptions[s.thinkingIdx].Key
+}
+
+func (s *modelSwitchState) thinkingLabel() string {
+	if s.thinkingIdx < 0 || s.thinkingIdx >= len(thinkingOptions) {
+		return thinkingOptions[0].Label
+	}
+	return thinkingOptions[s.thinkingIdx].Label
+}
+
 func (s *modelSwitchState) moveFocus(delta int) {
-	total := 3
+	total := 4
 	s.focus = modelSwitchFocus((int(s.focus) + delta + total) % total)
 }
 
@@ -116,6 +155,9 @@ func (s *modelSwitchState) cycle(delta int, rt *host.Host) {
 		}
 		total := len(s.models)
 		s.modelIdx = (s.modelIdx + delta + total) % total
+	case modelFocusThinking:
+		total := len(thinkingOptions)
+		s.thinkingIdx = (s.thinkingIdx + delta + total) % total
 	}
 }
 
@@ -131,6 +173,7 @@ func (s *modelSwitchState) syncSelection(rt *host.Host) {
 		}
 	}
 	s.syncModels(rt, model)
+	s.thinkingIdx = thinkingIndexOf(rt.CurrentThinking(s.role()))
 	s.message = ""
 }
 
@@ -156,7 +199,16 @@ func (s *modelSwitchState) apply(rt *host.Host) error {
 	if len(s.models) == 0 {
 		return fmt.Errorf("provider %q 没有已配置模型", s.provider())
 	}
-	return rt.SwitchModel(s.role(), s.provider(), s.model())
+	if err := rt.SwitchModel(s.role(), s.provider(), s.model()); err != nil {
+		return err
+	}
+	// 思考强度与模型正交：仅当较当前值有变化时应用，避免冗余持久化/事件。
+	if want := s.thinkingKey(); want != strings.ToLower(strings.TrimSpace(rt.CurrentThinking(s.role()))) {
+		if err := rt.SetRoleThinking(s.role(), want); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m Model) handleModelSwitchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -206,6 +258,7 @@ func renderModelSwitchBar(width int, state *modelSwitchState) string {
 	row1 := renderModelField("角色", state.roleLabel(), state.focus == modelFocusRole)
 	row2 := renderModelField("Provider", state.provider(), state.focus == modelFocusProvider)
 	row3 := renderModelField("模型", state.model(), state.focus == modelFocusModel)
+	row4 := renderModelField("思考", state.thinkingLabel(), state.focus == modelFocusThinking)
 	hint := lipgloss.NewStyle().
 		Foreground(colorDim).
 		Italic(true).
@@ -214,6 +267,7 @@ func renderModelSwitchBar(width int, state *modelSwitchState) string {
 		row1,
 		row2,
 		row3,
+		row4,
 		hint,
 	}
 	if state.message != "" {
