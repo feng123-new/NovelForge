@@ -532,6 +532,71 @@ func TestContextToolSelectedMemoryRecallsStoryThreadsAndReviewLessons(t *testing
 	}
 }
 
+// 久挂未回收的伏笔即使与当前章关键词无关，也应被账龄回填进 story_threads——
+// 这正是相关性召回的盲区（独自悬挂太久、却没在本章撞上关键词的那根线）。
+// 近期埋下的伏笔（账龄 < 阈值）不应被误标为"未回收"。
+func TestContextToolSelectedMemorySurfacesAgingForeshadow(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewStore(dir)
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	// 当前章主题与所有伏笔都不沾边，确保相关性召回为空，只剩账龄回填生效。
+	if err := s.Outline.SaveOutline([]domain.OutlineEntry{
+		{Chapter: 50, Title: "瘟疫", CoreEvent: "林砚在城南医馆救治瘟疫病患", Scenes: []string{"熬药", "封锁街巷"}},
+	}); err != nil {
+		t.Fatalf("SaveOutline: %v", err)
+	}
+	if err := s.Progress.Init("test", 60); err != nil {
+		t.Fatalf("InitProgress: %v", err)
+	}
+	// 6 条满足召回阈值；前两条账龄 ≥30（久挂），后四条账龄 <30（近期）。
+	if err := s.World.SaveForeshadowLedger([]domain.ForeshadowEntry{
+		{ID: "ancient_seal", Description: "上古封印的裂隙", PlantedAt: 3, Status: "planted"},
+		{ID: "lost_bloodline", Description: "主角失落的血脉来历", PlantedAt: 5, Status: "advanced"},
+		{ID: "market_feud", Description: "昨夜集市的口角", PlantedAt: 47, Status: "planted"},
+		{ID: "rumor_a", Description: "近日传闻甲", PlantedAt: 48, Status: "planted"},
+		{ID: "rumor_b", Description: "近日传闻乙", PlantedAt: 48, Status: "planted"},
+		{ID: "rumor_c", Description: "近日传闻丙", PlantedAt: 49, Status: "planted"},
+	}); err != nil {
+		t.Fatalf("SaveForeshadowLedger: %v", err)
+	}
+
+	tool := NewContextTool(s, References{}, "default", rules.LoadOptions{})
+	args, err := json.Marshal(map[string]any{"chapter": 50})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	result, err := tool.Execute(context.Background(), args)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var payload struct {
+		Selected struct {
+			StoryThreads []domain.RecallItem `json:"story_threads"`
+		} `json:"selected_memory"`
+	}
+	if err := json.Unmarshal(result, &payload); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	// 两条久挂伏笔应被回填，且带"未回收"账龄标注。
+	if !containsRecallSummary(payload.Selected.StoryThreads, "上古封印的裂隙") {
+		t.Fatalf("expected aging foreshadow to surface despite no relevance, got %+v", payload.Selected.StoryThreads)
+	}
+	if !containsRecallSummary(payload.Selected.StoryThreads, "失落的血脉") {
+		t.Fatalf("expected second aging foreshadow to surface, got %+v", payload.Selected.StoryThreads)
+	}
+	if !containsRecallSummary(payload.Selected.StoryThreads, "未回收") {
+		t.Fatalf("expected aging item to carry overdue annotation, got %+v", payload.Selected.StoryThreads)
+	}
+	// 近期伏笔（账龄 <30 且不相关）不应被回填。
+	if containsRecallSummary(payload.Selected.StoryThreads, "昨夜集市的口角") {
+		t.Fatalf("recent foreshadow must not be labeled overdue, got %+v", payload.Selected.StoryThreads)
+	}
+}
+
 func TestContextToolSelectedMemoryIncludesGlobalReviewLessons(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)

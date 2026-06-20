@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/voocel/agentcore/schema"
@@ -670,17 +671,21 @@ func (t *ContextTool) selectStoryThreads(state contextBuildState) []domain.Recal
 		return nil
 	}
 
+	const maxThreads = 5
 	var items []domain.RecallItem
 	seen := make(map[string]struct{})
+	picked := make(map[string]struct{}) // 已选中的伏笔 ID，供账龄回填去重
 	add := func(item domain.RecallItem) {
 		key := item.Kind + "|" + item.Key + "|" + item.Summary
 		if _, ok := seen[key]; ok {
 			return
 		}
 		seen[key] = struct{}{}
+		picked[item.Key] = struct{}{}
 		items = append(items, item)
 	}
 
+	// 1. 相关性召回：与当前章 focus 词重叠的伏笔。
 	focusTerms := recallFocusTerms(state.currentEntry, state.chapterPlan)
 	focusText := strings.Join(focusTerms, " ")
 	for _, entry := range state.foreshadow {
@@ -694,12 +699,46 @@ func (t *ContextTool) selectStoryThreads(state contextBuildState) []domain.Recal
 			Reason:  "当前章可能需要承接既有伏笔",
 			Summary: fmt.Sprintf("伏笔“%s”埋于第%d章：%s", entry.ID, entry.PlantedAt, truncateRunes(entry.Description, 30)),
 		})
-		if len(items) >= 5 {
+		if len(items) >= maxThreads {
 			return items
 		}
 	}
 
+	// 2. 账龄回填：与当前章无关、但久挂未回收的伏笔（最旧优先），补足剩余名额。
+	//    补的是相关性召回天然的盲区——独自悬挂太久、却没在本章撞上关键词的那根线。
+	for _, entry := range agingForeshadow(state.foreshadow, state.chapter, picked) {
+		add(domain.RecallItem{
+			Kind:    "story_thread",
+			Key:     entry.ID,
+			Chapter: entry.PlantedAt,
+			Reason:  "伏笔久挂未回收，注意适时推进或回收",
+			Summary: fmt.Sprintf("伏笔“%s”埋于第%d章，已 %d 章未回收：%s", entry.ID, entry.PlantedAt, state.chapter-entry.PlantedAt, truncateRunes(entry.Description, 30)),
+		})
+		if len(items) >= maxThreads {
+			break
+		}
+	}
+
 	return items
+}
+
+// agingForeshadow 返回账龄 ≥ foreshadowAgingChapters 的未回收伏笔，按最旧优先排序，
+// 跳过 picked 中已被相关性召回选中的。入参 all 已是 active（未回收）列表，故无需再过滤状态。
+func agingForeshadow(all []domain.ForeshadowEntry, chapter int, picked map[string]struct{}) []domain.ForeshadowEntry {
+	var aging []domain.ForeshadowEntry
+	for _, e := range all {
+		if _, ok := picked[e.ID]; ok {
+			continue
+		}
+		if e.PlantedAt <= 0 || chapter-e.PlantedAt < foreshadowAgingChapters {
+			continue
+		}
+		aging = append(aging, e)
+	}
+	sort.SliceStable(aging, func(i, j int) bool {
+		return aging[i].PlantedAt < aging[j].PlantedAt
+	})
+	return aging
 }
 
 func (t *ContextTool) selectReviewLessons(chapter int, warn func(string, error)) []domain.RecallItem {
@@ -839,6 +878,12 @@ func hasMeaningfulOverlap(a, b string) bool {
 
 const storyThreadRecallThreshold = 6
 const storyThreadRecallMinSelected = 2
+
+// foreshadowAgingChapters：一条伏笔自埋设起超过这么多章仍未回收，视为"久挂"。
+// 这类伏笔即使与当前章关键词无关，也回填进 story_threads，避免长篇里被彻底遗忘
+// （相关性召回天然只看见与本章相关的线，看不见独自悬挂太久的那根）。
+// 账龄是纯代码派生的事实（当前章 - 埋设章），只陈述"已挂 N 章未回收"，不下指令。
+const foreshadowAgingChapters = 30
 
 func longestCommonSubstringRunes(a, b []rune) int {
 	if len(a) == 0 || len(b) == 0 {
