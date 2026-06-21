@@ -20,6 +20,9 @@ func TestCommitChapterRejectsNonPendingRewrite(t *testing.T) {
 	if err := store.Progress.Init("test", 10); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
+	if err := store.Progress.MarkChapterComplete(2, 3000, "", ""); err != nil {
+		t.Fatalf("MarkChapterComplete: %v", err)
+	}
 	if err := store.Progress.SetPendingRewrites([]int{2}, "测试重写"); err != nil {
 		t.Fatalf("SetPendingRewrites: %v", err)
 	}
@@ -54,11 +57,11 @@ func TestCommitChapterRejectsNonPendingRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProgress: %v", err)
 	}
-	if len(progress.CompletedChapters) != 0 {
-		t.Fatalf("completed chapters should stay empty, got %v", progress.CompletedChapters)
+	if len(progress.CompletedChapters) != 1 || progress.CompletedChapters[0] != 2 {
+		t.Fatalf("completed chapters should only contain original chapter 2, got %v", progress.CompletedChapters)
 	}
-	if progress.CurrentChapter != 0 {
-		t.Fatalf("current chapter should not advance, got %d", progress.CurrentChapter)
+	if progress.CurrentChapter != 3 {
+		t.Fatalf("current chapter should not advance beyond original progress, got %d", progress.CurrentChapter)
 	}
 }
 
@@ -70,6 +73,9 @@ func TestCommitChapterAllowsPendingRewrite(t *testing.T) {
 	}
 	if err := store.Progress.Init("test", 10); err != nil {
 		t.Fatalf("InitProgress: %v", err)
+	}
+	if err := store.Progress.MarkChapterComplete(2, 3000, "", ""); err != nil {
+		t.Fatalf("MarkChapterComplete: %v", err)
 	}
 	if err := store.Progress.SetPendingRewrites([]int{2}, "测试重写"); err != nil {
 		t.Fatalf("SetPendingRewrites: %v", err)

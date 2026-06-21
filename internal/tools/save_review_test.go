@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
@@ -13,6 +14,12 @@ func TestSaveReviewPersistsContractAssessment(t *testing.T) {
 	s := store.NewStore(t.TempDir())
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
+	}
+	if err := s.Progress.Init("test", 10); err != nil {
+		t.Fatalf("Progress.Init: %v", err)
+	}
+	if err := s.Progress.MarkChapterComplete(3, 3000, "", ""); err != nil {
+		t.Fatalf("MarkChapterComplete: %v", err)
 	}
 
 	tool := NewSaveReviewTool(s)
@@ -59,6 +66,12 @@ func TestSaveReviewRejectsMissingDimensions(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	if err := s.Progress.Init("test", 10); err != nil {
+		t.Fatalf("Progress.Init: %v", err)
+	}
+	if err := s.Progress.MarkChapterComplete(3, 3000, "", ""); err != nil {
+		t.Fatalf("MarkChapterComplete: %v", err)
+	}
 
 	tool := NewSaveReviewTool(s)
 	args, err := json.Marshal(map[string]any{
@@ -82,6 +95,12 @@ func TestSaveReviewRejectsDimensionWithoutComment(t *testing.T) {
 	s := store.NewStore(t.TempDir())
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
+	}
+	if err := s.Progress.Init("test", 10); err != nil {
+		t.Fatalf("Progress.Init: %v", err)
+	}
+	if err := s.Progress.MarkChapterComplete(3, 3000, "", ""); err != nil {
+		t.Fatalf("MarkChapterComplete: %v", err)
 	}
 
 	tool := NewSaveReviewTool(s)
@@ -110,6 +129,64 @@ func TestSaveReviewRejectsDimensionWithoutComment(t *testing.T) {
 	}
 }
 
+func TestSaveReviewRejectsUnfinishedAffectedChapter(t *testing.T) {
+	s := store.NewStore(t.TempDir())
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := s.Progress.Init("test", 80); err != nil {
+		t.Fatalf("Progress.Init: %v", err)
+	}
+	for ch := 1; ch <= 58; ch++ {
+		if err := s.Progress.MarkChapterComplete(ch, 3000, "", ""); err != nil {
+			t.Fatalf("MarkChapterComplete(%d): %v", ch, err)
+		}
+	}
+
+	tool := NewSaveReviewTool(s)
+	args, err := json.Marshal(map[string]any{
+		"chapter": 58,
+		"scope":   "chapter",
+		"dimensions": []map[string]any{
+			{"dimension": "consistency", "score": 85, "comment": "基本一致"},
+			{"dimension": "character", "score": 82, "comment": "人设稳定"},
+			{"dimension": "pacing", "score": 58, "comment": "节奏需要重写"},
+			{"dimension": "continuity", "score": 84, "comment": "连贯"},
+			{"dimension": "foreshadow", "score": 80, "comment": "正常"},
+			{"dimension": "hook", "score": 76, "comment": "钩子一般"},
+			{"dimension": "aesthetic", "score": 81, "comment": "语言基本成立"},
+		},
+		"issues":            []map[string]any{},
+		"contract_status":   "partial",
+		"verdict":           "polish",
+		"summary":           "需要打磨第 58 章，不能把未完成章节入队。",
+		"affected_chapters": []int{65},
+		"contract_misses":   []string{"节奏超出本章职责"},
+		"contract_notes":    "应只处理已完成章节。",
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	if _, err := tool.Execute(context.Background(), args); err == nil || !strings.Contains(err.Error(), "pending_rewrites 只能包含已完成章节") {
+		t.Fatalf("expected unfinished affected chapter rejection, got %v", err)
+	}
+	review, err := s.World.LoadReview(58)
+	if err != nil {
+		t.Fatalf("LoadReview: %v", err)
+	}
+	if review != nil {
+		t.Fatalf("review should not be saved when pending rewrite validation fails: %+v", review)
+	}
+	p, _ := s.Progress.Load()
+	if p.Flow != domain.FlowWriting && p.Flow != "" {
+		t.Fatalf("flow should not enter rewrite/polish, got %s", p.Flow)
+	}
+	if len(p.PendingRewrites) != 0 {
+		t.Fatalf("pending_rewrites should remain empty, got %v", p.PendingRewrites)
+	}
+}
+
 // TestSaveReviewDerivesVerdictFromScore 验证：verdict 由 score 确定性推导，模型给的
 // 不一致 verdict（如 score=85 却填 warning）不再报错，而是被覆写成正确值（pass）。
 // 防回归 issue：弱模型 score/verdict 打架曾导致 save_review 反复失败。
@@ -117,6 +194,12 @@ func TestSaveReviewDerivesVerdictFromScore(t *testing.T) {
 	s := store.NewStore(t.TempDir())
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
+	}
+	if err := s.Progress.Init("test", 10); err != nil {
+		t.Fatalf("Progress.Init: %v", err)
+	}
+	if err := s.Progress.MarkChapterComplete(3, 3000, "", ""); err != nil {
+		t.Fatalf("MarkChapterComplete: %v", err)
 	}
 
 	tool := NewSaveReviewTool(s)

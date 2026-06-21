@@ -759,6 +759,9 @@ func TestContextToolInjectsRewriteBriefForPendingRewriteChapter(t *testing.T) {
 	if err := s.Progress.Init("test", 3); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
+	if err := s.Progress.MarkChapterComplete(2, 3000, "", ""); err != nil {
+		t.Fatalf("MarkChapterComplete: %v", err)
+	}
 	if err := s.Progress.SetPendingRewrites([]int{2}, "节奏拖沓，需要压缩前半段"); err != nil {
 		t.Fatalf("SetPendingRewrites: %v", err)
 	}
