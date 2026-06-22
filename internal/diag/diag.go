@@ -26,6 +26,7 @@ const (
 // allRules 按 flow → quality → planning → context 排列。
 var allRules = []RuleFunc{
 	// Flow
+	InvalidPendingRewrites,
 	RewritePendingPressure,
 	OrphanedSteer,
 	PhaseFlowMismatch,

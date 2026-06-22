@@ -44,9 +44,15 @@ func configDir() (string, error) {
 	return dir, nil
 }
 
+// projectConfigPath 返回项目级配置文件的相对路径 ./.ainovel/config.json。
+// 项目级 dotdir 镜像全局 ~/.ainovel/，复用同一个 configDirName；相对 cwd 解析。
+func projectConfigPath() string {
+	return filepath.Join(configDirName, "config.json")
+}
+
 // LoadConfig 按优先级加载并合并配置：
 //  1. ~/.ainovel/config.json（全局）
-//  2. ./ainovel.json（项目级覆盖）
+//  2. ./.ainovel/config.json（项目级覆盖）
 //  3. flagPath 指定的路径（最高优先级）
 func LoadConfig(flagPath string) (Config, error) {
 	var cfg Config
@@ -66,9 +72,9 @@ func LoadConfig(flagPath string) (Config, error) {
 
 	// 2. 项目级覆盖。坏文件 fail loud：用户在当前目录主动放的配置，静默吞掉会让
 	//    "配了不生效"无从排查（issue #37）。
-	project, found, err := loadOptionalJSON("ainovel.json")
+	project, found, err := loadOptionalJSON(projectConfigPath())
 	if err != nil {
-		return cfg, fmt.Errorf("项目级配置 ./ainovel.json 解析失败（请检查 JSON 语法）: %w", err)
+		return cfg, fmt.Errorf("项目级配置 ./.ainovel/config.json 解析失败（请检查 JSON 语法）: %w", err)
 	}
 	if found {
 		cfg = mergeConfig(cfg, project)
@@ -156,6 +162,12 @@ func mergeConfig(base, overlay Config) Config {
 			if len(v.Models) > 0 {
 				existing.Models = append([]string(nil), v.Models...)
 			}
+			if len(v.ExtraBody) > 0 {
+				existing.ExtraBody = cloneMap(v.ExtraBody)
+			}
+			if len(v.Extra) > 0 {
+				existing.Extra = cloneMap(v.Extra)
+			}
 			base.Providers[k] = existing
 		}
 	}
@@ -189,6 +201,17 @@ func mergeConfig(base, overlay Config) Config {
 	}
 
 	return base
+}
+
+func cloneMap(m map[string]any) map[string]any {
+	if len(m) == 0 {
+		return nil
+	}
+	c := make(map[string]any, len(m))
+	for k, v := range m {
+		c[k] = v
+	}
+	return c
 }
 
 // stripJSONComments 去除 JSON 中的 // 行注释，跟踪引号状态避免误删字符串内容。

@@ -39,6 +39,7 @@ type Host struct {
 	models            *bootstrap.ModelSet
 	coordinator       *agentcore.Agent
 	coordinatorCtxMgr *corecontext.ContextEngine // 切 default/coordinator 模型时联动 SetContextWindow + SetReserveTokens
+	thinkingApplier   agents.ApplyThinking       // /model 调思考强度时联动 live agent（coordinator + 子代理）
 	askUser           *tools.AskUserTool
 	writerRestore     *ctxpack.WriterRestorePack
 	observer          *observer
@@ -114,7 +115,7 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 	usageCtx, usageCancel := context.WithCancel(context.Background())
 	usage.StartAutoSave(usageCtx)
 
-	coordinator, askUser, restore, coordinatorCtxMgr := agents.BuildCoordinator(cfg, store, models, bundle, usage.Record)
+	coordinator, askUser, restore, coordinatorCtxMgr, applyThinking := agents.BuildCoordinator(cfg, store, models, bundle, usage.Record)
 	store.Signals.ClearStaleSignals()
 
 	h := &Host{
@@ -124,6 +125,7 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 		models:            models,
 		coordinator:       coordinator,
 		coordinatorCtxMgr: coordinatorCtxMgr,
+		thinkingApplier:   applyThinking,
 		askUser:           askUser,
 		writerRestore:     restore,
 		usage:             usage,
@@ -848,6 +850,76 @@ func (h *Host) SwitchModel(role, provider, model string) error {
 		Time:     time.Now(),
 		Category: "SYSTEM",
 		Summary:  fmt.Sprintf("模型已切换：%s → %s/%s", role, provider, model),
+		Level:    "info",
+	})
+	return nil
+}
+
+// concreteThinkingRoles 是可应用思考强度的具体角色（与 agents.ApplyThinking 路由一致）。
+// 调 default 时按各角色 ResolveThinking 逐个重新应用。
+var concreteThinkingRoles = []string{"coordinator", "architect", "writer", "editor"}
+
+// CurrentThinking 返回某角色当前生效的思考强度原始串（供 /model 面板同步当前值）。
+func (h *Host) CurrentThinking(role string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.cfg.ResolveThinking(strings.ToLower(strings.TrimSpace(role)))
+}
+
+// SetRoleThinking 设置某角色（或 default）的思考强度：校验→持久化→联动 live agent→事件。
+// 镜像 SwitchModel 的结构；与模型选择正交，可单独调整。level 为空 = 不覆盖（继承）。
+func (h *Host) SetRoleThinking(role, level string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	parsed, err := agents.ParseThinkingLevel(level)
+	if err != nil {
+		return err
+	}
+	role = strings.ToLower(strings.TrimSpace(role))
+
+	// 持久化：具体角色写 Roles[role].Thinking，default/"" 写顶层 Thinking。
+	if role == "" || role == "default" {
+		h.cfg.Thinking = string(parsed)
+	} else {
+		if h.cfg.Roles == nil {
+			h.cfg.Roles = make(map[string]bootstrap.RoleConfig)
+		}
+		rc := h.cfg.Roles[role]
+		rc.Thinking = string(parsed)
+		h.cfg.Roles[role] = rc
+	}
+	if path := bootstrap.DefaultConfigPath(); path != "" {
+		if err := bootstrap.SaveConfig(path, h.cfg); err != nil {
+			slog.Warn("保存配置失败", "module", "host", "err", err)
+		}
+	}
+
+	// 联动 live：具体角色直接应用；default 则遍历各具体角色按 ResolveThinking 重新应用
+	// （已被角色级覆盖的保留自身，未覆盖的吃上新默认）。
+	if h.thinkingApplier != nil {
+		if role == "" || role == "default" {
+			for _, r := range concreteThinkingRoles {
+				lv, _ := agents.ParseThinkingLevel(h.cfg.ResolveThinking(r))
+				h.thinkingApplier(r, lv)
+			}
+		} else {
+			h.thinkingApplier(role, parsed)
+		}
+	}
+
+	logRole := role
+	if logRole == "" {
+		logRole = "default"
+	}
+	shown := string(parsed)
+	if shown == "" {
+		shown = "默认(继承)"
+	}
+	h.emitEvent(Event{
+		Time:     time.Now(),
+		Category: "SYSTEM",
+		Summary:  fmt.Sprintf("思考强度已切换：%s → %s", logRole, shown),
 		Level:    "info",
 	})
 	return nil

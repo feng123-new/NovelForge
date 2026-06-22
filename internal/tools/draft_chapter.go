@@ -66,6 +66,9 @@ func (t *DraftChapterTool) Execute(_ context.Context, args json.RawMessage) (jso
 	if a.Content == "" {
 		return nil, fmt.Errorf("content must not be empty: %w", errs.ErrToolArgs)
 	}
+	if err := t.store.Progress.ValidateChapterWork(a.Chapter); err != nil {
+		return nil, err
+	}
 	if t.store.Progress.IsChapterCompleted(a.Chapter) {
 		// 打磨/重写路径：章节虽已完成，但仍在 pending_rewrites 中，允许覆盖草稿
 		progress, _ := t.store.Progress.Load()

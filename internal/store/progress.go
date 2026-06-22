@@ -196,9 +196,52 @@ func (s *ProgressStore) MarkChapterComplete(chapter, wordCount int, hookType, do
 	})
 }
 
-// MarkComplete 标记全书创作完成。
+// MarkComplete 标记全书创作完成，并清除重开返工标记（完结即不再处于返工态）。
 func (s *ProgressStore) MarkComplete() error {
-	return s.UpdatePhase(domain.PhaseComplete)
+	return s.io.WithWriteLock(func() error {
+		p, err := s.loadUnlocked()
+		if err != nil {
+			return err
+		}
+		if p == nil {
+			p = &domain.Progress{}
+		}
+		if err := domain.ValidatePhaseTransition(p.Phase, domain.PhaseComplete); err != nil {
+			return err
+		}
+		p.Phase = domain.PhaseComplete
+		p.ReopenedFromComplete = false
+		return s.saveUnlocked(p)
+	})
+}
+
+// Reopen 把已完结的书重新打开进入返工态：phase complete→writing + 目标章入队 + flow=rewriting，
+// 在一次写锁内原子完成。这是 phaseOrder“只前进”约束的唯一豁免出口——故意不走
+// ValidatePhaseTransition；回退的合法性收敛在本方法、且受 phase=complete 前置守卫保护，
+// 避免误用导致状态机失控。改完队列后 commit_chapter 会自动重新收尾完结。
+func (s *ProgressStore) Reopen(chapters []int, reason string) error {
+	return s.io.WithWriteLock(func() error {
+		p, err := s.loadUnlocked()
+		if err != nil {
+			return err
+		}
+		if p == nil {
+			return fmt.Errorf("progress 未初始化: %w", errs.ErrToolPrecondition)
+		}
+		if p.Phase != domain.PhaseComplete {
+			return fmt.Errorf("reopen 仅适用于已完结的书（当前 phase=%s）: %w", p.Phase, errs.ErrToolPrecondition)
+		}
+		normalized, err := normalizePendingRewrites(chapters, p.CompletedChapters)
+		if err != nil {
+			return err
+		}
+		p.Phase = domain.PhaseWriting // 唯一合法回退，受上面 complete 前置约束保护
+		p.PendingRewrites = normalized
+		p.RewriteReason = reason
+		p.Flow = domain.FlowRewriting
+		p.ReopenedFromComplete = true // 排空后按结构完整重新完结，见 commit_chapter drain 块
+		return s.saveUnlocked(p)
+	})
 }
 
 // ClearInProgress 清除进度中间状态。
@@ -267,6 +310,7 @@ func (s *ProgressStore) SetFlow(flow domain.FlowState) error {
 }
 
 // SetPendingRewrites 设置待重写章节队列和原因。
+// PendingRewrites 只允许包含已完成章节；未完成章节还没有终稿，不能进入重写/打磨队列。
 func (s *ProgressStore) SetPendingRewrites(chapters []int, reason string) error {
 	return s.io.WithWriteLock(func() error {
 		p, err := s.loadUnlocked()
@@ -276,10 +320,31 @@ func (s *ProgressStore) SetPendingRewrites(chapters []int, reason string) error 
 		if p == nil {
 			return nil
 		}
-		p.PendingRewrites = chapters
+		normalized, err := normalizePendingRewrites(chapters, p.CompletedChapters)
+		if err != nil {
+			return err
+		}
+		p.PendingRewrites = normalized
 		p.RewriteReason = reason
 		return s.saveUnlocked(p)
 	})
+}
+
+// ValidatePendingRewrites 校验章节列表是否可进入返工队列，不修改状态。
+func (s *ProgressStore) ValidatePendingRewrites(chapters []int) error {
+	s.io.mu.RLock()
+	defer s.io.mu.RUnlock()
+
+	p, err := s.loadUnlocked()
+	if err != nil {
+		return err
+	}
+	if p == nil {
+		_, err := normalizePendingRewrites(chapters, nil)
+		return err
+	}
+	_, err = normalizePendingRewrites(chapters, p.CompletedChapters)
+	return err
 }
 
 // CompleteRewrite 从待重写队列中移除已完成的章节。
@@ -343,6 +408,9 @@ func (s *ProgressStore) ValidateChapterWork(chapter int) error {
 	if p.Flow != domain.FlowRewriting && p.Flow != domain.FlowPolishing {
 		return nil
 	}
+	if _, err := normalizePendingRewrites(p.PendingRewrites, p.CompletedChapters); err != nil {
+		return err
+	}
 	if slices.Contains(p.PendingRewrites, chapter) {
 		return nil
 	}
@@ -352,4 +420,37 @@ func (s *ProgressStore) ValidateChapterWork(chapter int) error {
 		verb = "打磨"
 	}
 	return fmt.Errorf("第 %d 章不在待%s队列中，当前队列：%v。请先处理队列内章节，再动新章节: %w", chapter, verb, p.PendingRewrites, errs.ErrToolConflict)
+}
+
+func normalizePendingRewrites(chapters, completed []int) ([]int, error) {
+	if len(chapters) == 0 {
+		return nil, nil
+	}
+	completedSet := make(map[int]struct{}, len(completed))
+	for _, ch := range completed {
+		completedSet[ch] = struct{}{}
+	}
+
+	seen := make(map[int]struct{}, len(chapters))
+	normalized := make([]int, 0, len(chapters))
+	var invalid []int
+	for _, ch := range chapters {
+		if ch <= 0 {
+			invalid = append(invalid, ch)
+			continue
+		}
+		if _, ok := completedSet[ch]; !ok {
+			invalid = append(invalid, ch)
+			continue
+		}
+		if _, ok := seen[ch]; ok {
+			continue
+		}
+		seen[ch] = struct{}{}
+		normalized = append(normalized, ch)
+	}
+	if len(invalid) > 0 {
+		return nil, fmt.Errorf("pending_rewrites 只能包含已完成章节，非法章节：%v，completed_chapters=%v: %w", invalid, completed, errs.ErrToolPrecondition)
+	}
+	return normalized, nil
 }

@@ -44,7 +44,7 @@ func (t *SaveReviewTool) Schema() map[string]any {
 		schema.Property("dimension", schema.Enum("维度", "consistency", "character", "pacing", "continuity", "foreshadow", "hook", "aesthetic")).Required(),
 		schema.Property("score", schema.Int("评分（0-100）")).Required(),
 		schema.Property("verdict", schema.Enum("维度结论（可省略：系统按 score 自动推导，≥80 pass / ≥60 warning / <60 fail）", "pass", "warning", "fail")),
-		schema.Property("comment", schema.String("该维度的简要结论")),
+		schema.Property("comment", schema.String("该维度的简要结论；每个维度必填，aesthetic 必须引用原文或具体统计事实")).Required(),
 	)
 	return schema.Object(
 		schema.Property("chapter", schema.Int("审阅的章节号（全局审阅填最新章节号）")).Required(),
@@ -77,10 +77,6 @@ func (t *SaveReviewTool) Execute(_ context.Context, args json.RawMessage) (json.
 		return nil, err
 	}
 
-	if err := t.store.World.SaveReview(r); err != nil {
-		return nil, fmt.Errorf("save review: %w", err)
-	}
-
 	// 评分卡门禁 — 内联原 policy/review.go 的升级逻辑
 	finalVerdict := r.Verdict
 	var escalationReason string
@@ -107,15 +103,25 @@ func (t *SaveReviewTool) Execute(_ context.Context, args json.RawMessage) (json.
 		}
 	}
 
-	// 根据最终 verdict 更新 Progress。
-	// 写失败必须早返回——后续会 append review checkpoint，若此处吞 err 会让 Coordinator
-	// 看到 saved:true 但 Store 仍处于旧 Flow / 缺失 PendingRewrites 的中间态。
-	progress, _ := t.store.Progress.Load()
 	affected := r.AffectedChapters
 	if finalVerdict == "rewrite" || finalVerdict == "polish" {
 		if len(affected) == 0 && r.Chapter > 0 {
 			affected = []int{r.Chapter}
 		}
+		if err := t.store.Progress.ValidatePendingRewrites(affected); err != nil {
+			return nil, fmt.Errorf("validate pending rewrites: %w", err)
+		}
+	}
+
+	if err := t.store.World.SaveReview(r); err != nil {
+		return nil, fmt.Errorf("save review: %w", err)
+	}
+
+	// 根据最终 verdict 更新 Progress。
+	// 写失败必须早返回——后续会 append review checkpoint，若此处吞 err 会让 Coordinator
+	// 看到 saved:true 但 Store 仍处于旧 Flow / 缺失 PendingRewrites 的中间态。
+	progress, _ := t.store.Progress.Load()
+	if finalVerdict == "rewrite" || finalVerdict == "polish" {
 		flow := domain.FlowRewriting
 		if finalVerdict == "polish" {
 			flow = domain.FlowPolishing
@@ -223,9 +229,8 @@ func validateDimensions(dimensions []domain.DimensionScore) error {
 		if dim.Score < 0 || dim.Score > 100 {
 			return fmt.Errorf("invalid score for %s: %d", dim.Dimension, dim.Score)
 		}
-		// verdict 已在 Execute 按 score 确定性推导，此处无需再校验一致性。
-		if dim.Dimension == "aesthetic" && strings.TrimSpace(dim.Comment) == "" {
-			return fmt.Errorf("aesthetic comment is required")
+		if strings.TrimSpace(dim.Comment) == "" {
+			return fmt.Errorf("dimension comment is required: %s", dim.Dimension)
 		}
 	}
 	return nil

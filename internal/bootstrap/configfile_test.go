@@ -33,18 +33,28 @@ func writeGlobal(t *testing.T, content string) string {
 	return home
 }
 
-// 根因 3：项目级 ./ainovel.json 存在但是坏 JSON，必须报错，不能静默吞掉退回全局。
+// writeProjectConfig 在当前工作目录的 ./.ainovel/ 下写入项目级配置。
+// 调用前需先 t.Chdir 到目标目录。
+func writeProjectConfig(t *testing.T, content string) {
+	t.Helper()
+	if err := os.MkdirAll(".ainovel", 0o755); err != nil {
+		t.Fatalf("mkdir .ainovel: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(".ainovel", "config.json"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write project: %v", err)
+	}
+}
+
+// 根因 3：项目级 ./.ainovel/config.json 存在但是坏 JSON，必须报错，不能静默吞掉退回全局。
 func TestLoadConfig_CorruptProjectFailsLoud(t *testing.T) {
 	writeGlobal(t, validGlobal)
 	proj := t.TempDir()
 	t.Chdir(proj)
 	// 手抄示例多了个尾逗号——最常见的坏 JSON。
-	if err := os.WriteFile("ainovel.json", []byte(`{ "model": "x", }`), 0o644); err != nil {
-		t.Fatalf("write project: %v", err)
-	}
+	writeProjectConfig(t, `{ "model": "x", }`)
 
 	if _, err := LoadConfig(""); err == nil {
-		t.Fatal("坏的 ./ainovel.json 应当报错，却被静默忽略了")
+		t.Fatal("坏的 ./.ainovel/config.json 应当报错，却被静默忽略了")
 	}
 }
 
@@ -72,7 +82,7 @@ func TestLoadConfig_CorruptGlobalDoesNotBlockOverride(t *testing.T) {
 func TestLoadConfig_MissingFilesNoError(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home) // ~/.ainovel/config.json 不存在
-	t.Chdir(t.TempDir())   // 也没有 ./ainovel.json
+	t.Chdir(t.TempDir())   // 也没有 ./.ainovel/config.json
 
 	if _, err := LoadConfig(""); err != nil {
 		t.Fatalf("缺失配置文件不应报错，得到: %v", err)
@@ -84,9 +94,7 @@ func TestLoadConfig_ValidMergeWorks(t *testing.T) {
 	writeGlobal(t, validGlobal)
 	proj := t.TempDir()
 	t.Chdir(proj)
-	if err := os.WriteFile("ainovel.json", []byte(`{ "model": "google/gemini-2.5-pro" }`), 0o644); err != nil {
-		t.Fatalf("write project: %v", err)
-	}
+	writeProjectConfig(t, `{ "model": "google/gemini-2.5-pro" }`)
 
 	cfg, err := LoadConfig("")
 	if err != nil {
@@ -97,6 +105,65 @@ func TestLoadConfig_ValidMergeWorks(t *testing.T) {
 	}
 	if cfg.ModelName != "google/gemini-2.5-pro" {
 		t.Errorf("model 应被项目级覆盖，得到 %q", cfg.ModelName)
+	}
+}
+
+func TestMergeConfig_ProviderExtraFields(t *testing.T) {
+	base := Config{
+		Provider:  "openrouter",
+		ModelName: "google/gemini-2.5-flash",
+		Providers: map[string]ProviderConfig{
+			"openrouter": {
+				APIKey: "sk-test-123456",
+				ExtraBody: map[string]any{
+					"temperature": 0.8,
+				},
+				Extra: map[string]any{
+					"user_agent": "base-client/1.0",
+				},
+			},
+		},
+	}
+	overlay := Config{
+		Providers: map[string]ProviderConfig{
+			"openrouter": {
+				BaseURL: "https://proxy.example.com/v1",
+				ExtraBody: map[string]any{
+					"min_p": 0.05,
+				},
+				Extra: map[string]any{
+					"user_agent": "override-client/1.0",
+					"headers": map[string]any{
+						"X-Custom-Client": "ainovel",
+					},
+				},
+			},
+		},
+	}
+
+	cfg := mergeConfig(base, overlay)
+	pc := cfg.Providers["openrouter"]
+	if pc.APIKey != "sk-test-123456" {
+		t.Fatalf("APIKey = %q, want inherited key", pc.APIKey)
+	}
+	if pc.BaseURL != "https://proxy.example.com/v1" {
+		t.Fatalf("BaseURL = %q, want overlay URL", pc.BaseURL)
+	}
+	if _, ok := pc.ExtraBody["temperature"]; ok {
+		t.Fatalf("ExtraBody should be replaced by overlay, got %#v", pc.ExtraBody)
+	}
+	if got := pc.ExtraBody["min_p"]; got != 0.05 {
+		t.Fatalf("ExtraBody[min_p] = %#v, want 0.05", got)
+	}
+	if got := pc.Extra["user_agent"]; got != "override-client/1.0" {
+		t.Fatalf("Extra[user_agent] = %#v, want override-client/1.0", got)
+	}
+	headers, ok := pc.Extra["headers"].(map[string]any)
+	if !ok {
+		t.Fatalf("Extra[headers] missing or invalid: %#v", pc.Extra["headers"])
+	}
+	if got := headers["X-Custom-Client"]; got != "ainovel" {
+		t.Fatalf("Extra.headers[X-Custom-Client] = %#v, want ainovel", got)
 	}
 }
 

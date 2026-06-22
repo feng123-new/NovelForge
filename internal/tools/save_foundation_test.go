@@ -476,6 +476,9 @@ func TestSaveFoundationCompleteBookRejectsBeforeWriting(t *testing.T) {
 
 func TestSaveFoundationCompleteBookRejectsWithPendingRewrites(t *testing.T) {
 	s := completeBookSetup(t)
+	if err := s.Progress.MarkChapterComplete(2, 3000, "", ""); err != nil {
+		t.Fatalf("MarkChapterComplete: %v", err)
+	}
 	if err := s.Progress.SetPendingRewrites([]int{2}, "尾章节奏过快"); err != nil {
 		t.Fatalf("SetPendingRewrites: %v", err)
 	}

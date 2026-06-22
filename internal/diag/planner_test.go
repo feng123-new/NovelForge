@@ -70,6 +70,31 @@ func TestPhaseFlowMismatchMeta(t *testing.T) {
 	}
 }
 
+func TestInvalidPendingRewritesMeta(t *testing.T) {
+	snap := &Snapshot{
+		Progress: &domain.Progress{
+			Phase:             domain.PhaseWriting,
+			Flow:              domain.FlowPolishing,
+			CompletedChapters: []int{1, 2, 58},
+			PendingRewrites:   []int{65},
+		},
+	}
+	findings := InvalidPendingRewrites(snap)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	f := findings[0]
+	if f.Severity != SevCritical || f.Confidence != ConfHigh || f.AutoLevel != AutoSuggest {
+		t.Fatalf("expected critical/high/suggest, got %s/%s/%s", f.Severity, f.Confidence, f.AutoLevel)
+	}
+	if f.Rule != "InvalidPendingRewrites" {
+		t.Fatalf("unexpected rule: %s", f.Rule)
+	}
+	if actions := PlanActions(findings); len(actions) != 0 {
+		t.Fatalf("invalid pending rewrites should not auto-plan actions yet, got %+v", actions)
+	}
+}
+
 func TestOutlineExhaustedMeta(t *testing.T) {
 	snap := &Snapshot{
 		Progress: &domain.Progress{

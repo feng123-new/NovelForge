@@ -55,6 +55,9 @@ type ProviderConfig struct {
 	// presence_penalty，或厂商特有键如 nvidia 开 think 的 chat_template_kwargs）。
 	// OpenAI 兼容端逐字并入请求体（即 extra_body 约定）；值由用户自负其责。
 	ExtraBody map[string]any `json:"extra_body,omitempty"`
+	// Extra 透传给 provider 级配置（litellm.ProviderConfig.Extra），用于 HTTP
+	// headers、user_agent、anthropic_beta 等客户端/传输层选项。
+	Extra map[string]any `json:"extra,omitempty"`
 }
 
 // RequiresAPIKey 返回该 provider 是否必须显式配置 api_key。
@@ -93,6 +96,9 @@ type RoleConfig struct {
 	Provider  string     `json:"provider"`            // 主 provider 名称（Providers map 中的 key）
 	Model     string     `json:"model"`               // 主模型名（原样透传，不做任何解析）
 	Fallbacks []ModelRef `json:"fallbacks,omitempty"` // 显式备用 provider/model 列表
+	// Thinking 该角色的思考强度（off/minimal/low/medium/high/xhigh），空=继承顶层默认。
+	// 由 agents.ParseThinkingLevel 校验后应用，越级值视为空。
+	Thinking string `json:"thinking,omitempty"`
 }
 
 // knownRoles 支持的角色名。
@@ -111,6 +117,9 @@ type Config struct {
 	// 默认 LLM 配置
 	Provider  string `json:"provider"` // 默认 provider（Providers map 中的 key）
 	ModelName string `json:"model"`    // 默认模型名
+	// Thinking 顶层默认思考强度（off/minimal/low/medium/high/xhigh），空=不覆盖（沿用模型/provider 默认）。
+	// 角色未单独配置 thinking 时回落到此值。
+	Thinking string `json:"thinking,omitempty"`
 
 	// Provider 凭证库
 	Providers map[string]ProviderConfig `json:"providers,omitempty"`
@@ -175,7 +184,7 @@ func (c *Config) ValidateBase() error {
 	// 默认 provider 必须有凭证
 	pc, ok := c.Providers[c.Provider]
 	if !ok {
-		return fmt.Errorf("provider %q 未在 providers 中配置凭证；若在 ./ainovel.json 里覆盖了 provider，需同时声明 providers.%s（含 api_key/base_url），不能只改顶层 provider: %w", c.Provider, c.Provider, errs.ErrConfig)
+		return fmt.Errorf("provider %q 未在 providers 中配置凭证；若在 ./.ainovel/config.json 里覆盖了 provider，需同时声明 providers.%s（含 api_key/base_url），不能只改顶层 provider: %w", c.Provider, c.Provider, errs.ErrConfig)
 	}
 	if pc.RequiresAPIKey(c.Provider) && pc.APIKey == "" {
 		return fmt.Errorf("provider %q has no api_key configured: %w", c.Provider, errs.ErrConfig)
@@ -333,6 +342,18 @@ func (c Config) ResolveContextWindow(modelName string) (int, ContextWindowSource
 		return rw, CtxWindowRegistry
 	}
 	return DefaultContextWindow, CtxWindowDefault
+}
+
+// ResolveThinking 返回某角色生效的思考强度原始串（off/minimal/low/medium/high/xhigh 或空）。
+// 优先级：角色级 Roles[role].Thinking → 顶层默认 Thinking → ""（不覆盖，沿用模型/provider 默认）。
+// role 为空或 "default" 时直接取顶层默认。值的合法性由 agents.ParseThinkingLevel 把关。
+func (c Config) ResolveThinking(role string) string {
+	if role != "" && role != "default" {
+		if rc, ok := c.Roles[role]; ok && rc.Thinking != "" {
+			return rc.Thinking
+		}
+	}
+	return c.Thinking
 }
 
 // LogContextWindowChoice 打印某个角色的窗口决策。source=default 时发 Warn 提示

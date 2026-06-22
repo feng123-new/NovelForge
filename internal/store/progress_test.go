@@ -110,6 +110,9 @@ func TestSetPendingRewrites(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.MarkChapterComplete(3, 3000, "", "")
+	_ = store.Progress.MarkChapterComplete(5, 3000, "", "")
+	_ = store.Progress.MarkChapterComplete(7, 3000, "", "")
 
 	chapters := []int{3, 5, 7}
 	if err := store.Progress.SetPendingRewrites(chapters, "角色动机不连贯"); err != nil {
@@ -125,10 +128,49 @@ func TestSetPendingRewrites(t *testing.T) {
 	}
 }
 
+func TestSetPendingRewritesRejectsUnfinishedChapters(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.MarkChapterComplete(3, 3000, "", "")
+
+	if err := store.Progress.SetPendingRewrites([]int{3, 5}, "测试"); err == nil {
+		t.Fatal("expected unfinished chapter to be rejected")
+	}
+
+	p, _ := store.Progress.Load()
+	if len(p.PendingRewrites) != 0 {
+		t.Fatalf("pending_rewrites should remain empty, got %v", p.PendingRewrites)
+	}
+}
+
+func TestValidateChapterWorkRejectsCorruptPendingRewriteQueue(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	_ = store.Progress.Init("test", 80)
+	for ch := 1; ch <= 58; ch++ {
+		_ = store.Progress.MarkChapterComplete(ch, 3000, "", "")
+	}
+
+	p, _ := store.Progress.Load()
+	p.Flow = domain.FlowPolishing
+	p.PendingRewrites = []int{65}
+	if err := store.Progress.Save(p); err != nil {
+		t.Fatalf("Save corrupt progress: %v", err)
+	}
+
+	if err := store.Progress.ValidateChapterWork(65); err == nil {
+		t.Fatal("expected corrupt pending_rewrites to be rejected")
+	}
+}
+
 func TestCompleteRewrite(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.MarkChapterComplete(3, 3000, "", "")
+	_ = store.Progress.MarkChapterComplete(5, 3000, "", "")
+	_ = store.Progress.MarkChapterComplete(7, 3000, "", "")
 	_ = store.Progress.SetPendingRewrites([]int{3, 5, 7}, "测试重写")
 	_ = store.Progress.SetFlow(domain.FlowRewriting)
 
@@ -169,6 +211,8 @@ func TestCompleteRewrite_NotInQueue(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.MarkChapterComplete(3, 3000, "", "")
+	_ = store.Progress.MarkChapterComplete(5, 3000, "", "")
 	_ = store.Progress.SetPendingRewrites([]int{3, 5}, "测试")
 
 	// 完成不在队列中的章节不应报错
@@ -185,6 +229,9 @@ func TestClearPendingRewrites(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.MarkChapterComplete(1, 3000, "", "")
+	_ = store.Progress.MarkChapterComplete(2, 3000, "", "")
+	_ = store.Progress.MarkChapterComplete(3, 3000, "", "")
 	_ = store.Progress.SetPendingRewrites([]int{1, 2, 3}, "测试")
 	_ = store.Progress.SetFlow(domain.FlowRewriting)
 

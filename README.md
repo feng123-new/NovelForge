@@ -194,15 +194,24 @@ ToolResultMicrocompact → LightTrim → StoreSummaryCompact → FullSummary
 ## 快速开始
 
 ```bash
-# 安装
+# 一键安装（macOS / Linux，无需 Go）
+curl -fsSL https://raw.githubusercontent.com/voocel/ainovel-cli/main/scripts/install.sh | sh
+
+# 安装指定版本
+curl -fsSL https://raw.githubusercontent.com/voocel/ainovel-cli/main/scripts/install.sh | sh -s -- v1.2.3
+
+# 或通过 Go 安装
 go install github.com/voocel/ainovel-cli/cmd/ainovel-cli@latest
 
-# 本地开发运行
-go run ./cmd/ainovel-cli
+# 查看版本 / 更新到最新版本
+ainovel-cli --version
+ainovel-cli update
 
 # 首次运行，自动进入引导流程（选择 Provider → 输入 API Key → Base URL → 模型名）
 ainovel-cli
 ```
+
+> Windows 或手动安装：前往 [Releases](https://github.com/voocel/ainovel-cli/releases/latest) 下载对应平台的包。
 
 进入 TUI 后，启动阶段支持两种前置交互：
 
@@ -229,7 +238,11 @@ ainovel-cli
     "openrouter": {
       "api_key": "sk-or-v1-xxx",
       "base_url": "https://openrouter.ai/api/v1",
-      "models": ["google/gemini-2.5-flash", "google/gemini-2.5-pro"]
+      "models": ["google/gemini-2.5-flash", "google/gemini-2.5-pro"],
+      "extra": {
+        "user_agent": "my-client/1.0",
+        "headers": { "X-Custom-Client": "my-client" }
+      }
     }
   },
   "style": "default"
@@ -239,8 +252,10 @@ ainovel-cli
 #### 配置文件查找顺序（后者覆盖前者）
 
 1. `~/.ainovel/config.json` — 全局配置
-2. `./ainovel.json` — 项目级覆盖（可选）
+2. `./.ainovel/config.json` — 项目级覆盖（可选）
 3. `--config path/to/config.json` — 命令行指定
+
+> 项目级 `.ainovel/` 是全局 `~/.ainovel/` 的镜像：同样的结构、只是根目录从家目录换成当前项目。配置放 `./.ainovel/config.json`，写作规则放 `./.ainovel/rules/*.md`（详见下文「去 AI 味与自定义规则」）。该目录含密钥，已默认加入 `.gitignore`。
 
 覆盖规则说明：
 
@@ -252,6 +267,8 @@ ainovel-cli
 > ⚠️ `provider`（以及 `roles.*.provider`）的值是 `providers` 里的 **key 名**——一根指针，不是协议名。项目级若把 `provider` 切到一个全局 `providers` 里不存在的账号，必须在项目级同时补上该账号的凭证（`api_key` / `base_url`），否则启动会报“未配置凭证”。
 
 `providers.<name>.models` 为可选字段，用于声明该 provider 下允许在 TUI `/model` 面板中切换的模型列表；如果未配置，系统会回退为当前配置文件里已经出现过的该 provider 模型。
+
+`providers.<name>.extra` 为 provider 级配置，会传给底层 HTTP 客户端，适合配置 `user_agent`、`headers`、`anthropic_beta` 等代理识别字段；`providers.<name>.extra_body` 才是请求体扩展参数，两者不要混用。
 
 ## 诊断报告
 
@@ -294,16 +311,15 @@ output/novel/meta/simulation_profile.json
 ```
 /import ~/我的小说.txt              # 从头导入并反推 foundation
 /import ~/我的小说.txt from=50      # 从第 50 章接着导入（跳过反推）
-/import ~/我的小说.txt regex=^第.+話$  # 自定义章节标题正则
 ```
 
-**章节切分规则**：默认正则识别这些标题格式（行首，可带 `#`/`##` Markdown 前缀）：
+**章节切分规则**：自动识别这些标题格式（行首，可带 `#`/`##` Markdown 前缀、`【】`/`〖〗` 包裹、全角空格，兼容 GBK/BOM 编码）：
 
-- 中文编号：`第一章` `第3回` `第十话` `第二卷`、独立 `卷一`，可带副标题（`第三章：决战`）
-- 中文特殊单元：`序章` `楔子` `引子` `前言` `尾声` `终章` `后记` `番外`
+- 中文编号：`第一章` `第3回` `第十话` `第二卷` `第五节` `第二幕`、独立 `卷一`，数字支持大写（`第壹章`），可带副标题（`第三章：决战`）
+- 中文特殊单元：`序章` `楔子` `引子` `前言` `尾声` `终章` `后记` `番外` `外传`
 - 英文：`Chapter 1` `Chapter II`、`Prologue` `Epilogue`，可带副标题（`Chapter 1: The Beginning`）
 
-若提示**"未识别到任何章节"**，说明你的文件用了其它标题格式（如 `001`、`（一）`、剧本式），用 `regex=` 参数传入自定义正则即可（至少含一个捕获组用于提取标题）。
+若提示**"未识别到任何章节"**，请确认文件确为分章小说文本（章节标题独占一行、位于行首）。
 
 > 导入是确定性回放，不经过 Coordinator；原文会逐字落盘为已完成章节，因此适合"续写同一本书"。如果只想借鉴设定做全新创作，请用普通方式起一本新书、在需求里描述想要的风格设定。
 
@@ -358,13 +374,42 @@ output/novel/meta/simulation_profile.json
   "providers": {
     "my-proxy": {
       "type": "openai",
-      "base_url": "https://proxy.example.com/v1"
+      "base_url": "https://proxy.example.com/v1",
+      "extra": {
+        "user_agent": "my-client/1.0",
+        "headers": { "X-Custom-Client": "my-client" }
+      }
     }
   }
 }
 ```
 
 支持的 Provider：`openrouter` / `anthropic` / `gemini` / `openai` / `deepseek` / `qwen` / `glm` / `grok` / `ollama` / `bedrock` 及任意自定义代理。
+
+如果代理是 Anthropic 协议，并要求客户端识别字段，`type` 应设为 `anthropic`，`anthropic_beta` 放在 `extra` 顶层，Stainless 等 HTTP 头放在 `extra.headers` 中：
+
+```jsonc
+{
+  "provider": "claude-proxy",
+  "model": "claude-sonnet-4-6",
+  "providers": {
+    "claude-proxy": {
+      "type": "anthropic",
+      "api_key": "sk-xxx",
+      "base_url": "https://proxy.example.com",
+      "extra": {
+        "user_agent": "claude-code/2.1.183",
+        "anthropic_beta": "claude-code-20250219",
+        "headers": {
+          "X-Stainless-Lang": "js",
+          "X-Stainless-Package-Version": "0.94.0",
+          "X-Stainless-Runtime": "node"
+        }
+      }
+    }
+  }
+}
+```
 
 关于 `api_key`：
 
@@ -399,7 +444,7 @@ output/novel/meta/simulation_profile.json
 
 内置一份去 AI 味基线（`assets/` 下，出厂默认）：机械黑名单 `rules/default.md`（套句 / 疲劳词，commit 时确定性检查）+ 语义判据 `references/anti-ai-tone.md`（注入 writer / editor 规避与举证）。
 
-想叠加自己的偏好**无需改源码**：在 `~/.ainovel/rules/` 目录（全局，放任意 `.md`，按文件名字典序合并）或项目根 `./rules.md`（本书）里，**用大白话写偏好即可**（如「主角别写成圣母」「多用身体感知」），editor 会按语义审阅——零格式、零 YAML。想要「字数 / 禁词」这类硬性确定检查，再**可选地**在文件顶部加一段 front matter。就近覆盖、与内置基线叠加生效；完整字段见 [`rules.md.example`](rules.md.example)。
+想叠加自己的偏好**无需改源码**：在 `~/.ainovel/rules/` 目录（全局，放任意 `.md`，按文件名字典序合并）或 `./.ainovel/rules/` 目录（本书，同样放任意 `.md`，与全局同形态）里，**用大白话写偏好即可**（如「主角别写成圣母」「多用身体感知」），editor 会按语义审阅——零格式、零 YAML。想要「字数 / 禁词」这类硬性确定检查，再**可选地**在文件顶部加一段 front matter。就近覆盖、与内置基线叠加生效；完整字段见 [`rules.md.example`](rules.md.example)。
 
 ## 输出结构
 
