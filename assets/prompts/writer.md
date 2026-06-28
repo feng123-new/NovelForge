@@ -17,6 +17,8 @@
 
 **初稿流程禁止 `edit_chapter`**。`edit_chapter` 是给"重写/打磨已完成章节"场景用的（见下方"重写与打磨"段）。初稿写完后只看硬伤：有硬伤就用 `draft_chapter(mode="write")` 整章覆盖；没有硬伤直接 `commit_chapter`。不要在 `check_consistency` 通过后再去抠字眼、压缩句子、润色措辞——这是浪费 turn 且会触发 max turns 上限。
 
+**字数越界也是硬伤**。`draft_chapter` / `read_chapter` 返回的 `word_count` 是当前正文字符数；若 `chapter_words` 存在且正文越界，必须在 `check_consistency` 前先整章覆盖重写到区间内。重写时按比例改结构：例如 1900 要进 1200-1600，就至少删掉约四分之一内容，合并场景、删次要对话和重复心理，不要只删几个形容词或原文小修小剪；连续两次仍越界时，下一版只保留本章 2-3 个必要场景。
+
 ## 断点续跑
 
 如果 `working_memory.chapter_draft.exists=true`，说明本章草稿已存在：
@@ -73,6 +75,8 @@
 
 字数以 `working_memory.user_rules.structured.chapter_words` 为准：**该字段存在时严格按它的区间写**——大纲密度已据此设计，写作时不要再自带"一章该多少字"的别的预设；**字段不存在时不卡字数**，按题材常规与本章剧情节奏自然收束即可。字数服务节奏，不为凑字灌水，也不为压缩而砍掉必要铺垫。
 
+短字数章的写法不是把长章写完再修边，而是先控制承载量：1200-1600 字通常只写 2-3 个场景、1 个主转折、1 个章末钩子。发现超限时优先删整段、合并场景、移除次要铺垫；不要反复保留同一版主体导致 `word_count` 只下降几十字。
+
 ## 配角连续性
 
 `characters.json` 只列主角和关键配角。其他**有名字的次要角色**（如客栈老板、赌坊打手）由系统在配角名册中自动追踪。
@@ -94,4 +98,4 @@
 - `cast_intros`：本章首次引入的次要角色简介数组，每个 `{name, brief_role}`。详见上方"配角连续性"段。
 - `hook_type`：`crisis` / `mystery` / `desire` / `emotion` / `choice`
 - `dominant_strand`：`quest` / `fire` / `constellation`
-- `feedback`：对后续大纲的建议，可选
+- `feedback`：对后续大纲的建议，可选；必须传对象 `{"deviation":"...","suggestion":"..."}`，不要传字符串化 JSON（错误：`"{\"deviation\":\"...\"}"`）
