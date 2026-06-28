@@ -40,7 +40,7 @@ type Host struct {
 	models            *bootstrap.ModelSet
 	coordinator       *agentcore.Agent
 	coordinatorCtxMgr *corecontext.ContextEngine // 切 default/coordinator 模型时联动 SetContextWindow + SetReserveTokens
-	thinkingApplier   agents.ApplyThinking       // /model 调思考强度时联动 live agent（coordinator + 子代理）
+	thinkingApplier   agents.ApplyThinking       // /model 调推理强度时联动 live agent（coordinator + 子代理）
 	askUser           *tools.AskUserTool
 	writerRestore     *ctxpack.WriterRestorePack
 	observer          *observer
@@ -912,15 +912,15 @@ func (h *Host) SwitchModel(role, provider, model string) error {
 	return nil
 }
 
-// concreteThinkingRoles 是可应用思考强度的具体角色（与 agents.ApplyThinking 路由一致）。
-// 调 default 时按各角色 ResolveThinking 逐个重新应用。
+// concreteThinkingRoles 是可应用推理强度的具体角色（与 agents.ApplyThinking 路由一致）。
+// 调 default 时按各角色 ResolveReasoningEffort 逐个重新应用。
 var concreteThinkingRoles = []string{"coordinator", "architect", "writer", "editor"}
 
-// CurrentThinking 返回某角色当前生效的思考强度原始串（供 /model 面板同步当前值）。
+// CurrentThinking 返回某角色当前生效的推理强度原始串（供 /model 面板同步当前值）。
 func (h *Host) CurrentThinking(role string) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.cfg.ResolveThinking(strings.ToLower(strings.TrimSpace(role)))
+	return h.cfg.ResolveReasoningEffort(strings.ToLower(strings.TrimSpace(role)))
 }
 
 func (h *Host) AvailableThinking(role string) []agentcore.ThinkingLevel {
@@ -933,25 +933,25 @@ func (h *Host) AvailableThinking(role string) []agentcore.ThinkingLevel {
 func (h *Host) normalizeThinkingLocked(role string) agentcore.ThinkingLevel {
 	role = strings.ToLower(strings.TrimSpace(role))
 	if role == "" || role == "default" {
-		parsed, _ := agents.ParseThinkingLevel(h.cfg.Thinking)
+		parsed, _ := agents.ParseThinkingLevel(h.cfg.ReasoningEffort)
 		for _, r := range concreteThinkingRoles {
 			resolved, ok := agents.ResolveThinkingForModel(h.models.ForRole(r), parsed)
 			if !ok || resolved != parsed {
-				h.cfg.Thinking = string(resolved)
+				h.cfg.ReasoningEffort = string(resolved)
 				return resolved
 			}
 		}
-		h.cfg.Thinking = string(parsed)
+		h.cfg.ReasoningEffort = string(parsed)
 		return parsed
 	}
 
 	_, hasRoleThinking := h.cfg.Roles[role]
-	hasRoleThinking = hasRoleThinking && h.cfg.Roles[role].Thinking != ""
-	parsed, _ := agents.ParseThinkingLevel(h.cfg.ResolveThinking(role))
+	hasRoleThinking = hasRoleThinking && h.cfg.Roles[role].ReasoningEffort != ""
+	parsed, _ := agents.ParseThinkingLevel(h.cfg.ResolveReasoningEffort(role))
 	resolved, _ := agents.ResolveThinkingForModel(h.models.ForRole(role), parsed)
 	if !hasRoleThinking {
 		if resolved != parsed {
-			h.cfg.Thinking = string(resolved)
+			h.cfg.ReasoningEffort = string(resolved)
 		}
 		return resolved
 	}
@@ -959,7 +959,7 @@ func (h *Host) normalizeThinkingLocked(role string) agentcore.ThinkingLevel {
 		h.cfg.Roles = make(map[string]bootstrap.RoleConfig)
 	}
 	rc := h.cfg.Roles[role]
-	rc.Thinking = string(resolved)
+	rc.ReasoningEffort = string(resolved)
 	h.cfg.Roles[role] = rc
 	return resolved
 }
@@ -971,16 +971,16 @@ func (h *Host) applyThinkingLocked(role string) {
 	role = strings.ToLower(strings.TrimSpace(role))
 	if role == "" || role == "default" {
 		for _, r := range concreteThinkingRoles {
-			lv, _ := agents.ParseThinkingLevel(h.cfg.ResolveThinking(r))
+			lv, _ := agents.ParseThinkingLevel(h.cfg.ResolveReasoningEffort(r))
 			h.thinkingApplier(r, lv)
 		}
 		return
 	}
-	lv, _ := agents.ParseThinkingLevel(h.cfg.ResolveThinking(role))
+	lv, _ := agents.ParseThinkingLevel(h.cfg.ResolveReasoningEffort(role))
 	h.thinkingApplier(role, lv)
 }
 
-// SetRoleThinking 设置某角色（或 default）的思考强度：校验→持久化→联动 live agent→事件。
+// SetRoleThinking 设置某角色（或 default）的推理强度：校验→持久化→联动 live agent→事件。
 // 镜像 SwitchModel 的结构；与模型选择正交，可单独调整。level 为空 = 不覆盖（继承）。
 func (h *Host) SetRoleThinking(role, level string) error {
 	h.mu.Lock()
@@ -1001,15 +1001,15 @@ func (h *Host) SetRoleThinking(role, level string) error {
 	} else {
 		parsed, _ = agents.ResolveThinkingForModel(h.models.ForRole(role), parsed)
 	}
-	// 持久化：具体角色写 Roles[role].Thinking，default/"" 写顶层 Thinking。
+	// 持久化：具体角色写 Roles[role].ReasoningEffort，default/"" 写顶层 ReasoningEffort。
 	if role == "" || role == "default" {
-		h.cfg.Thinking = string(parsed)
+		h.cfg.ReasoningEffort = string(parsed)
 	} else {
 		if h.cfg.Roles == nil {
 			h.cfg.Roles = make(map[string]bootstrap.RoleConfig)
 		}
 		rc := h.cfg.Roles[role]
-		rc.Thinking = string(parsed)
+		rc.ReasoningEffort = string(parsed)
 		h.cfg.Roles[role] = rc
 	}
 	if path := bootstrap.DefaultConfigPath(); path != "" {
@@ -1018,7 +1018,7 @@ func (h *Host) SetRoleThinking(role, level string) error {
 		}
 	}
 
-	// 联动 live：具体角色直接应用；default 则遍历各具体角色按 ResolveThinking 重新应用
+	// 联动 live：具体角色直接应用；default 则遍历各具体角色按 ResolveReasoningEffort 重新应用
 	// （已被角色级覆盖的保留自身，未覆盖的吃上新默认）。
 	h.applyThinkingLocked(role)
 
@@ -1033,7 +1033,7 @@ func (h *Host) SetRoleThinking(role, level string) error {
 	h.emitEvent(Event{
 		Time:     time.Now(),
 		Category: "SYSTEM",
-		Summary:  fmt.Sprintf("思考强度已切换：%s → %s", logRole, shown),
+		Summary:  fmt.Sprintf("推理强度已切换：%s → %s", logRole, shown),
 		Level:    "info",
 	})
 	return nil

@@ -51,7 +51,7 @@ type UsageRecorder func(agentName string, msg agentcore.AgentMessage)
 // instruction before the Coordinator gets another LLM turn.
 type FlowBoundaryHook func(toolName string)
 
-// ApplyThinking 把某具体角色的思考强度应用到 live agent（运行时 /model 调整用）。
+// ApplyThinking 把某具体角色的推理强度应用到 live agent（运行时 /model 调整用）。
 // coordinator → Agent.SetThinkingLevel；architect → 两个 architect_* 子代理；
 // writer/editor → 对应子代理。空 level = 沿用模型/provider 默认。其它 role 名忽略。
 type ApplyThinking func(role string, level agentcore.ThinkingLevel)
@@ -67,7 +67,7 @@ func ParseThinkingLevel(s string) (agentcore.ThinkingLevel, error) {
 		agentcore.ThinkingMax:
 		return lv, nil
 	default:
-		return "", fmt.Errorf("无效思考强度 %q（可选：off/minimal/low/medium/high/xhigh/max）", s)
+		return "", fmt.Errorf("无效推理强度 %q（可选：off/minimal/low/medium/high/xhigh/max）", s)
 	}
 }
 
@@ -79,11 +79,11 @@ func AvailableThinkingForModel(model agentcore.ChatModel) []agentcore.ThinkingLe
 	return llm.ThinkingPolicyFor(model).Available
 }
 
-// roleThinking 解析某角色生效的思考强度；非法值降级为空（不覆盖）并 warn。
+// roleThinking 解析某角色生效的推理强度；非法值降级为空（不覆盖）并 warn。
 func roleThinking(cfg bootstrap.Config, role string) agentcore.ThinkingLevel {
-	lv, err := ParseThinkingLevel(cfg.ResolveThinking(role))
+	lv, err := ParseThinkingLevel(cfg.ResolveReasoningEffort(role))
 	if err != nil {
-		slog.Warn("忽略无效思考强度配置", "module", "agent", "role", role, "err", err)
+		slog.Warn("忽略无效推理强度配置", "module", "agent", "role", role, "err", err)
 		return ""
 	}
 	return lv
@@ -99,7 +99,7 @@ func resolvedRoleThinking(model agentcore.ChatModel, cfg bootstrap.Config, role 
 // 以及 ApplyThinking 闭包——Host 层 /model 切换时需要直接调 SetContextWindow +
 // SetReserveTokens 联动新模型的窗口（writer/architect/editor 走 ContextManagerFactory
 // 自动重建，不需要 ref；只有常驻的 coordinator 需要），并通过 ApplyThinking 联动各角色
-// 思考强度。Host 层通过 Agent.Subscribe 获取事件流,不再需要 emit 回调。
+// 推理强度。Host 层通过 Agent.Subscribe 获取事件流,不再需要 emit 回调。
 func BuildCoordinator(
 	cfg bootstrap.Config,
 	store *store.Store,
@@ -328,13 +328,13 @@ func BuildCoordinator(
 			writerExpandedChapterGate(store),
 		)),
 	)
-	// Coordinator 思考强度：无条件应用解析结果。未配置时为空（不发 thinking，用 provider
+	// Coordinator 推理强度：无条件应用解析结果。未配置时为空（不发 thinking，用 provider
 	// 默认），与各子代理（Config.ThinkingLevel 默认空）一致——避免覆盖 agentcore 默认
 	// ThinkingLow 而对所有 provider 强制发 low（含会被强制开思考的 GLM/Ollama）。
 	coordinatorThinking, _ := ResolveThinkingForModel(models.ForRole("coordinator"), roleThinking(cfg, "coordinator"))
 	agent.SetThinkingLevel(coordinatorThinking)
 
-	// 运行时联动各角色思考强度：coordinator 走 Agent，子代理走 subagentTool override。
+	// 运行时联动各角色推理强度：coordinator 走 Agent，子代理走 subagentTool override。
 	applyThinking := func(role string, level agentcore.ThinkingLevel) {
 		switch role {
 		case "coordinator":

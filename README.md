@@ -256,12 +256,13 @@ docker compose run --rm ainovel --headless --prompt "写一本悬疑短篇"
 
 首次运行时自动引导生成配置文件 `~/.ainovel/config.json`，后续可直接编辑该文件调整设置。删除配置文件后重新运行会再次进入引导流程。
 
-也可以手动创建配置文件，参考 `~/.ainovel/config.example.jsonc`（引导时自动生成）。
+也可以手动创建配置文件，参考仓库根目录的 `config.example.jsonc`。首次引导也会复制一份到 `~/.ainovel/config.example.jsonc`，方便本机离线查看。
 
 ```jsonc
 {
   "provider": "openrouter",
   "model": "google/gemini-2.5-flash",
+  "reasoning_effort": "medium",
   "providers": {
     "openrouter": {
       "api_key": "sk-or-v1-xxx",
@@ -287,7 +288,7 @@ docker compose run --rm ainovel --headless --prompt "写一本悬疑短篇"
 
 覆盖规则说明：
 
-- 标量字段按后者覆盖前者，例如 `provider`、`model`、`style`
+- 标量字段按后者覆盖前者，例如 `provider`、`model`、`reasoning_effort`、`style`
 - `providers` 和 `roles` 按 key 合并，同名项内部按字段覆盖
 - 未填写的字段会继承上层配置，例如项目级配置只写 `base_url` 时会保留全局配置中的 `api_key`
 - 当前不支持用空字符串显式清空上层已有值；如需清空，请直接编辑更高优先级的配置文件
@@ -295,6 +296,8 @@ docker compose run --rm ainovel --headless --prompt "写一本悬疑短篇"
 > ⚠️ `provider`（以及 `roles.*.provider`）的值是 `providers` 里的 **key 名**——一根指针，不是协议名。项目级若把 `provider` 切到一个全局 `providers` 里不存在的账号，必须在项目级同时补上该账号的凭证（`api_key` / `base_url`），否则启动会报“未配置凭证”。
 
 `providers.<name>.models` 为可选字段，用于声明该 provider 下允许在 TUI `/model` 面板中切换的模型列表；如果未配置，系统会回退为当前配置文件里已经出现过的该 provider 模型。
+
+`reasoning_effort` 为默认推理强度，可选值为 `off` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`；省略或空字符串表示沿用模型/provider 默认。`roles.<role>.reasoning_effort` 可按角色覆盖，未配置时继承顶层 `reasoning_effort`。TUI `/model` 面板切换 provider、model 或推理强度后，会写回全局配置 `~/.ainovel/config.json`。
 
 `providers.<name>.extra` 为 provider 级配置，会传给底层 HTTP 客户端，适合配置 `user_agent`、`headers`、`anthropic_beta` 等代理识别字段；`providers.<name>.extra_body` 才是请求体扩展参数，两者不要混用。
 
@@ -378,13 +381,14 @@ output/novel/meta/simulation_profile.json
 {
   "provider": "openrouter",
   "model": "google/gemini-2.5-flash",
+  "reasoning_effort": "medium",
   "providers": {
     "openrouter": { "api_key": "sk-or-v1-xxx", "base_url": "https://openrouter.ai/api/v1" },
     "anthropic": { "api_key": "sk-ant-xxx" }
   },
   "roles": {
-    "writer": { "provider": "anthropic", "model": "claude-sonnet-4" },
-    "architect": { "provider": "openrouter", "model": "google/gemini-2.5-pro" }
+    "writer": { "provider": "anthropic", "model": "claude-sonnet-4", "reasoning_effort": "high" },
+    "architect": { "provider": "openrouter", "model": "google/gemini-2.5-pro", "reasoning_effort": "low" }
   }
 }
 ```
@@ -414,14 +418,14 @@ output/novel/meta/simulation_profile.json
 
 支持的 Provider：`openrouter` / `anthropic` / `gemini` / `openai` / `deepseek` / `qwen` / `glm` / `grok` / `ollama` / `bedrock` 及任意自定义代理。
 
-如果代理是 Anthropic 协议，并要求客户端识别字段，`type` 应设为 `anthropic`，`anthropic_beta` 放在 `extra` 顶层，Stainless 等 HTTP 头放在 `extra.headers` 中：
+如果代理是 Anthropic 协议，并限制只能由 Claude Code 客户端访问，`type` 应设为 `anthropic`，`anthropic_beta` 放在 `extra` 顶层，Stainless 等 HTTP 头放在 `extra.headers` 中：
 
 ```jsonc
 {
-  "provider": "claude-proxy",
+  "provider": "claude-code-proxy",
   "model": "claude-sonnet-4-6",
   "providers": {
-    "claude-proxy": {
+    "claude-code-proxy": {
       "type": "anthropic",
       "api_key": "sk-xxx",
       "base_url": "https://proxy.example.com",
@@ -432,6 +436,31 @@ output/novel/meta/simulation_profile.json
           "X-Stainless-Lang": "js",
           "X-Stainless-Package-Version": "0.94.0",
           "X-Stainless-Runtime": "node"
+        }
+      }
+    }
+  }
+}
+```
+
+如果代理是 OpenAI/NewAPI 协议，并限制只能由 Codex 客户端访问，`type` 应设为 `openai`，用 `extra.user_agent` 覆盖默认 `litellm-go/0.1`，并在 `extra.headers` 里透传 Codex 识别头。示例里的 `Session_id` 和 `X-Codex-Turn-Metadata` 应换成稳定的随机值；它们同时兼容 New API 的 Codex 透传模板和 sub2api 的 `x-codex-*` 指纹检查：
+
+```jsonc
+{
+  "provider": "codex-proxy",
+  "model": "gpt-5.4",
+  "providers": {
+    "codex-proxy": {
+      "type": "openai",
+      "api_key": "sk-xxx",
+      "base_url": "https://proxy.example.com/v1",
+      "models": ["gpt-5.4", "gpt-5.4-mini", "MiniMax-M3"],
+      "extra": {
+        "user_agent": "codex-tui/0.142.3 (Mac OS 26.5.1; arm64) Apple_Terminal/470.2 (codex-tui; 0.142.3)",
+        "headers": {
+          "Originator": "codex-tui",
+          "Session_id": "replace-with-random-session-id",
+          "X-Codex-Turn-Metadata": "replace-with-random-turn-metadata"
         }
       }
     }

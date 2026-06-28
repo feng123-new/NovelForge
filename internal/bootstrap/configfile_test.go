@@ -96,12 +96,12 @@ func TestLoadConfig_ValidMergeWorks(t *testing.T) {
 	t.Chdir(proj)
 	writeProjectConfig(t, `{
   "model": "google/gemini-2.5-pro",
-  "thinking": "high",
+  "reasoning_effort": "high",
   "roles": {
     "writer": {
       "provider": "openrouter",
       "model": "google/gemini-2.5-flash",
-      "thinking": "low"
+      "reasoning_effort": "low"
     }
   }
 }`)
@@ -116,11 +116,11 @@ func TestLoadConfig_ValidMergeWorks(t *testing.T) {
 	if cfg.ModelName != "google/gemini-2.5-pro" {
 		t.Errorf("model 应被项目级覆盖，得到 %q", cfg.ModelName)
 	}
-	if cfg.Thinking != "high" {
-		t.Errorf("thinking 应被项目级覆盖，得到 %q", cfg.Thinking)
+	if cfg.ReasoningEffort != "high" {
+		t.Errorf("reasoning_effort 应被项目级覆盖，得到 %q", cfg.ReasoningEffort)
 	}
-	if got := cfg.Roles["writer"].Thinking; got != "low" {
-		t.Errorf("roles.writer.thinking 应被项目级覆盖，得到 %q", got)
+	if got := cfg.Roles["writer"].ReasoningEffort; got != "low" {
+		t.Errorf("roles.writer.reasoning_effort 应被项目级覆盖，得到 %q", got)
 	}
 }
 
@@ -203,11 +203,18 @@ func TestValidateBase_ProviderOverrideWithoutCredentials(t *testing.T) {
 	}
 }
 
-// 内置示例（go:embed 的 config.example.jsonc）必须自洽：去注释后是合法 JSON、
+// 示例配置必须自洽：去注释后是合法 JSON、
 // 顶层 provider 指针不悬空、且点破了“指针”心智——它是用户照抄的样板，自己坏了就坑人。
 func TestExampleConfigIsValidAndSelfConsistent(t *testing.T) {
 	if exampleConfig == "" {
 		t.Fatal("go:embed 未生效，exampleConfig 为空")
+	}
+	rootExample, err := os.ReadFile(filepath.Join("..", "..", "config.example.jsonc"))
+	if err != nil {
+		t.Fatalf("读取根目录 config.example.jsonc: %v", err)
+	}
+	if string(rootExample) != exampleConfig {
+		t.Fatal("根目录 config.example.jsonc 与 internal/bootstrap/config.example.jsonc 不一致")
 	}
 	var cfg Config
 	if err := json.Unmarshal(stripJSONComments([]byte(exampleConfig)), &cfg); err != nil {

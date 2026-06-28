@@ -2,12 +2,12 @@ package bootstrap
 
 import "testing"
 
-func TestConfigResolveThinking(t *testing.T) {
+func TestConfigResolveReasoningEffort(t *testing.T) {
 	cfg := Config{
-		Thinking: "low", // 顶层默认
+		ReasoningEffort: "low", // 顶层默认
 		Roles: map[string]RoleConfig{
-			"writer":    {Provider: "p", Model: "m", Thinking: "high"}, // 角色覆盖
-			"architect": {Provider: "p", Model: "m"},                   // 无 thinking，应回落默认
+			"writer":    {Provider: "p", Model: "m", ReasoningEffort: "high"}, // 角色覆盖
+			"architect": {Provider: "p", Model: "m"},                          // 无 reasoning_effort，应回落默认
 		},
 	}
 
@@ -23,17 +23,17 @@ func TestConfigResolveThinking(t *testing.T) {
 		{"coordinator", "low"}, // 未配 → 顶层默认
 	}
 	for _, c := range cases {
-		if got := cfg.ResolveThinking(c.role); got != c.want {
-			t.Errorf("ResolveThinking(%q) = %q, want %q", c.role, got, c.want)
+		if got := cfg.ResolveReasoningEffort(c.role); got != c.want {
+			t.Errorf("ResolveReasoningEffort(%q) = %q, want %q", c.role, got, c.want)
 		}
 	}
 
 	// 顶层默认也为空时，未覆盖角色返回 ""（不覆盖）。
-	empty := Config{Roles: map[string]RoleConfig{"writer": {Thinking: "xhigh"}}}
-	if got := empty.ResolveThinking("editor"); got != "" {
+	empty := Config{Roles: map[string]RoleConfig{"writer": {ReasoningEffort: "xhigh"}}}
+	if got := empty.ResolveReasoningEffort("editor"); got != "" {
 		t.Errorf("空默认下 editor 应返回 \"\"，得 %q", got)
 	}
-	if got := empty.ResolveThinking("writer"); got != "xhigh" {
+	if got := empty.ResolveReasoningEffort("writer"); got != "xhigh" {
 		t.Errorf("空默认下 writer 覆盖应生效，得 %q", got)
 	}
 }
