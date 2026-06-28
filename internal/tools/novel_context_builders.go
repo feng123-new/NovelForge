@@ -137,17 +137,18 @@ func (t *ContextTool) buildProgressStatus(result map[string]any) {
 // 注入策略：只给 LLM 看 structured + preferences——这两项才是创作时需要遵循的偏好。
 // sources / conflicts 是诊断信息（用户冲突排查），不进 LLM；由 CLI 启动诊断面板按需展示。
 func (t *ContextTool) buildUserRules(result map[string]any) {
-	bundle := rules.Merge(rules.Load(t.rulesOpts))
-	payload := map[string]any{
-		"structured":  bundle.Structured,
-		"preferences": bundle.Preferences,
+	snap, err := t.store.UserRules.Load()
+	if err != nil || snap == nil {
+		// 快照未生成（老书首次/异常）：退到代码内置默认，保证机械底线（字数/禁语/疲劳词）始终存在。
+		def := rules.BuildSnapshot([]rules.Candidate{rules.SystemDefaults()})
+		snap = &def
 	}
 	working, ok := result["working_memory"].(map[string]any)
 	if !ok {
 		working = map[string]any{}
 		result["working_memory"] = working
 	}
-	working["user_rules"] = payload
+	working["user_rules"] = snap.Payload()
 }
 
 // buildUserDirectives 把用户长效创作要求注入 working_memory.user_directives（canonical 路径）。

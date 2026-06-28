@@ -22,22 +22,8 @@ import (
 	"github.com/voocel/ainovel-cli/internal/rules"
 	"github.com/voocel/ainovel-cli/internal/store"
 	"github.com/voocel/ainovel-cli/internal/tools"
+	"github.com/voocel/ainovel-cli/internal/userrules"
 )
-
-// logRulesLoaded 在装配期打印规则加载实况：本书规则目录、实际读到的来源、字数检查生效值。
-// 规则文件放错路径会被 loader 静默跳过、来源又不进 LLM（仅 /diag 面板可见），放错零反馈是
-// 用户排查的最大障碍。这一行启动日志让"路径错 / 字数没写进 front matter"一眼可见。
-func logRulesLoaded(opts rules.LoadOptions) {
-	b := rules.Merge(rules.Load(opts))
-	words := "未设置（不做字数检查）"
-	if w := b.Structured.ChapterWords; w != nil {
-		words = fmt.Sprintf("%d-%d", w.Min, w.Max)
-	}
-	slog.Info("规则加载",
-		"本书规则目录", opts.ProjectRulesDir,
-		"已加载来源", b.Sources,
-		"章节字数", words)
-}
 
 // agentToRole 把 subagent name 归一为 ModelSet 认得的 role 名。
 // architect_short / architect_long 都共用同一个 architect role 配置。
@@ -123,9 +109,10 @@ func BuildCoordinator(
 	onFlowBoundary FlowBoundaryHook,
 ) (*agentcore.Agent, *tools.AskUserTool, *ctxpack.WriterRestorePack, *corecontext.ContextEngine, ApplyThinking) {
 	// 共享工具
-	rulesOpts := rules.DefaultOptions(bundle.RulesFS)
-	logRulesLoaded(rulesOpts)
-	contextTool := tools.NewContextTool(store, bundle.References, cfg.Style, rulesOpts)
+	contextTool := tools.NewContextTool(store, bundle.References, cfg.Style)
+	// 用户规则服务：归一化各来源 → 确定性合并 → 落盘本书快照。Coordinator 的
+	// save_user_rules 工具复用它做运行中更新；归一化用 Default 模型（与 Host 开书侧一致）。
+	userRulesSvc := userrules.NewService(store, models.Default, rules.DefaultOptions())
 	readChapter := tools.NewReadChapterTool(store)
 	askUser := tools.NewAskUserTool()
 
@@ -140,7 +127,7 @@ func BuildCoordinator(
 		tools.NewDraftChapterTool(store),
 		tools.NewEditChapterTool(store),
 		tools.NewCheckConsistencyTool(store),
-		tools.NewCommitChapterTool(store).WithRules(rulesOpts),
+		tools.NewCommitChapterTool(store),
 	}
 	editorTools := []agentcore.Tool{
 		contextTool,
@@ -325,7 +312,7 @@ func BuildCoordinator(
 	agent := agentcore.NewAgent(
 		agentcore.WithModel(coordinatorModel),
 		agentcore.WithSystemPrompt(bundle.Prompts.Coordinator),
-		agentcore.WithTools(subagentTool, contextTool, tools.NewSaveDirectiveTool(store), tools.NewReopenBookTool(store)),
+		agentcore.WithTools(subagentTool, contextTool, tools.NewSaveDirectiveTool(store), tools.NewSaveUserRulesTool(userRulesSvc), tools.NewReopenBookTool(store)),
 		agentcore.WithMaxTurns(100_000),
 		agentcore.WithOnMessage(coordinatorOnMessage),
 		agentcore.WithToolsAreIdempotent(true),

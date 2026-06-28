@@ -27,6 +27,7 @@ import (
 	"github.com/voocel/ainovel-cli/internal/rules"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
 	"github.com/voocel/ainovel-cli/internal/tools"
+	"github.com/voocel/ainovel-cli/internal/userrules"
 )
 
 // Host 是运行时薄外壳。
@@ -187,9 +188,56 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 
 // ── 生命周期 ──
 
-// Start 新建模式：初始化进度并启动 coordinator 长循环。
-func (h *Host) Start(prompt string) error {
-	return h.StartPrepared(BuildStartPrompt(prompt))
+// PrepareUserRules 在新建模式下生成本书用户规则快照（启动侧确定性，不经 Coordinator、不进主创作 Run）。
+//
+// 入参是用户的**原始**创作要求（未经 BuildStartPrompt 包装）——归一化要的是用户规则本身，
+// 不是启动脚手架。入口须在 StartPrepared 之前调用一次（quick/cocreate 两条新建路径都走这里）。
+//
+// 归一化失败只降级不报错（增强路径）；只有快照无法落盘才返回 error 中止开书——
+// 后续运行将没有稳定事实源（见设计 §失败与降级）。
+func (h *Host) PrepareUserRules(rawPrompt string) error {
+	svc := userrules.NewService(h.store, h.models.Default, rules.DefaultOptions())
+	snap, err := svc.Build(context.Background(), rawPrompt)
+	if err != nil {
+		return fmt.Errorf("用户规则快照落盘失败，无法继续: %w", err)
+	}
+	logUserRulesSnapshot(snap)
+	return nil
+}
+
+// ensureUserRules 惰性确保快照存在（老书无快照时按 system_defaults + rules 文件生成）。
+// 恢复路径调用，让老书也能拿到 rules 文件的归一化结果。
+func (h *Host) ensureUserRules() {
+	svc := userrules.NewService(h.store, h.models.Default, rules.DefaultOptions())
+	snap, err := svc.GetOrBuild(context.Background())
+	if err != nil {
+		slog.Warn("用户规则快照读取/生成失败，运行时将退到内置默认", "module", "rules", "err", err)
+		return
+	}
+	logUserRulesSnapshot(snap)
+}
+
+// logUserRulesSnapshot 启动回显：让用户看到系统把规则理解成了什么（复用日志，不新增机制）。
+func logUserRulesSnapshot(snap *rules.Snapshot) {
+	if snap == nil {
+		return
+	}
+	words := "未设置"
+	if w := snap.Structured.ChapterWords; w != nil {
+		words = fmt.Sprintf("%d-%d", w.Min, w.Max)
+	}
+	slog.Info("用户规则快照",
+		"module", "rules",
+		"status", string(snap.Status),
+		"来源", snap.Sources,
+		"章节字数", words,
+		"禁用短语", len(snap.Structured.ForbiddenPhrases),
+		"疲劳词", len(snap.Structured.FatigueWords),
+	)
+	if snap.Status == rules.StatusDegraded {
+		slog.Warn("部分规则未能解析，已按 raw preferences 运行（可重新生成快照）",
+			"module", "rules", "uncertain", snap.Uncertain)
+	}
 }
 
 // StartPrepared 使用已编排完成的启动 prompt 开始创作。
@@ -269,6 +317,8 @@ func (h *Host) Resume() (string, error) {
 		slog.Warn("一致性告警", "module", "host", "detail", w)
 		h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "一致性告警: " + w, Level: "warn"})
 	}
+	// 老书无快照时惰性生成（按 system_defaults + rules 文件归一化）；已有则廉价读取。
+	h.ensureUserRules()
 	h.refreshWriterRestore()
 	h.observer.setAborting(false)
 	h.router.ResetRepeat()
@@ -1104,10 +1154,9 @@ func (h *Host) ImportFrom(ctx context.Context, opts imp.Options) (<-chan imp.Eve
 		return nil, err
 	}
 
-	rulesOpts := rules.DefaultOptions(h.bundle.RulesFS)
 	deps := imp.Deps{
 		Store:      h.store,
-		CommitTool: tools.NewCommitChapterTool(h.store).WithRules(rulesOpts),
+		CommitTool: tools.NewCommitChapterTool(h.store),
 		LLM:        h.models.ForRole("architect"),
 		Prompts: imp.Prompts{
 			Foundation: h.bundle.Prompts.ImportFoundation,

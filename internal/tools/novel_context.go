@@ -10,7 +10,6 @@ import (
 
 	"github.com/voocel/agentcore/schema"
 	"github.com/voocel/ainovel-cli/internal/domain"
-	"github.com/voocel/ainovel-cli/internal/rules"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
@@ -37,16 +36,15 @@ type References struct {
 
 // ContextTool 组装当前章节所需上下文。
 type ContextTool struct {
-	store     *store.Store
-	refs      References
-	style     string
-	rulesOpts rules.LoadOptions
+	store *store.Store
+	refs  References
+	style string
 }
 
-// NewContextTool 创建上下文工具。rulesOpts 控制 user_rules 的加载来源；
-// 空 LoadOptions 仍然安全，loader 会跳过所有未配置的来源，user_rules 注入空 Bundle。
-func NewContextTool(store *store.Store, refs References, style string, rulesOpts rules.LoadOptions) *ContextTool {
-	return &ContextTool{store: store, refs: refs, style: style, rulesOpts: rulesOpts}
+// NewContextTool 创建上下文工具。
+// user_rules 由 buildUserRules 直接读本书快照（meta/user_rules.json）注入，不再依赖加载选项。
+func NewContextTool(store *store.Store, refs References, style string) *ContextTool {
+	return &ContextTool{store: store, refs: refs, style: style}
 }
 
 func (t *ContextTool) Name() string { return "novel_context" }
@@ -109,8 +107,8 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 	}
 
 	// 注入 working_memory.user_rules（canonical 路径）。架构师路径原本没有 working_memory，
-	// 由 buildUserRules 按需新建只装 user_rules 的容器。rulesOpts 为空时 Bundle 是空对象，
-	// 但仍输出，避免 LLM 看到 user_rules=null 走异常分支。
+	// 由 buildUserRules 按需新建只装 user_rules 的容器。快照缺失时退到内置默认，
+	// 始终输出稳定结构，避免 LLM 看到 user_rules=null 走异常分支。
 	if a.Chapter > 0 {
 		t.buildSimulationProfile(result, "working_memory", warn)
 	} else {
