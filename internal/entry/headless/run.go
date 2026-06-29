@@ -64,6 +64,10 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle, opts Options) error {
 			return err
 		}
 		fmt.Fprintf(stderr, "headless 启动: %s\n", eng.Dir())
+		// 启动侧确定性生成本书用户规则快照（用原始 prompt 归一化），须在 StartPrepared 前。
+		if err := eng.PrepareUserRules(plan.RawPrompt); err != nil {
+			return err
+		}
 		if err := eng.StartPrepared(plan.StartPrompt); err != nil {
 			return err
 		}

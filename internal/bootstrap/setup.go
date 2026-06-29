@@ -14,7 +14,7 @@ import (
 )
 
 // exampleConfig 是引导后写入 ~/.ainovel/config.example.jsonc 的带注释模板。
-// 单一数据源：直接嵌入同目录的 config.example.jsonc，避免与文档样本漂移。
+// 嵌入文件必须与仓库根目录 config.example.jsonc 保持一致，测试会防止漂移。
 //
 //go:embed config.example.jsonc
 var exampleConfig string

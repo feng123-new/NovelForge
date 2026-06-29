@@ -136,8 +136,8 @@ func mergeConfig(base, overlay Config) Config {
 	if overlay.ModelName != "" {
 		base.ModelName = overlay.ModelName
 	}
-	if overlay.Thinking != "" {
-		base.Thinking = overlay.Thinking
+	if overlay.ReasoningEffort != "" {
+		base.ReasoningEffort = overlay.ReasoningEffort
 	}
 	if overlay.Style != "" {
 		base.Style = overlay.Style
@@ -155,6 +155,9 @@ func mergeConfig(base, overlay Config) Config {
 			existing := base.Providers[k]
 			if v.Type != "" {
 				existing.Type = v.Type
+			}
+			if v.API != "" {
+				existing.API = v.API
 			}
 			if v.APIKey != "" {
 				existing.APIKey = v.APIKey
@@ -191,8 +194,8 @@ func mergeConfig(base, overlay Config) Config {
 			if len(v.Fallbacks) > 0 {
 				existing.Fallbacks = append([]ModelRef(nil), v.Fallbacks...)
 			}
-			if v.Thinking != "" {
-				existing.Thinking = v.Thinking
+			if v.ReasoningEffort != "" {
+				existing.ReasoningEffort = v.ReasoningEffort
 			}
 			base.Roles[k] = existing
 		}

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
-	"github.com/voocel/ainovel-cli/internal/rules"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
@@ -55,7 +54,7 @@ func TestContextToolInjectsCompactSimulationProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tool := NewContextTool(st, References{}, "default", rules.LoadOptions{})
+	tool := NewContextTool(st, References{}, "default")
 	architectRaw, err := tool.Execute(context.Background(), json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("architect Execute: %v", err)

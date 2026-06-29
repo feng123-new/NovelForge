@@ -1,4 +1,5 @@
-// Package rules 实现用户偏好的持久化输入层（Policy）。
+// Package rules 实现用户偏好的输入层（Policy）：把各来源的写作规则归一化、合并成
+// 本书快照（见 snapshot.go），运行时由 novel_context 注入、commit_chapter 机械检查。
 //
 // Rule 是第四类事实，跟 Progress / Checkpoint / Artifact 并列，但性质相反：
 // 前三类是系统输出，Rule 是用户意图的持久化输入。
@@ -7,31 +8,22 @@
 //   - 工具只返事实，不返指令（Violation 是事实，由 editor 决定是否触发重写）
 //   - 不引入新的 verdict 路径（复用 PendingRewrites）
 //   - 不引入严格度字段（severity 由规则类型固定映射，editor 自主语义裁定）
-//   - 不静默吞冲突（所有异常进 Bundle.Conflicts，让 LLM 与 /diag 可见）
 //   - 不动 Flow Router（rule 不参与路由）
 package rules
 
-// SourceKind 标记规则来源，用于合并时的就近优先排序。
-// 值越大越就近：Project > Global > Default。
-//
-// Phase 1.1 起只支持三层。Genre / Learned 层在实际题材库 / save_rule 落地前不开洞——
-// 真要扩展时再加常量并补 loader 即可，不留空架子。
+// SourceKind 标记规则文件来源，仅用于生成来源标签（如 global:my-style.md）。
 type SourceKind int
 
 const (
-	// SourceDefault — 项目内置默认规则（assets/rules/default.md），优先级最低。
-	SourceDefault SourceKind = iota
 	// SourceGlobal — 用户全局偏好（~/.ainovel/rules/ 目录下所有 .md，按文件名字典序合并），跨书复用。
-	SourceGlobal
+	SourceGlobal SourceKind = iota
 	// SourceProject — 本书规则（./.ainovel/rules/ 目录下所有 .md，按文件名字典序合并），优先级最高。
 	SourceProject
 )
 
-// String 返回来源的可读名称，用于 markdown 拼接时的来源标题与 conflicts.detail。
+// String 返回来源的可读名称，用于来源标签前缀。
 func (k SourceKind) String() string {
 	switch k {
-	case SourceDefault:
-		return "default"
 	case SourceGlobal:
 		return "global"
 	case SourceProject:
@@ -47,10 +39,7 @@ type WordRange struct {
 	Max int `json:"max"`
 }
 
-// Structured 装载 front matter 的结构化字段。
-//
-// 单文件解析时，Parsed.Structured 只填该文件声明的字段，其余保持零值。
-// 合并后 Bundle.Structured 是各来源就近优先后的整体结果。
+// Structured 装载机械可检的结构化规则字段（归一化各来源后的候选/合并结果）。
 type Structured struct {
 	Genre            string         `json:"genre,omitempty"`
 	ChapterWords     *WordRange     `json:"chapter_words,omitempty"`
@@ -66,64 +55,6 @@ func (s Structured) IsEmpty() bool {
 		len(s.ForbiddenChars) == 0 &&
 		len(s.ForbiddenPhrases) == 0 &&
 		len(s.FatigueWords) == 0
-}
-
-// ConflictKind 标记冲突或异常类型，便于 LLM 与诊断面板分类处理。
-type ConflictKind string
-
-const (
-	// ConflictParseError — front matter 整体解析失败；正文仍作为偏好注入。
-	ConflictParseError ConflictKind = "parse_error"
-	// ConflictUnknownField — 用户写了 Phase 1 未支持的字段（forward-compatible）。
-	ConflictUnknownField ConflictKind = "unknown_field"
-	// ConflictTypeError — 字段类型错误（如 forbidden_chars 写成字符串）；该字段丢弃。
-	ConflictTypeError ConflictKind = "type_error"
-	// ConflictFieldConflict — 多来源同一结构化字段值不一致；就近优先生效。
-	ConflictFieldConflict ConflictKind = "field_conflict"
-	// ConflictInvalidValue — 字段值格式非法（如 chapter_words: "abc"）；该字段丢弃。
-	ConflictInvalidValue ConflictKind = "invalid_value"
-)
-
-// Conflict 一条冲突或异常记录。
-//
-// 永远不会阻断加载——所有异常都在这里暴露给 LLM 与 /diag，不静默处理。
-type Conflict struct {
-	Source string       `json:"source"`          // 文件路径（绝对或相对，按来源记录）
-	Kind   ConflictKind `json:"kind"`            // 冲突类型
-	Field  string       `json:"field,omitempty"` // 受影响字段名（如 forbidden_chars）；parse_error 时为空
-	Detail string       `json:"detail"`          // 人类可读的详情（含来源列表 / 错误信息）
-}
-
-// Parsed 是单份 rules.md 解析后的结果。
-type Parsed struct {
-	Source     string     // 文件路径
-	Kind       SourceKind // 来源类型，用于合并优先级
-	Structured Structured // 该文件声明的 front matter 字段
-	Preference string     // 该文件的 Markdown 正文（front matter 之外的部分）
-	Conflicts  []Conflict // 该文件解析期间产生的 conflicts（未知字段 / 类型错误）
-}
-
-// Bundle 是合并后注入 working_memory.user_rules 的最终形态。
-//
-// 字段映射到 JSON 输出：
-//
-//	{
-//	  "structured": {...},
-//	  "preferences": "...合并 markdown...",
-//	  "sources": ["..."],
-//	  "conflicts": [...]
-//	}
-type Bundle struct {
-	Structured  Structured `json:"structured"`
-	Preferences string     `json:"preferences"`
-	Sources     []string   `json:"sources"`
-	Conflicts   []Conflict `json:"conflicts"`
-}
-
-// IsEmpty 表示 Bundle 完全无内容（结构化字段为空 + 偏好正文为空）。
-// 注入 user_rules 时仍应保留空 Bundle，避免 LLM 处理 nil。
-func (b Bundle) IsEmpty() bool {
-	return b.Structured.IsEmpty() && b.Preferences == ""
 }
 
 // Severity 标记 Violation 的严重等级。

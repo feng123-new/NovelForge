@@ -111,6 +111,10 @@ func bootstrapRuntime(rt *host.Host) tea.Cmd {
 
 func startRuntime(rt *host.Host, plan startup.Plan) tea.Cmd {
 	return func() tea.Msg {
+		// 启动侧确定性生成本书用户规则快照（用原始 prompt 归一化），须在 StartPrepared 前。
+		if err := rt.PrepareUserRules(plan.RawPrompt); err != nil {
+			return startResultMsg{err: err}
+		}
 		err := rt.StartPrepared(plan.StartPrompt)
 		return startResultMsg{err: err}
 	}

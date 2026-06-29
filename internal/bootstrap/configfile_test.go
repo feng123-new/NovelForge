@@ -96,12 +96,12 @@ func TestLoadConfig_ValidMergeWorks(t *testing.T) {
 	t.Chdir(proj)
 	writeProjectConfig(t, `{
   "model": "google/gemini-2.5-pro",
-  "thinking": "high",
+  "reasoning_effort": "high",
   "roles": {
     "writer": {
       "provider": "openrouter",
       "model": "google/gemini-2.5-flash",
-      "thinking": "low"
+      "reasoning_effort": "low"
     }
   }
 }`)
@@ -116,11 +116,11 @@ func TestLoadConfig_ValidMergeWorks(t *testing.T) {
 	if cfg.ModelName != "google/gemini-2.5-pro" {
 		t.Errorf("model 应被项目级覆盖，得到 %q", cfg.ModelName)
 	}
-	if cfg.Thinking != "high" {
-		t.Errorf("thinking 应被项目级覆盖，得到 %q", cfg.Thinking)
+	if cfg.ReasoningEffort != "high" {
+		t.Errorf("reasoning_effort 应被项目级覆盖，得到 %q", cfg.ReasoningEffort)
 	}
-	if got := cfg.Roles["writer"].Thinking; got != "low" {
-		t.Errorf("roles.writer.thinking 应被项目级覆盖，得到 %q", got)
+	if got := cfg.Roles["writer"].ReasoningEffort; got != "low" {
+		t.Errorf("roles.writer.reasoning_effort 应被项目级覆盖，得到 %q", got)
 	}
 }
 
@@ -130,6 +130,7 @@ func TestMergeConfig_ProviderExtraFields(t *testing.T) {
 		ModelName: "google/gemini-2.5-flash",
 		Providers: map[string]ProviderConfig{
 			"openrouter": {
+				API:    "chat",
 				APIKey: "sk-test-123456",
 				ExtraBody: map[string]any{
 					"temperature": 0.8,
@@ -143,6 +144,7 @@ func TestMergeConfig_ProviderExtraFields(t *testing.T) {
 	overlay := Config{
 		Providers: map[string]ProviderConfig{
 			"openrouter": {
+				API:     "responses",
 				BaseURL: "https://proxy.example.com/v1",
 				ExtraBody: map[string]any{
 					"min_p": 0.05,
@@ -161,6 +163,9 @@ func TestMergeConfig_ProviderExtraFields(t *testing.T) {
 	pc := cfg.Providers["openrouter"]
 	if pc.APIKey != "sk-test-123456" {
 		t.Fatalf("APIKey = %q, want inherited key", pc.APIKey)
+	}
+	if pc.API != "responses" {
+		t.Fatalf("API = %q, want responses", pc.API)
 	}
 	if pc.BaseURL != "https://proxy.example.com/v1" {
 		t.Fatalf("BaseURL = %q, want overlay URL", pc.BaseURL)
@@ -203,11 +208,54 @@ func TestValidateBase_ProviderOverrideWithoutCredentials(t *testing.T) {
 	}
 }
 
-// 内置示例（go:embed 的 config.example.jsonc）必须自洽：去注释后是合法 JSON、
+func TestValidateBaseRejectsInvalidProviderAPI(t *testing.T) {
+	cfg := Config{
+		Provider:  "openai",
+		ModelName: "gpt-5.1",
+		Providers: map[string]ProviderConfig{
+			"openai": {APIKey: "sk-test-123456", API: "legacy"},
+		},
+	}
+	cfg.FillDefaults()
+	err := cfg.ValidateBase()
+	if err == nil {
+		t.Fatal("provider api 非法应报错")
+	}
+	if !errors.Is(err, errs.ErrConfig) {
+		t.Errorf("应包装 errs.ErrConfig，得到: %v", err)
+	}
+}
+
+func TestValidateBaseRejectsProviderAPIOnNonOpenAIProvider(t *testing.T) {
+	cfg := Config{
+		Provider:  "anthropic",
+		ModelName: "claude-sonnet-4",
+		Providers: map[string]ProviderConfig{
+			"anthropic": {APIKey: "sk-test-123456", API: "responses"},
+		},
+	}
+	cfg.FillDefaults()
+	err := cfg.ValidateBase()
+	if err == nil {
+		t.Fatal("非 OpenAI provider 配置 api 应报错")
+	}
+	if !errors.Is(err, errs.ErrConfig) {
+		t.Errorf("应包装 errs.ErrConfig，得到: %v", err)
+	}
+}
+
+// 示例配置必须自洽：去注释后是合法 JSON、
 // 顶层 provider 指针不悬空、且点破了“指针”心智——它是用户照抄的样板，自己坏了就坑人。
 func TestExampleConfigIsValidAndSelfConsistent(t *testing.T) {
 	if exampleConfig == "" {
 		t.Fatal("go:embed 未生效，exampleConfig 为空")
+	}
+	rootExample, err := os.ReadFile(filepath.Join("..", "..", "config.example.jsonc"))
+	if err != nil {
+		t.Fatalf("读取根目录 config.example.jsonc: %v", err)
+	}
+	if string(rootExample) != exampleConfig {
+		t.Fatal("根目录 config.example.jsonc 与 internal/bootstrap/config.example.jsonc 不一致")
 	}
 	var cfg Config
 	if err := json.Unmarshal(stripJSONComments([]byte(exampleConfig)), &cfg); err != nil {

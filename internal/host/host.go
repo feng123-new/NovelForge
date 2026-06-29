@@ -27,6 +27,7 @@ import (
 	"github.com/voocel/ainovel-cli/internal/rules"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
 	"github.com/voocel/ainovel-cli/internal/tools"
+	"github.com/voocel/ainovel-cli/internal/userrules"
 )
 
 // Host 是运行时薄外壳。
@@ -39,7 +40,7 @@ type Host struct {
 	models            *bootstrap.ModelSet
 	coordinator       *agentcore.Agent
 	coordinatorCtxMgr *corecontext.ContextEngine // 切 default/coordinator 模型时联动 SetContextWindow + SetReserveTokens
-	thinkingApplier   agents.ApplyThinking       // /model 调思考强度时联动 live agent（coordinator + 子代理）
+	thinkingApplier   agents.ApplyThinking       // /model 调推理强度时联动 live agent（coordinator + 子代理）
 	askUser           *tools.AskUserTool
 	writerRestore     *ctxpack.WriterRestorePack
 	observer          *observer
@@ -187,9 +188,56 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 
 // ── 生命周期 ──
 
-// Start 新建模式：初始化进度并启动 coordinator 长循环。
-func (h *Host) Start(prompt string) error {
-	return h.StartPrepared(BuildStartPrompt(prompt))
+// PrepareUserRules 在新建模式下生成本书用户规则快照（启动侧确定性，不经 Coordinator、不进主创作 Run）。
+//
+// 入参是用户的**原始**创作要求（未经 BuildStartPrompt 包装）——归一化要的是用户规则本身，
+// 不是启动脚手架。入口须在 StartPrepared 之前调用一次（quick/cocreate 两条新建路径都走这里）。
+//
+// 归一化失败只降级不报错（增强路径）；只有快照无法落盘才返回 error 中止开书——
+// 后续运行将没有稳定事实源（见设计 §失败与降级）。
+func (h *Host) PrepareUserRules(rawPrompt string) error {
+	svc := userrules.NewService(h.store, h.models.Default, rules.DefaultOptions())
+	snap, err := svc.Build(context.Background(), rawPrompt)
+	if err != nil {
+		return fmt.Errorf("用户规则快照落盘失败，无法继续: %w", err)
+	}
+	logUserRulesSnapshot(snap)
+	return nil
+}
+
+// ensureUserRules 惰性确保快照存在（老书无快照时按 system_defaults + rules 文件生成）。
+// 恢复路径调用，让老书也能拿到 rules 文件的归一化结果。
+func (h *Host) ensureUserRules() {
+	svc := userrules.NewService(h.store, h.models.Default, rules.DefaultOptions())
+	snap, err := svc.GetOrBuild(context.Background())
+	if err != nil {
+		slog.Warn("用户规则快照读取/生成失败，运行时将退到内置默认", "module", "rules", "err", err)
+		return
+	}
+	logUserRulesSnapshot(snap)
+}
+
+// logUserRulesSnapshot 启动回显：让用户看到系统把规则理解成了什么（复用日志，不新增机制）。
+func logUserRulesSnapshot(snap *rules.Snapshot) {
+	if snap == nil {
+		return
+	}
+	words := "未设置"
+	if w := snap.Structured.ChapterWords; w != nil {
+		words = fmt.Sprintf("%d-%d", w.Min, w.Max)
+	}
+	slog.Info("用户规则快照",
+		"module", "rules",
+		"status", string(snap.Status),
+		"来源", snap.Sources,
+		"章节字数", words,
+		"禁用短语", len(snap.Structured.ForbiddenPhrases),
+		"疲劳词", len(snap.Structured.FatigueWords),
+	)
+	if snap.Status == rules.StatusDegraded {
+		slog.Warn("部分规则未能解析，已按 raw preferences 运行（可重新生成快照）",
+			"module", "rules", "uncertain", snap.Uncertain)
+	}
 }
 
 // StartPrepared 使用已编排完成的启动 prompt 开始创作。
@@ -269,6 +317,8 @@ func (h *Host) Resume() (string, error) {
 		slog.Warn("一致性告警", "module", "host", "detail", w)
 		h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "一致性告警: " + w, Level: "warn"})
 	}
+	// 老书无快照时惰性生成（按 system_defaults + rules 文件归一化）；已有则廉价读取。
+	h.ensureUserRules()
 	h.refreshWriterRestore()
 	h.observer.setAborting(false)
 	h.router.ResetRepeat()
@@ -862,15 +912,15 @@ func (h *Host) SwitchModel(role, provider, model string) error {
 	return nil
 }
 
-// concreteThinkingRoles 是可应用思考强度的具体角色（与 agents.ApplyThinking 路由一致）。
-// 调 default 时按各角色 ResolveThinking 逐个重新应用。
+// concreteThinkingRoles 是可应用推理强度的具体角色（与 agents.ApplyThinking 路由一致）。
+// 调 default 时按各角色 ResolveReasoningEffort 逐个重新应用。
 var concreteThinkingRoles = []string{"coordinator", "architect", "writer", "editor"}
 
-// CurrentThinking 返回某角色当前生效的思考强度原始串（供 /model 面板同步当前值）。
+// CurrentThinking 返回某角色当前生效的推理强度原始串（供 /model 面板同步当前值）。
 func (h *Host) CurrentThinking(role string) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.cfg.ResolveThinking(strings.ToLower(strings.TrimSpace(role)))
+	return h.cfg.ResolveReasoningEffort(strings.ToLower(strings.TrimSpace(role)))
 }
 
 func (h *Host) AvailableThinking(role string) []agentcore.ThinkingLevel {
@@ -883,25 +933,25 @@ func (h *Host) AvailableThinking(role string) []agentcore.ThinkingLevel {
 func (h *Host) normalizeThinkingLocked(role string) agentcore.ThinkingLevel {
 	role = strings.ToLower(strings.TrimSpace(role))
 	if role == "" || role == "default" {
-		parsed, _ := agents.ParseThinkingLevel(h.cfg.Thinking)
+		parsed, _ := agents.ParseThinkingLevel(h.cfg.ReasoningEffort)
 		for _, r := range concreteThinkingRoles {
 			resolved, ok := agents.ResolveThinkingForModel(h.models.ForRole(r), parsed)
 			if !ok || resolved != parsed {
-				h.cfg.Thinking = string(resolved)
+				h.cfg.ReasoningEffort = string(resolved)
 				return resolved
 			}
 		}
-		h.cfg.Thinking = string(parsed)
+		h.cfg.ReasoningEffort = string(parsed)
 		return parsed
 	}
 
 	_, hasRoleThinking := h.cfg.Roles[role]
-	hasRoleThinking = hasRoleThinking && h.cfg.Roles[role].Thinking != ""
-	parsed, _ := agents.ParseThinkingLevel(h.cfg.ResolveThinking(role))
+	hasRoleThinking = hasRoleThinking && h.cfg.Roles[role].ReasoningEffort != ""
+	parsed, _ := agents.ParseThinkingLevel(h.cfg.ResolveReasoningEffort(role))
 	resolved, _ := agents.ResolveThinkingForModel(h.models.ForRole(role), parsed)
 	if !hasRoleThinking {
 		if resolved != parsed {
-			h.cfg.Thinking = string(resolved)
+			h.cfg.ReasoningEffort = string(resolved)
 		}
 		return resolved
 	}
@@ -909,7 +959,7 @@ func (h *Host) normalizeThinkingLocked(role string) agentcore.ThinkingLevel {
 		h.cfg.Roles = make(map[string]bootstrap.RoleConfig)
 	}
 	rc := h.cfg.Roles[role]
-	rc.Thinking = string(resolved)
+	rc.ReasoningEffort = string(resolved)
 	h.cfg.Roles[role] = rc
 	return resolved
 }
@@ -921,16 +971,16 @@ func (h *Host) applyThinkingLocked(role string) {
 	role = strings.ToLower(strings.TrimSpace(role))
 	if role == "" || role == "default" {
 		for _, r := range concreteThinkingRoles {
-			lv, _ := agents.ParseThinkingLevel(h.cfg.ResolveThinking(r))
+			lv, _ := agents.ParseThinkingLevel(h.cfg.ResolveReasoningEffort(r))
 			h.thinkingApplier(r, lv)
 		}
 		return
 	}
-	lv, _ := agents.ParseThinkingLevel(h.cfg.ResolveThinking(role))
+	lv, _ := agents.ParseThinkingLevel(h.cfg.ResolveReasoningEffort(role))
 	h.thinkingApplier(role, lv)
 }
 
-// SetRoleThinking 设置某角色（或 default）的思考强度：校验→持久化→联动 live agent→事件。
+// SetRoleThinking 设置某角色（或 default）的推理强度：校验→持久化→联动 live agent→事件。
 // 镜像 SwitchModel 的结构；与模型选择正交，可单独调整。level 为空 = 不覆盖（继承）。
 func (h *Host) SetRoleThinking(role, level string) error {
 	h.mu.Lock()
@@ -951,15 +1001,15 @@ func (h *Host) SetRoleThinking(role, level string) error {
 	} else {
 		parsed, _ = agents.ResolveThinkingForModel(h.models.ForRole(role), parsed)
 	}
-	// 持久化：具体角色写 Roles[role].Thinking，default/"" 写顶层 Thinking。
+	// 持久化：具体角色写 Roles[role].ReasoningEffort，default/"" 写顶层 ReasoningEffort。
 	if role == "" || role == "default" {
-		h.cfg.Thinking = string(parsed)
+		h.cfg.ReasoningEffort = string(parsed)
 	} else {
 		if h.cfg.Roles == nil {
 			h.cfg.Roles = make(map[string]bootstrap.RoleConfig)
 		}
 		rc := h.cfg.Roles[role]
-		rc.Thinking = string(parsed)
+		rc.ReasoningEffort = string(parsed)
 		h.cfg.Roles[role] = rc
 	}
 	if path := bootstrap.DefaultConfigPath(); path != "" {
@@ -968,7 +1018,7 @@ func (h *Host) SetRoleThinking(role, level string) error {
 		}
 	}
 
-	// 联动 live：具体角色直接应用；default 则遍历各具体角色按 ResolveThinking 重新应用
+	// 联动 live：具体角色直接应用；default 则遍历各具体角色按 ResolveReasoningEffort 重新应用
 	// （已被角色级覆盖的保留自身，未覆盖的吃上新默认）。
 	h.applyThinkingLocked(role)
 
@@ -983,7 +1033,7 @@ func (h *Host) SetRoleThinking(role, level string) error {
 	h.emitEvent(Event{
 		Time:     time.Now(),
 		Category: "SYSTEM",
-		Summary:  fmt.Sprintf("思考强度已切换：%s → %s", logRole, shown),
+		Summary:  fmt.Sprintf("推理强度已切换：%s → %s", logRole, shown),
 		Level:    "info",
 	})
 	return nil
@@ -1013,8 +1063,8 @@ func (h *Host) StageCoCreateStream(ctx context.Context, history []CoCreateMessag
 
 // stagePlanPrefix 把共创产出的"后续方向 brief"包装成一条阶段规划干预，交 Coordinator 裁定。
 // 只贴 [阶段规划] 事实标记 + 中性陈述，不写死"怎么落地"——具体路由（compass / architect /
-// save_directive）交给 coordinator.md 的「阶段规划」判据，避免与 prompt 形成第二真相源、
-// 也不堵死风格类要求走 directive（守"分类裁定归 LLM"）。Continue 再叠加 [用户干预] 前缀。
+// save_user_rules）交给 coordinator.md 的「阶段规划」判据，避免与 prompt 形成第二真相源、
+// 也不堵死风格类要求走 user_rules（守"分类裁定归 LLM"）。Continue 再叠加 [用户干预] 前缀。
 const stagePlanPrefix = "[阶段规划] 我暂停创作，和共创助手一起梳理了下面的后续方向，请按你的干预分类裁定如何落地，然后继续创作。后续方向如下：\n\n"
 
 // PauseForCoCreate 进入阶段共创：置共创占用标记，运行中则一并暂停 coordinator。
@@ -1104,10 +1154,9 @@ func (h *Host) ImportFrom(ctx context.Context, opts imp.Options) (<-chan imp.Eve
 		return nil, err
 	}
 
-	rulesOpts := rules.DefaultOptions(h.bundle.RulesFS)
 	deps := imp.Deps{
 		Store:      h.store,
-		CommitTool: tools.NewCommitChapterTool(h.store).WithRules(rulesOpts),
+		CommitTool: tools.NewCommitChapterTool(h.store),
 		LLM:        h.models.ForRole("architect"),
 		Prompts: imp.Prompts{
 			Foundation: h.bundle.Prompts.ImportFoundation,

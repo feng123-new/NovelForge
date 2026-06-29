@@ -22,22 +22,8 @@ import (
 	"github.com/voocel/ainovel-cli/internal/rules"
 	"github.com/voocel/ainovel-cli/internal/store"
 	"github.com/voocel/ainovel-cli/internal/tools"
+	"github.com/voocel/ainovel-cli/internal/userrules"
 )
-
-// logRulesLoaded 在装配期打印规则加载实况：本书规则目录、实际读到的来源、字数检查生效值。
-// 规则文件放错路径会被 loader 静默跳过、来源又不进 LLM（仅 /diag 面板可见），放错零反馈是
-// 用户排查的最大障碍。这一行启动日志让"路径错 / 字数没写进 front matter"一眼可见。
-func logRulesLoaded(opts rules.LoadOptions) {
-	b := rules.Merge(rules.Load(opts))
-	words := "未设置（不做字数检查）"
-	if w := b.Structured.ChapterWords; w != nil {
-		words = fmt.Sprintf("%d-%d", w.Min, w.Max)
-	}
-	slog.Info("规则加载",
-		"本书规则目录", opts.ProjectRulesDir,
-		"已加载来源", b.Sources,
-		"章节字数", words)
-}
 
 // agentToRole 把 subagent name 归一为 ModelSet 认得的 role 名。
 // architect_short / architect_long 都共用同一个 architect role 配置。
@@ -50,11 +36,11 @@ func agentToRole(name string) string {
 }
 
 // subagentMaxRetries 给所有 SubAgentConfig 与 Coordinator 统一的 LLM retry 上限。
-// 退避策略：指数 1s/2s/4s/8s/16s（受 maxDelay 上限约束），优先服从 server Retry-After。
+// 退避策略：指数退避（受 maxDelay 上限约束），优先服从 server Retry-After。
 // 配合 ToolsAreIdempotent=true 让 stream-idle / 503 / 短暂网络抖动这类 retryable
 // 错误能在 subagent 层就近重试，而不是把整个 subagent 抛回 coordinator 重派发。
 // 项目铁律一保证写类工具走 checkpoint+digest 幂等，重试是安全的。
-const subagentMaxRetries = 5
+const subagentMaxRetries = 7
 
 // UsageRecorder 是 BuildCoordinator 可选的用量回调；签名与 OnMessage 一致，
 // 每条 agent 消息都会调一次，由 Host 层负责聚合。nil 表示不追踪。
@@ -65,23 +51,22 @@ type UsageRecorder func(agentName string, msg agentcore.AgentMessage)
 // instruction before the Coordinator gets another LLM turn.
 type FlowBoundaryHook func(toolName string)
 
-// ApplyThinking 把某具体角色的思考强度应用到 live agent（运行时 /model 调整用）。
+// ApplyThinking 把某具体角色的推理强度应用到 live agent（运行时 /model 调整用）。
 // coordinator → Agent.SetThinkingLevel；architect → 两个 architect_* 子代理；
 // writer/editor → 对应子代理。空 level = 沿用模型/provider 默认。其它 role 名忽略。
 type ApplyThinking func(role string, level agentcore.ThinkingLevel)
 
 // ParseThinkingLevel 把配置字符串转 agentcore.ThinkingLevel。
-// "" 合法（= 不覆盖/继承）；其余须是 off/minimal/low/medium/high/xhigh/max 之一，
+// "" 合法（= 不覆盖/继承）；其余须是 off/low/medium/high/xhigh/max 之一，
 // 否则返回 error（启动时降级当空并 warn，运行时把 error 回显给用户）。
 func ParseThinkingLevel(s string) (agentcore.ThinkingLevel, error) {
 	lv := agentcore.NormalizeThinkingLevel(agentcore.ThinkingLevel(s))
 	switch lv {
-	case "", agentcore.ThinkingOff, agentcore.ThinkingMinimal, agentcore.ThinkingLow,
-		agentcore.ThinkingMedium, agentcore.ThinkingHigh, agentcore.ThinkingXHigh,
-		agentcore.ThinkingMax:
+	case "", agentcore.ThinkingOff, agentcore.ThinkingLow, agentcore.ThinkingMedium,
+		agentcore.ThinkingHigh, agentcore.ThinkingXHigh, agentcore.ThinkingMax:
 		return lv, nil
 	default:
-		return "", fmt.Errorf("无效思考强度 %q（可选：off/minimal/low/medium/high/xhigh/max）", s)
+		return "", fmt.Errorf("无效推理强度 %q（可选：off/low/medium/high/xhigh/max）", s)
 	}
 }
 
@@ -93,11 +78,11 @@ func AvailableThinkingForModel(model agentcore.ChatModel) []agentcore.ThinkingLe
 	return llm.ThinkingPolicyFor(model).Available
 }
 
-// roleThinking 解析某角色生效的思考强度；非法值降级为空（不覆盖）并 warn。
+// roleThinking 解析某角色生效的推理强度；非法值降级为空（不覆盖）并 warn。
 func roleThinking(cfg bootstrap.Config, role string) agentcore.ThinkingLevel {
-	lv, err := ParseThinkingLevel(cfg.ResolveThinking(role))
+	lv, err := ParseThinkingLevel(cfg.ResolveReasoningEffort(role))
 	if err != nil {
-		slog.Warn("忽略无效思考强度配置", "module", "agent", "role", role, "err", err)
+		slog.Warn("忽略无效推理强度配置", "module", "agent", "role", role, "err", err)
 		return ""
 	}
 	return lv
@@ -113,7 +98,7 @@ func resolvedRoleThinking(model agentcore.ChatModel, cfg bootstrap.Config, role 
 // 以及 ApplyThinking 闭包——Host 层 /model 切换时需要直接调 SetContextWindow +
 // SetReserveTokens 联动新模型的窗口（writer/architect/editor 走 ContextManagerFactory
 // 自动重建，不需要 ref；只有常驻的 coordinator 需要），并通过 ApplyThinking 联动各角色
-// 思考强度。Host 层通过 Agent.Subscribe 获取事件流,不再需要 emit 回调。
+// 推理强度。Host 层通过 Agent.Subscribe 获取事件流,不再需要 emit 回调。
 func BuildCoordinator(
 	cfg bootstrap.Config,
 	store *store.Store,
@@ -123,9 +108,10 @@ func BuildCoordinator(
 	onFlowBoundary FlowBoundaryHook,
 ) (*agentcore.Agent, *tools.AskUserTool, *ctxpack.WriterRestorePack, *corecontext.ContextEngine, ApplyThinking) {
 	// 共享工具
-	rulesOpts := rules.DefaultOptions(bundle.RulesFS)
-	logRulesLoaded(rulesOpts)
-	contextTool := tools.NewContextTool(store, bundle.References, cfg.Style, rulesOpts)
+	contextTool := tools.NewContextTool(store, bundle.References, cfg.Style)
+	// 用户规则服务：归一化各来源 → 确定性合并 → 落盘本书快照。Coordinator 的
+	// save_user_rules 工具复用它做运行中更新；归一化用 Default 模型（与 Host 开书侧一致）。
+	userRulesSvc := userrules.NewService(store, models.Default, rules.DefaultOptions())
 	readChapter := tools.NewReadChapterTool(store)
 	askUser := tools.NewAskUserTool()
 
@@ -140,7 +126,7 @@ func BuildCoordinator(
 		tools.NewDraftChapterTool(store),
 		tools.NewEditChapterTool(store),
 		tools.NewCheckConsistencyTool(store),
-		tools.NewCommitChapterTool(store).WithRules(rulesOpts),
+		tools.NewCommitChapterTool(store),
 	}
 	editorTools := []agentcore.Tool{
 		contextTool,
@@ -325,7 +311,7 @@ func BuildCoordinator(
 	agent := agentcore.NewAgent(
 		agentcore.WithModel(coordinatorModel),
 		agentcore.WithSystemPrompt(bundle.Prompts.Coordinator),
-		agentcore.WithTools(subagentTool, contextTool, tools.NewSaveDirectiveTool(store), tools.NewReopenBookTool(store)),
+		agentcore.WithTools(subagentTool, contextTool, tools.NewSaveUserRulesTool(userRulesSvc), tools.NewReopenBookTool(store)),
 		agentcore.WithMaxTurns(100_000),
 		agentcore.WithOnMessage(coordinatorOnMessage),
 		agentcore.WithToolsAreIdempotent(true),
@@ -341,13 +327,13 @@ func BuildCoordinator(
 			writerExpandedChapterGate(store),
 		)),
 	)
-	// Coordinator 思考强度：无条件应用解析结果。未配置时为空（不发 thinking，用 provider
+	// Coordinator 推理强度：无条件应用解析结果。未配置时为空（不发 thinking，用 provider
 	// 默认），与各子代理（Config.ThinkingLevel 默认空）一致——避免覆盖 agentcore 默认
 	// ThinkingLow 而对所有 provider 强制发 low（含会被强制开思考的 GLM/Ollama）。
 	coordinatorThinking, _ := ResolveThinkingForModel(models.ForRole("coordinator"), roleThinking(cfg, "coordinator"))
 	agent.SetThinkingLevel(coordinatorThinking)
 
-	// 运行时联动各角色思考强度：coordinator 走 Agent，子代理走 subagentTool override。
+	// 运行时联动各角色推理强度：coordinator 走 Agent，子代理走 subagentTool override。
 	applyThinking := func(role string, level agentcore.ThinkingLevel) {
 		switch role {
 		case "coordinator":
