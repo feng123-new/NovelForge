@@ -326,6 +326,11 @@ func (h *Host) Resume() (string, error) {
 	if err := h.coordinator.Prompt(context.Background(), prompt); err != nil {
 		return "", fmt.Errorf("resume prompt: %w", err)
 	}
+	// PendingSteer 已随恢复 prompt 交付给 Coordinator，清除以免下次 Resume 重复注入同一条旧干预。
+	// ClearHandledSteer 幂等：PendingSteer 为空 / Flow 非 steering 时均为 no-op。
+	if err := h.store.ClearHandledSteer(); err != nil {
+		slog.Warn("清除已处理的 PendingSteer 失败", "module", "host", "err", err)
+	}
 	// 主动派发一次首条指令，避免 Coordinator 对恢复 prompt 只回文字而 StopGuard 反复拦截。
 	h.router.Dispatch()
 
@@ -462,6 +467,9 @@ func (h *Host) Close() {
 // 用户要继续创作只有两条路径：手动 Continue（停机注入）或重启进程走 Resume。
 // 见 docs/architecture.md §13.3、§8.3。
 func (h *Host) waitDone() {
+	// 运行中退出时 Close() 可能已 close(h.done)（AbortSilent 只 cancel 不 join 本 goroutine），
+	// 末尾向 h.done 的发送会 panic；与 emitEvent 一致用 recover 兜住这段退出期竞态。
+	defer func() { recover() }()
 	h.coordinator.WaitForIdle()
 	h.observer.finalize()
 
