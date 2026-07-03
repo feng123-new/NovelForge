@@ -697,6 +697,7 @@ func (h *Host) Snapshot() UISnapshot {
 		OverallRecentCacheRead: recentRead,
 		OverallRecentInput:     recentInput,
 		OverallRecentSamples:   recentSamples,
+		TotalCacheBreaks:       h.usage.OverallCacheBreaks(),
 		CachePerAgent:          cacheStats,
 		CachePerModel:          modelStats,
 		MissingAssistantUsage:  h.usage.MissingAssistantUsage(),
