@@ -203,10 +203,12 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 	// Engine:确定性执行引擎(docs/engine-rfc.md)。arbiter 用 Default 模型(过渡限制,
 	// 见 engine-arbiter.md §4.2)。
 	h.engine = &engine{
-		store:         store,
-		workers:       workers,
-		arbiterModel:  newUsageTrackedModel(models.Default, usage.Record),
-		failurePrompt: bundle.Prompts.ArbiterFailure,
+		store:           store,
+		workers:         workers,
+		arbiterModel:    newUsageTrackedModel(models.Default, usage.Record),
+		failurePrompt:   bundle.Prompts.ArbiterFailure,
+		planStartPrompt: bundle.Prompts.ArbiterPlanStart,
+		style:           cfg.Style,
 		// 同步重询:阻塞引擎循环一次裁定(数秒),换取"干预先于后续创作生效"。
 		reconsult: h.handleIntervention,
 		observer:  h.observer,
@@ -284,7 +286,9 @@ func logUserRulesSnapshot(snap *rules.Snapshot) {
 
 // StartPrepared 用用户的**原始**创作要求开始创作:plan_start 裁定选规划师并扩充
 // 需求(原 coordinator 启动裁定 + BuildStartPrompt 脚手架的职责),裁定结果先固化为
-// 事实(PlanStartRecord)再启动 Engine——恢复永远依赖已落盘事实,不依赖重新裁定。
+// 事实(PlanStartRecord)再启动 Engine——恢复永远依赖已落盘事实,不重做已有裁定。
+// 输入事实(StartPrompt)在裁定之前落盘:裁定失败时它是引擎补裁的依据,
+// 启动失败可从任何恢复入口(Resume/继续)自愈,不是死局。
 func (h *Host) StartPrepared(rawRequirement string) error {
 	h.mu.Lock()
 	if h.lifecycle == lifecycleRunning {
@@ -310,6 +314,11 @@ func (h *Host) StartPrepared(rawRequirement string) error {
 	if err := h.store.Progress.Init("", 0); err != nil {
 		return fmt.Errorf("init progress: %w", err)
 	}
+	// 输入事实先于裁定落盘:裁定失败(模型故障等)后 StartPrompt 仍在,
+	// 恢复/继续时引擎据此补裁(planStartFallback),启动失败不再是死局。
+	if err := h.store.RunMeta.SetStartPrompt(rawRequirement); err != nil {
+		return fmt.Errorf("记录创作需求: %w", err)
+	}
 
 	// 启动裁定:失败显式报错中止(启动期用户在场,报错优于猜测)。
 	start := time.Now()
@@ -317,8 +326,12 @@ func (h *Host) StartPrepared(rawRequirement string) error {
 		h.bundle.Prompts.ArbiterPlanStart, rawRequirement, h.cfg.Style)
 	rec := storepkg.DecisionRecord{Kind: "plan_start", Decider: "arbiter", Input: rawRequirement,
 		Reason: decision.Reason, DurationMs: time.Since(start).Milliseconds()}
-	if data, err := json.Marshal(decision); err == nil && derr == nil {
-		rec.Decision = data
+	if derr == nil {
+		if data, err := json.Marshal(decision); err == nil {
+			rec.Decision = data
+		}
+	} else {
+		rec.Error = derr.Error()
 	}
 	var recErr error
 	if rec, recErr = h.store.Decisions.Append(rec); recErr != nil {
@@ -451,7 +464,7 @@ func (h *Host) doIntervention(text string, restart bool) {
 			rec.Decision = data
 		}
 	} else {
-		rec.Reason = "裁定失败: " + derr.Error()
+		rec.Error = derr.Error()
 	}
 	if _, err := h.store.Decisions.Append(rec); err != nil {
 		slog.Warn("裁定审计落盘失败", "module", "host", "err", err)

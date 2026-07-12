@@ -26,13 +26,20 @@ func TestDecisionStore_AppendAndRecent(t *testing.T) {
 	if _, err := s.Decisions.Append(DecisionRecord{Kind: "intervention", Decider: "coordinator", Input: "继续写"}); err != nil {
 		t.Fatalf("append 2: %v", err)
 	}
+	// 失败裁定:error 是审计事实,必须原样落盘并可读回。
+	if _, err := s.Decisions.Append(DecisionRecord{Kind: "plan_start", Decider: "arbiter", Input: "凡人修仙", Error: "USER_INACTIVE"}); err != nil {
+		t.Fatalf("append 3: %v", err)
+	}
 
 	recent, err := s.Decisions.Recent(10)
 	if err != nil {
 		t.Fatalf("recent: %v", err)
 	}
-	if len(recent) != 2 {
-		t.Fatalf("应有 2 条记录, got %d", len(recent))
+	if len(recent) != 3 {
+		t.Fatalf("应有 3 条记录, got %d", len(recent))
+	}
+	if recent[2].Error != "USER_INACTIVE" || len(recent[2].Decision) != 0 {
+		t.Fatalf("失败裁定应带 error 且无 decision: %+v", recent[2])
 	}
 	if recent[0].Input != "重写第3章" || recent[1].Input != "继续写" {
 		t.Fatalf("记录顺序应为旧→新: %+v", recent)
@@ -40,7 +47,7 @@ func TestDecisionStore_AppendAndRecent(t *testing.T) {
 
 	// n 截取:只要最近 1 条
 	last, err := s.Decisions.Recent(1)
-	if err != nil || len(last) != 1 || last[0].Input != "继续写" {
+	if err != nil || len(last) != 1 || last[0].Input != "凡人修仙" {
 		t.Fatalf("Recent(1) 应取最新一条, got %+v err=%v", last, err)
 	}
 }

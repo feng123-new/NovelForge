@@ -327,10 +327,13 @@ for {
 User: "一句话需求"
   → StartPrepared(raw)
     → Progress.Init / Checkpoints.Reset
-    → Arbiter plan_start 裁定(选规划师+扩充需求) → 失败显式报错
+    → StartPrompt 固化进 RunMeta(输入事实先于裁定落盘)
+    → Arbiter plan_start 裁定(选规划师+扩充需求) → 失败显式报错(审计带 error)
     → PlanStartRecord 固化进 RunMeta(裁定先落事实,再起执行)
     → engine.start(首条派单指令)
 ```
+
+裁定失败不是死局:StartPrompt 已在,之后任何一次恢复/继续都会由引擎补裁(见 §8.2)。
 
 ### 8.2 恢复（崩溃后重启）
 
@@ -340,7 +343,7 @@ User: "一句话需求"
   → 否则 engine.start(nil):只恢复事实,Route 从 store 重算续跑
 ```
 
-没有会话需要恢复。规划期崩溃（裁定已落盘、首个 foundation 未落盘）由 `planStartFallback` 按 PlanStartRecord 续派，不重新裁定。重复派发安全由工具幂等保证（§5.4）。
+没有会话需要恢复。规划期崩溃（裁定已落盘、首个 foundation 未落盘）由 `planStartFallback` 按 PlanStartRecord 续派，不重做已有裁定。若启动裁定**从未完成**（启动时模型故障），`planStartFallback` 依据 StartPrompt 现场补裁——这是首次裁定的重试，不违反"恢复不重新裁定"；补裁失败显式暂停告知，不允许无声停机。重复派发安全由工具幂等保证（§5.4）。
 
 ### 8.3 用户干预
 

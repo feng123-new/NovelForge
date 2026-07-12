@@ -44,6 +44,7 @@ type DecisionRecord struct {
 	Facts          json.RawMessage `json:"facts,omitempty"`
 	Decision       json.RawMessage `json:"decision,omitempty"`
 	Reason         string          `json:"reason,omitempty"`
+	Error          string          `json:"error,omitempty"` // 裁定失败时的错误文本——失败也是审计事实,没有它排障只能靠推理
 	Model          string          `json:"model,omitempty"`
 	DurationMs     int64           `json:"duration_ms,omitempty"`
 }

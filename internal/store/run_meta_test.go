@@ -178,6 +178,9 @@ func TestInitRunMeta_PreservesPausePoint(t *testing.T) {
 // 唯一依据(engine.planStartFallback)。
 func TestRunMetaInit_PreservesPlanStart(t *testing.T) {
 	store := NewStore(t.TempDir())
+	if err := store.RunMeta.SetStartPrompt("写个悬疑短篇"); err != nil {
+		t.Fatalf("set start prompt: %v", err)
+	}
 	rec := domain.PlanStartRecord{RawPrompt: "写个悬疑短篇", Planner: "architect_short", PlannerTask: "任务全文", DecisionID: "dec-x"}
 	if err := store.RunMeta.SetPlanStart(rec); err != nil {
 		t.Fatalf("set plan start: %v", err)
@@ -192,5 +195,9 @@ func TestRunMetaInit_PreservesPlanStart(t *testing.T) {
 	}
 	if meta.PlanStart == nil || meta.PlanStart.Planner != "architect_short" {
 		t.Fatalf("Init 必须保留 PlanStart, got %+v", meta.PlanStart)
+	}
+	// StartPrompt 同样是跨重启事实:裁定失败后它是引擎补裁的唯一依据。
+	if meta.StartPrompt != "写个悬疑短篇" {
+		t.Fatalf("Init 必须保留 StartPrompt, got %q", meta.StartPrompt)
 	}
 }

@@ -117,12 +117,14 @@ func newTestEngine(t *testing.T, st *storepkg.Store, workers *subagent.Tool, arb
 		mu.Unlock()
 	}, func(string) {}, func() {})
 	e := &engine{
-		store:         st,
-		workers:       workers,
-		arbiterModel:  arbiterModel,
-		failurePrompt: "sys",
-		observer:      obs,
-		refresh:       func() {},
+		store:           st,
+		workers:         workers,
+		arbiterModel:    arbiterModel,
+		failurePrompt:   "sys",
+		planStartPrompt: "sys",
+		style:           "default",
+		observer:        obs,
+		refresh:         func() {},
 		emitEvent: func(ev Event) {
 			mu.Lock()
 			*events = append(*events, ev)
@@ -281,6 +283,132 @@ func TestEngine_WorkerFailureConsultsArbiterAndAborts(t *testing.T) {
 func failNTimesGuard() agentcore.StopGuard {
 	return func(context.Context, agentcore.StopInfo) agentcore.StopDecision {
 		return agentcore.StopDecision{Allow: false, Escalate: true}
+	}
+}
+
+// TestEngine_RetriesUnfinishedPlanStart 启动裁定失败后的自愈路径:StartPrompt 已落盘、
+// PlanStart 缺位(启动时模型故障)→ 引擎起动时现场补裁 → 固化 PlanStartRecord → 派发规划师。
+// 规划师不落盘 → 走既有僵局路径停机,证明补裁后引擎回到正常轨道。
+func TestEngine_RetriesUnfinishedPlanStart(t *testing.T) {
+	st := storepkg.NewStore(t.TempDir())
+	if err := st.Init(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := st.Progress.Init("", 0); err != nil {
+		t.Fatalf("progress: %v", err)
+	}
+	// 模拟 StartPrepared 失败现场:输入事实在,裁定事实缺位。
+	if err := st.RunMeta.SetStartPrompt("凡人修仙"); err != nil {
+		t.Fatalf("start prompt: %v", err)
+	}
+
+	// Arbiter:首次调用是补裁(plan_start),之后是僵局咨询(abort 收尾)。
+	var arbCalls atomic.Int32
+	arb := &scriptedChatModel{fn: func([]agentcore.Message) agentcore.Message {
+		if arbCalls.Add(1) == 1 {
+			return testTextMsg(`{"planner":"architect_long","task":"围绕凡人修仙规划三卷框架","reason":"长篇修仙题材"}`)
+		}
+		return testTextMsg(`{"action":"abort","reason":"规划师空转,停机"}`)
+	}}
+	// 规划师成功返回但不落任何盘 → checkpoint 恒无推进 → 僵局。
+	architect := subagent.Config{
+		Name: "architect_long", Description: "idle planner",
+		Model: &scriptedChatModel{fn: func([]agentcore.Message) agentcore.Message {
+			return testTextMsg("已规划(其实没有落盘)")
+		}},
+		SystemPrompt: "test", MaxTurns: 3,
+	}
+	e, events, done := newTestEngine(t, st, subagent.New(architect), arb)
+
+	if !e.start(nil) {
+		t.Fatal("engine start")
+	}
+	waitEngineDone(t, done)
+
+	meta, err := st.RunMeta.Load()
+	if err != nil || meta == nil || meta.PlanStart == nil {
+		t.Fatalf("补裁后 PlanStart 必须固化, meta=%+v err=%v", meta, err)
+	}
+	if meta.PlanStart.Planner != "architect_long" || meta.PlanStart.RawPrompt != "凡人修仙" || meta.PlanStart.DecisionID == "" {
+		t.Fatalf("PlanStartRecord 字段不完整: %+v", meta.PlanStart)
+	}
+	recs, err := st.Decisions.Recent(10)
+	if err != nil {
+		t.Fatalf("decisions: %v", err)
+	}
+	var planStartRec bool
+	for _, r := range recs {
+		if r.Kind == "plan_start" && strings.Contains(string(r.Decision), "architect_long") {
+			planStartRec = true
+		}
+	}
+	if !planStartRec {
+		t.Fatalf("补裁必须留下 plan_start 审计: %+v", recs)
+	}
+	var dispatched, healed bool
+	for _, ev := range *events {
+		if ev.Category == "DISPATCH" {
+			dispatched = true
+		}
+		if strings.Contains(ev.Summary, "启动裁定已补齐") {
+			healed = true
+		}
+	}
+	if !dispatched || !healed {
+		t.Fatalf("补裁后应派发规划师并回显补齐事件, dispatched=%v healed=%v", dispatched, healed)
+	}
+}
+
+// TestEngine_PlanStartRetryFailurePauses 补裁失败不允许无声停机:
+// Arbiter 持续不可用 → 显式暂停回显 + plan_start 审计带 error + 零派发。
+func TestEngine_PlanStartRetryFailurePauses(t *testing.T) {
+	st := storepkg.NewStore(t.TempDir())
+	if err := st.Init(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := st.Progress.Init("", 0); err != nil {
+		t.Fatalf("progress: %v", err)
+	}
+	if err := st.RunMeta.SetStartPrompt("凡人修仙"); err != nil {
+		t.Fatalf("start prompt: %v", err)
+	}
+
+	arb := &scriptedChatModel{fn: func([]agentcore.Message) agentcore.Message {
+		return testTextMsg("这不是 JSON")
+	}}
+	e, events, done := newTestEngine(t, st, subagent.New(), arb)
+
+	if !e.start(nil) {
+		t.Fatal("engine start")
+	}
+	waitEngineDone(t, done)
+
+	for _, ev := range *events {
+		if ev.Category == "DISPATCH" {
+			t.Fatal("补裁失败不得派发任何 worker")
+		}
+	}
+	var paused bool
+	for _, ev := range *events {
+		if strings.Contains(ev.Summary, "启动裁定失败") {
+			paused = true
+		}
+	}
+	if !paused {
+		t.Fatalf("补裁失败必须显式回显暂停原因, events=%+v", *events)
+	}
+	recs, err := st.Decisions.Recent(5)
+	if err != nil {
+		t.Fatalf("decisions: %v", err)
+	}
+	var errRec bool
+	for _, r := range recs {
+		if r.Kind == "plan_start" && r.Error != "" && len(r.Decision) == 0 {
+			errRec = true
+		}
+	}
+	if !errRec {
+		t.Fatalf("失败裁定必须带 error 落盘: %+v", recs)
 	}
 }
 

@@ -26,8 +26,10 @@ type engine struct {
 	store   *storepkg.Store
 	workers *subagent.Tool
 
-	arbiterModel  agentcore.ChatModel
-	failurePrompt string
+	arbiterModel    agentcore.ChatModel
+	failurePrompt   string
+	planStartPrompt string // 启动裁定系统提示词:裁定从未完成时引擎据 StartPrompt 现场补裁
+	style           string // 风格名,补裁时传给 DecidePlanStart
 	// reconsult 把过期干预送回 host 的完整裁定路径(持久化/审计/全量动作应用),
 	// 异步执行——engine 只丢弃过期派单,不自行做残缺的重新裁定。
 	reconsult func(text string)
@@ -171,7 +173,7 @@ func (e *engine) run(ctx context.Context) {
 			inst = flow.Route(flow.LoadState(e.store))
 		}
 		if inst == nil {
-			inst = e.planStartFallback()
+			inst = e.planStartFallback(ctx)
 		}
 		if inst == nil {
 			// 语义场景或终态:完本 → 确定性收尾;其余(Steering 残留等)
@@ -217,10 +219,13 @@ func (e *engine) takeNext() *flow.Instruction {
 	return inst
 }
 
-// planStartFallback 覆盖"启动裁定已落盘、首个 save_foundation 尚未发生"的窗口:
-// 该窗口内 Route 无法推导规划师(tier 空),恢复依赖 PlanStartRecord 这一固化事实
-// ——不重新裁定(RFC §6)。首个 foundation 落盘后 tier 就位,补齐分支接管。
-func (e *engine) planStartFallback() *flow.Instruction {
+// planStartFallback 覆盖规划事实缺位、Route 无法推导规划师的两个窗口:
+//  1. 裁定已落盘、首个 save_foundation 尚未发生 → 按固化的 PlanStartRecord 续跑,
+//     不重新裁定(RFC §6);首个 foundation 落盘后 tier 就位,补齐分支接管。
+//  2. 裁定从未完成(启动时模型故障)但输入事实 StartPrompt 在 → 现场补裁。
+//     这是首次裁定的重试,不违反"恢复不依赖重新裁定"——那条纪律针对已存在的裁定。
+//     补裁失败走显式暂停:启动失败不允许无声停机。
+func (e *engine) planStartFallback(ctx context.Context) *flow.Instruction {
 	progress, err := e.store.Progress.Load()
 	if err != nil || progress == nil {
 		return nil
@@ -229,17 +234,55 @@ func (e *engine) planStartFallback() *flow.Instruction {
 		return nil
 	}
 	meta, err := e.store.RunMeta.Load()
-	if err != nil || meta == nil || meta.PlanStart == nil || meta.PlanningTier != "" {
+	if err != nil || meta == nil || meta.PlanningTier != "" {
 		return nil
 	}
 	if len(e.store.FoundationMissing()) == 0 {
 		return nil
 	}
-	return &flow.Instruction{
-		Agent:  meta.PlanStart.Planner,
-		Task:   meta.PlanStart.PlannerTask,
-		Reason: "按已固化的启动裁定开始规划",
+	if meta.PlanStart != nil {
+		return &flow.Instruction{
+			Agent:  meta.PlanStart.Planner,
+			Task:   meta.PlanStart.PlannerTask,
+			Reason: "按已固化的启动裁定开始规划",
+		}
 	}
+	if meta.StartPrompt == "" {
+		return nil
+	}
+	return e.retryPlanStart(ctx, meta.StartPrompt)
+}
+
+// retryPlanStart 补裁启动决策并固化(裁定先落事实再执行,与 StartPrepared 同构)。
+func (e *engine) retryPlanStart(ctx context.Context, prompt string) *flow.Instruction {
+	start := time.Now()
+	decision, derr := arbiter.DecidePlanStart(ctx, e.arbiterModel, e.planStartPrompt, prompt, e.style)
+	rec := storepkg.DecisionRecord{Kind: "plan_start", Decider: "arbiter", Input: prompt,
+		Reason: decision.Reason, DurationMs: time.Since(start).Milliseconds()}
+	if derr == nil {
+		if data, err := json.Marshal(decision); err == nil {
+			rec.Decision = data
+		}
+	} else {
+		rec.Error = derr.Error()
+	}
+	rec, recErr := e.store.Decisions.Append(rec)
+	if recErr != nil {
+		slog.Warn("启动补裁审计落盘失败", "module", "engine", "err", recErr)
+	}
+	if derr != nil {
+		e.pauseWithNotify("plan_start", "启动裁定失败,已暂停(请检查模型/网络配置后继续): "+truncate(derr.Error(), 200))
+		return nil
+	}
+	if err := e.store.RunMeta.SetPlanStart(domain.PlanStartRecord{
+		RawPrompt: prompt, Planner: decision.Planner, PlannerTask: decision.Task, DecisionID: rec.ID,
+	}); err != nil {
+		e.pauseWithNotify("plan_start", "启动裁定无法落盘,已暂停: "+err.Error())
+		return nil
+	}
+	e.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Level: "info",
+		Summary: fmt.Sprintf("启动裁定已补齐(规划师: %s——%s)", decision.Planner, decision.Reason)})
+	return &flow.Instruction{Agent: decision.Planner, Task: decision.Task, Reason: decision.Reason}
 }
 
 // precheck 是原 ToolGate 的确定性化身:不合法的派发直接改写,无需教学文案。
@@ -425,7 +468,7 @@ func (e *engine) recordFailureDecision(kind string, inst *flow.Instruction, fact
 			rec.Decision = data
 		}
 	} else {
-		rec.Reason = "裁定失败: " + derr.Error()
+		rec.Error = derr.Error()
 	}
 	if _, err := e.store.Decisions.Append(rec); err != nil {
 		slog.Warn("裁定审计落盘失败", "module", "engine", "kind", kind, "err", err)

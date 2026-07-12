@@ -208,6 +208,7 @@ type RunMeta struct {
 	Style        string           `json:"style"`
 	Model        string           `json:"model"`
 	PlanningTier PlanningTier     `json:"planning_tier,omitempty"`
+	StartPrompt  string           `json:"start_prompt,omitempty"`  // 用户原始创作需求（输入事实，先于启动裁定落盘；裁定失败后据此补裁）
 	PlanStart    *PlanStartRecord `json:"plan_start,omitempty"`    // 启动裁定事实，规划期崩溃恢复的唯一依据
 	PendingSteer string           `json:"pending_steer,omitempty"` // 未完成的 Steer 指令，中断恢复时重新注入
 	PausePoint   *PausePoint      `json:"pause_point,omitempty"`   // 用户预约的验收停靠点，Host 边界消费
