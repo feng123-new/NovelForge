@@ -266,15 +266,10 @@ func logUserRulesSnapshot(snap *rules.Snapshot) {
 	if snap == nil {
 		return
 	}
-	words := "未设置"
-	if w := snap.Structured.ChapterWords; w != nil {
-		words = fmt.Sprintf("%d-%d", w.Min, w.Max)
-	}
 	slog.Info("用户规则快照",
 		"module", "rules",
 		"status", string(snap.Status),
 		"来源", snap.Sources,
-		"章节字数", words,
 		"禁用短语", len(snap.Structured.ForbiddenPhrases),
 		"疲劳词", len(snap.Structured.FatigueWords),
 	)

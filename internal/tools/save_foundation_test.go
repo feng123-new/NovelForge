@@ -181,7 +181,8 @@ func TestSaveFoundationAppendVolume(t *testing.T) {
 
 	// append_volume：追加卷2
 	appendArgs, _ := json.Marshal(map[string]any{
-		"type": "append_volume",
+		"type":   "append_volume",
+		"reason": "主线仍有多条长线未收束，需继续第二卷",
 		"content": map[string]any{
 			"index": 2, "title": "第二卷", "theme": "升级",
 			"arcs": []map[string]any{{
@@ -207,6 +208,15 @@ func TestSaveFoundationAppendVolume(t *testing.T) {
 	}
 	if volumes[1].Title != "第二卷" {
 		t.Fatalf("expected title '第二卷', got %q", volumes[1].Title)
+	}
+
+	// 卷末判定理由必须进裁定审计
+	recs, _ := s.Decisions.Recent(1)
+	if len(recs) != 1 || recs[0].Kind != "volume_end" || recs[0].Decider != "architect" {
+		t.Fatalf("append_volume 应落一条 volume_end 裁定审计, got %+v", recs)
+	}
+	if recs[0].Reason == "" || !strings.Contains(string(recs[0].Decision), `"append_volume"`) {
+		t.Fatalf("审计记录应含 reason 与 action, got %+v", recs[0])
 	}
 }
 
@@ -238,7 +248,8 @@ func TestSaveFoundationAppendVolumeValidation(t *testing.T) {
 
 	// Index 不递增 → 应失败（结构性校验）
 	appendArgs, _ := json.Marshal(map[string]any{
-		"type": "append_volume",
+		"type":   "append_volume",
+		"reason": "测试理由",
 		"content": map[string]any{
 			"index": 1, "title": "重复 Index", "theme": "x",
 			"arcs": []map[string]any{{
@@ -270,7 +281,8 @@ func TestSaveFoundationAppendVolumeRejectsAfterComplete(t *testing.T) {
 
 	tool := NewSaveFoundationTool(s)
 	appendArgs, _ := json.Marshal(map[string]any{
-		"type": "append_volume",
+		"type":   "append_volume",
+		"reason": "测试理由",
 		"content": map[string]any{
 			"index": 1, "title": "尝试续写", "theme": "x",
 			"arcs": []map[string]any{{
@@ -436,6 +448,7 @@ func TestSaveFoundationCompleteBookPushesPhaseComplete(t *testing.T) {
 	tool := NewSaveFoundationTool(s)
 	args, _ := json.Marshal(map[string]any{
 		"type": "complete_book", "content": map[string]any{},
+		"reason": "两章大纲全部写完，终局命题已回答",
 	})
 	res, err := tool.Execute(context.Background(), args)
 	if err != nil {
@@ -453,6 +466,18 @@ func TestSaveFoundationCompleteBookPushesPhaseComplete(t *testing.T) {
 	if progress.Phase != domain.PhaseComplete {
 		t.Fatalf("expected progress.Phase=complete, got %s", progress.Phase)
 	}
+
+	// 完结判定的理由必须进裁定审计（事实快照取判定时刻）
+	recs, _ := s.Decisions.Recent(1)
+	if len(recs) != 1 || recs[0].Kind != "volume_end" || recs[0].Decider != "architect" {
+		t.Fatalf("complete_book 应落一条 volume_end 裁定审计, got %+v", recs)
+	}
+	if recs[0].Reason == "" || !strings.Contains(string(recs[0].Decision), `"complete_book"`) {
+		t.Fatalf("审计记录应含 reason 与 action, got %+v", recs[0])
+	}
+	if !strings.Contains(string(recs[0].Facts), `"completed_chapters":2`) {
+		t.Fatalf("审计 facts 应含判定时刻进度, got %s", recs[0].Facts)
+	}
 }
 
 // TestSaveFoundationCompleteBookRejectsZeroChapters 复现真实事故:规划刚落盘
@@ -463,6 +488,7 @@ func TestSaveFoundationCompleteBookRejectsZeroChapters(t *testing.T) {
 	tool := NewSaveFoundationTool(s)
 	args, _ := json.Marshal(map[string]any{
 		"type": "complete_book", "content": map[string]any{},
+		"reason": "测试理由",
 	})
 	if _, err := tool.Execute(context.Background(), args); err == nil {
 		t.Fatal("一章未写的 complete_book 必须被拒")
@@ -483,6 +509,7 @@ func TestSaveFoundationCompleteBookRejectsUnwrittenChapters(t *testing.T) {
 	tool := NewSaveFoundationTool(s)
 	args, _ := json.Marshal(map[string]any{
 		"type": "complete_book", "content": map[string]any{},
+		"reason": "测试理由",
 	})
 	_, err := tool.Execute(context.Background(), args)
 	if err == nil {
@@ -512,6 +539,7 @@ func TestSaveFoundationCompleteBookRejectsBeforeWriting(t *testing.T) {
 	tool := NewSaveFoundationTool(s)
 	args, _ := json.Marshal(map[string]any{
 		"type": "complete_book", "content": map[string]any{},
+		"reason": "测试理由",
 	})
 	if _, err := tool.Execute(context.Background(), args); err == nil {
 		t.Fatal("expected error when phase != writing")
@@ -519,6 +547,25 @@ func TestSaveFoundationCompleteBookRejectsBeforeWriting(t *testing.T) {
 	progress, _ := s.Progress.Load()
 	if progress.Phase != domain.PhaseOutline {
 		t.Fatalf("phase should remain outline, got %s", progress.Phase)
+	}
+}
+
+// TestSaveFoundationVolumeEndRequiresReason 卷末三选一必须带判定理由——
+// 它是全书最重的语义判断，理由要成为审计事实而不是散在会话日志里。
+func TestSaveFoundationVolumeEndRequiresReason(t *testing.T) {
+	s := completeBookSetup(t)
+	tool := NewSaveFoundationTool(s)
+	for _, typ := range []string{"append_volume", "complete_book"} {
+		args, _ := json.Marshal(map[string]any{
+			"type": typ, "content": map[string]any{},
+		})
+		_, err := tool.Execute(context.Background(), args)
+		if err == nil || !strings.Contains(err.Error(), "reason") {
+			t.Fatalf("%s 缺 reason 必须被拒且文案提及 reason, got %v", typ, err)
+		}
+	}
+	if recs, _ := s.Decisions.Recent(1); len(recs) != 0 {
+		t.Fatalf("被拒调用不应产生审计记录, got %+v", recs)
 	}
 }
 
@@ -533,6 +580,7 @@ func TestSaveFoundationCompleteBookRejectsWithPendingRewrites(t *testing.T) {
 	tool := NewSaveFoundationTool(s)
 	args, _ := json.Marshal(map[string]any{
 		"type": "complete_book", "content": map[string]any{},
+		"reason": "测试理由",
 	})
 	if _, err := tool.Execute(context.Background(), args); err == nil {
 		t.Fatal("expected error when PendingRewrites non-empty")

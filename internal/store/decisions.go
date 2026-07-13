@@ -36,8 +36,8 @@ type DecisionRecord struct {
 	SchemaVersion  int             `json:"schema_version"`
 	ID             string          `json:"id"`
 	At             string          `json:"at"`
-	Kind           string          `json:"kind"`    // intervention | plan_start | ...
-	Decider        string          `json:"decider"` // coordinator(观测期) | arbiter
+	Kind           string          `json:"kind"`    // intervention | plan_start | volume_end | ...
+	Decider        string          `json:"decider"` // coordinator(观测期) | arbiter | architect(卷末三选一)
 	CheckpointSeq  int64           `json:"checkpoint_seq,omitempty"`
 	Input          string          `json:"input,omitempty"`
 	InputTruncated bool            `json:"input_truncated,omitempty"`

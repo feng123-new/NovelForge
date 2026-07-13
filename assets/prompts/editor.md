@@ -77,7 +77,7 @@
 
 `novel_context` 返回的 `working_memory.user_rules` 是用户对本书的偏好：
 
-- **`structured`**：机械可检字段（chapter_words / forbidden_chars / forbidden_phrases / fatigue_words / genre）
+- **`structured`**：机械可检字段（forbidden_chars / forbidden_phrases / fatigue_words / genre）
 - **`preferences`**：合并后的 Markdown 偏好正文（带来源标题）
 - **`sources`** / **`conflicts`**：来源链与异常清单（如有冲突需在 review 中说明）
 
@@ -88,7 +88,8 @@
 | `forbidden_chars` | aesthetic | severity=error → 至少 issue 一条，verdict 升级 polish |
 | `forbidden_phrases` | aesthetic | 同上 |
 | `fatigue_words` | aesthetic | severity=warning → issue 一条，evidence 引用原文 |
-| `chapter_words` | pacing | severity=error → polish/rewrite；warning → 视情况 |
+
+章节长短没有机械规则：篇幅是否配得上剧情承载量，属于你 pacing 维度的语义判断（明显灌水或仓促收场才立 issue，不看具体数字）。
 
 `preferences` 自然语言里的偏好按语义归类：
 

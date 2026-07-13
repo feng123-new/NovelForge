@@ -348,7 +348,7 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 	}
 
 	// 11. 机械规则检查（仅返事实，不阻断）
-	violations := t.checkRules(content, wordCount)
+	violations := t.checkRules(content)
 	// 持久化违规事实:editor 评审经 novel_context 消费(返回值只是镜像——
 	// writer 在 commit 后立即硬停,返回值无人可读)。best-effort。
 	if err := t.store.World.SaveRuleViolations(a.Chapter, violations); err != nil {
@@ -367,13 +367,13 @@ func (t *CommitChapterTool) appendCommitCheckpoint(chapter int) error {
 
 // checkRules 对章节正文做机械检查：内置产品底线 Lint（机制残留，始终执行）
 // + 用户规则 Check（读本书快照的 structured；快照缺失退到内置默认，保证机械底线始终在）。
-func (t *CommitChapterTool) checkRules(text string, wordCount int) []rules.Violation {
+func (t *CommitChapterTool) checkRules(text string) []rules.Violation {
 	violations := rules.Lint(text)
 	structured := rules.SystemDefaults().Structured
 	if snap, err := t.store.UserRules.Load(); err == nil && snap != nil {
 		structured = snap.Structured
 	}
-	return append(violations, rules.Check(text, wordCount, structured)...)
+	return append(violations, rules.Check(text, structured)...)
 }
 
 // executeRewriteCommit 处理打磨/重写章节的提交：覆盖终稿与摘要、更新字数、drain 队列。
@@ -483,7 +483,7 @@ func (t *CommitChapterTool) executeRewriteCommit(
 	}
 
 	// 同主路径：rewrite/polish 也做机械检查并持久化(重写后落新记录,旧违规视为已清)
-	violations := t.checkRules(content, wordCount)
+	violations := t.checkRules(content)
 	if err := t.store.World.SaveRuleViolations(chapter, violations); err != nil {
 		slog.Warn("机械违规落盘失败", "module", "tools", "chapter", chapter, "err", err)
 	}
