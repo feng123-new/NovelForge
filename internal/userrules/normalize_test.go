@@ -169,15 +169,14 @@ func TestNormalize_FeedbackRetryRecovers(t *testing.T) {
 	}
 }
 
-// 归一化是机械抽取：对支持关闭思考的模型应显式关思考，并把 max_tokens 留足给 JSON。
-// scriptedModel 未实现 CapabilityProvider → 思考策略默认允许 off → 应 Resolve 成 off。
-func TestNormalize_DisablesThinkingAndReservesTokens(t *testing.T) {
+// 归一化不覆盖模型的 thinking 默认；普通 chat 模型会拒绝显式 off。
+func TestNormalize_LeavesThinkingUnspecifiedAndReservesTokens(t *testing.T) {
 	model := &scriptedModel{replies: []string{`{"preferences":"x"}`}}
 	n := NewNormalizer(model)
 
 	_ = n.Normalize(t.Context(), "startup_prompt", "随便一条规则")
-	if model.lastCfg.ThinkingLevel != agentcore.ThinkingOff {
-		t.Errorf("应对可关闭思考的模型关思考，got %q", model.lastCfg.ThinkingLevel)
+	if model.lastCfg.ThinkingLevel != agentcore.ThinkingAuto {
+		t.Errorf("不应发送 thinking 参数，got %q", model.lastCfg.ThinkingLevel)
 	}
 	if model.lastCfg.MaxTokens != normalizeMaxTokens {
 		t.Errorf("max_tokens 应为 %d，got %d", normalizeMaxTokens, model.lastCfg.MaxTokens)

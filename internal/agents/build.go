@@ -72,10 +72,18 @@ func ParseThinkingLevel(s string) (agentcore.ThinkingLevel, error) {
 }
 
 func ResolveThinkingForModel(model agentcore.ChatModel, level agentcore.ThinkingLevel) (agentcore.ThinkingLevel, bool) {
+	level = agentcore.NormalizeThinkingLevel(level)
+	// 对不支持 thinking 的普通 chat 模型，显式 off 不是 no-op，而是非法参数。
+	if cp, ok := model.(llm.CapabilityProvider); ok && cp.Capabilities().Thinking.Supported == llm.SupportNo {
+		return agentcore.ThinkingAuto, level == agentcore.ThinkingAuto
+	}
 	return llm.ThinkingPolicyFor(model).Resolve(level)
 }
 
 func AvailableThinkingForModel(model agentcore.ChatModel) []agentcore.ThinkingLevel {
+	if cp, ok := model.(llm.CapabilityProvider); ok && cp.Capabilities().Thinking.Supported == llm.SupportNo {
+		return []agentcore.ThinkingLevel{agentcore.ThinkingAuto}
+	}
 	return llm.ThinkingPolicyFor(model).Available
 }
 

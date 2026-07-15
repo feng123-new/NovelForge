@@ -15,8 +15,10 @@ import (
 
 // scriptedModel 按调用序号返回预设文本。
 type scriptedModel struct {
-	outputs []string
-	idx     int64
+	outputs        []string
+	idx            int64
+	lastCfg        agentcore.CallConfig
+	rejectThinking bool
 }
 
 func (m *scriptedModel) take() string {
@@ -27,11 +29,30 @@ func (m *scriptedModel) take() string {
 	return m.outputs[i]
 }
 
-func (m *scriptedModel) Generate(context.Context, []agentcore.Message, []agentcore.ToolSpec, ...agentcore.CallOption) (*agentcore.LLMResponse, error) {
+func (m *scriptedModel) Generate(_ context.Context, _ []agentcore.Message, _ []agentcore.ToolSpec, opts ...agentcore.CallOption) (*agentcore.LLMResponse, error) {
+	m.lastCfg = agentcore.ResolveCallConfig(opts)
+	if m.rejectThinking && m.lastCfg.ThinkingLevel != agentcore.ThinkingAuto {
+		return nil, errors.New("thinking is only supported for reasoning chat models")
+	}
 	return &agentcore.LLMResponse{Message: agentcore.Message{
 		Role:    agentcore.RoleAssistant,
 		Content: []agentcore.ContentBlock{agentcore.TextBlock(m.take())},
 	}}, nil
+}
+
+func TestDecidePlanStartDoesNotSendThinkingToChatModel(t *testing.T) {
+	m := &scriptedModel{outputs: []string{
+		`{"planner":"architect_short","task":"规划短篇","reason":"篇幅较短"}`,
+	}, rejectThinking: true}
+	if _, err := DecidePlanStart(t.Context(), m, "sys", "写一部短篇", ""); err != nil {
+		t.Fatalf("decide: %v", err)
+	}
+	if m.lastCfg.ThinkingLevel != agentcore.ThinkingAuto {
+		t.Fatalf("Arbiter 不应向普通 chat 模型发送 thinking 参数, got %q", m.lastCfg.ThinkingLevel)
+	}
+	if m.lastCfg.MaxTokens != decideMaxTokens {
+		t.Fatalf("max_tokens = %d, want %d", m.lastCfg.MaxTokens, decideMaxTokens)
+	}
 }
 
 func (m *scriptedModel) GenerateStream(ctx context.Context, msgs []agentcore.Message, tools []agentcore.ToolSpec, opts ...agentcore.CallOption) (<-chan agentcore.StreamEvent, error) {

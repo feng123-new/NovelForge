@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/voocel/agentcore"
-	"github.com/voocel/agentcore/llm"
 	"github.com/voocel/ainovel-cli/internal/rules"
 )
 
@@ -30,22 +29,17 @@ const normalizeMaxAttempts = 3
 
 // Normalizer 把单个来源的自然语言规则归一化成 rules.Candidate（单次 LLM 调用）。
 type Normalizer struct {
-	model    agentcore.ChatModel
-	thinking agentcore.ThinkingLevel // 归一化是机械抽取，能关思考就关（见 NewNormalizer）
+	model agentcore.ChatModel
 }
 
 // NewNormalizer 用一个 ChatModel 构造归一化器。归一化是一次性启动工具，
 // 应传入能力较强的模型（如 ModelSet 的默认模型），不必跟随写作的弱模型。
 //
-// 归一化是机械抽取、不需要推理：能关思考就关（腾出 max_tokens 给 JSON、省 latency 与成本）。
-// 用模型自身的思考策略 Resolve(off)——支持关闭就关，不支持（o 系等总在思考的模型）则回落
-// ThinkingAuto（provider 默认），由 normalizeMaxTokens 的思考预算兜底避免截断。
+// 归一化不覆盖 thinking：显式 off 本身也是只有部分模型支持的推理参数，
+// 普通 chat 模型会拒绝它。沿用 provider/model 默认，由 normalizeMaxTokens
+// 为不可关闭思考的模型预留输出预算。
 func NewNormalizer(model agentcore.ChatModel) *Normalizer {
-	thinking := agentcore.ThinkingAuto
-	if model != nil {
-		thinking, _ = llm.ThinkingPolicyFor(model).Resolve(agentcore.ThinkingOff)
-	}
-	return &Normalizer{model: model, thinking: thinking}
+	return &Normalizer{model: model}
 }
 
 // Normalize 归一化一个来源。永不返回 error——失败时返回 degraded Candidate
@@ -69,7 +63,6 @@ func (n *Normalizer) Normalize(ctx context.Context, source, text string) rules.C
 	var lastErr string
 	for attempt := 1; attempt <= normalizeMaxAttempts; attempt++ {
 		resp, err := n.model.Generate(ctx, messages, nil,
-			agentcore.WithThinking(n.thinking),
 			agentcore.WithMaxTokens(normalizeMaxTokens))
 		switch {
 		case err != nil:

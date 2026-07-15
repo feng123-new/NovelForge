@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/voocel/agentcore"
+	"github.com/voocel/agentcore/llm"
 )
 
 // usageTrackedModel 给 Arbiter 的模型调用接上用量追踪:裁定的 token/成本必须
@@ -18,7 +19,22 @@ func newUsageTrackedModel(inner agentcore.ChatModel, record func(string, string,
 	if record == nil {
 		return inner
 	}
-	return &usageTrackedModel{inner: inner, record: record}
+	tracked := &usageTrackedModel{inner: inner, record: record}
+	if capabilities, ok := inner.(llm.CapabilityProvider); ok {
+		return &capabilityUsageTrackedModel{usageTrackedModel: tracked, capabilities: capabilities}
+	}
+	return tracked
+}
+
+// capabilityUsageTrackedModel 保留底层模型的可选能力接口。包装器不能把
+// "不支持 thinking" 擦成 "能力未知"，否则上层会生成 provider 不接受的参数。
+type capabilityUsageTrackedModel struct {
+	*usageTrackedModel
+	capabilities llm.CapabilityProvider
+}
+
+func (m *capabilityUsageTrackedModel) Capabilities() llm.Capabilities {
+	return m.capabilities.Capabilities()
 }
 
 func (m *usageTrackedModel) Generate(ctx context.Context, msgs []agentcore.Message, tools []agentcore.ToolSpec, opts ...agentcore.CallOption) (*agentcore.LLMResponse, error) {

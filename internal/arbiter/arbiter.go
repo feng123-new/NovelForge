@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/voocel/agentcore"
-	"github.com/voocel/agentcore/llm"
 )
 
 // decideMaxTokens 单次裁定的输出上限;裁定 JSON 很小,大头留给推理模型的思考预算
@@ -48,8 +47,6 @@ func decide[T any](ctx context.Context, model agentcore.ChatModel, systemPrompt,
 	if model == nil {
 		return zero, fmt.Errorf("arbiter: model 未配置")
 	}
-	// 裁定是分诊判断,不需要深思考:能关就关,腾预算给 JSON(与 userrules 同策略)。
-	thinking, _ := llm.ThinkingPolicyFor(model).Resolve(agentcore.ThinkingOff)
 
 	messages := []agentcore.Message{
 		{Role: agentcore.RoleSystem, Content: []agentcore.ContentBlock{agentcore.TextBlock(systemPrompt)}},
@@ -58,8 +55,9 @@ func decide[T any](ctx context.Context, model agentcore.ChatModel, systemPrompt,
 
 	var lastErr error
 	for attempt := 1; attempt <= decideMaxAttempts; attempt++ {
+		// 不覆盖 thinking：off 也是 provider/model 专属参数，不是普通 chat
+		// 模型的通用 no-op。裁定沿用模型默认，只约束结构化输出预算。
 		resp, err := generateWithRetry(ctx, model, messages,
-			agentcore.WithThinking(thinking),
 			agentcore.WithMaxTokens(decideMaxTokens))
 		if err != nil {
 			return zero, fmt.Errorf("arbiter: 模型调用失败: %w", err)
