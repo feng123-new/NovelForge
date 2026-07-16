@@ -1436,6 +1436,12 @@ func (h *Host) ImportFrom(ctx context.Context, opts imp.Options) (<-chan imp.Eve
 	return h.superviseImport(ch, opts), nil
 }
 
+// ImportResumeHint 返回未完成导入的一行提示（无则空串），供 TUI 启动时主动告知（RFC §18.2）。
+// 只在启动时调用一次：内部会重算工作区各工件的 InputDigest，不适合放进快照轮询。
+func (h *Host) ImportResumeHint() string {
+	return imp.ResumeSummary(h.store)
+}
+
 // importCaller 解析一个导入语义函数的模型档位（RFC §13.1）：roles 配置存在 import_<fn>
 // 则用该档位（用量也记该角色的账），否则落 architect。这是调用配置，不改任何语义契约。
 func (h *Host) importCaller(fn string) imp.Caller {

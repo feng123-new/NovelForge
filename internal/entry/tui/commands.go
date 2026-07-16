@@ -161,6 +161,7 @@ func commandRegistryInstance() commandRegistry {
 					return m, nil
 				}
 				m.importer = state
+				m.importHint = "" // 已进入导入流程，欢迎屏的恢复提示完成使命
 				m.textarea.Blur()
 				return m, listenCmd
 			},

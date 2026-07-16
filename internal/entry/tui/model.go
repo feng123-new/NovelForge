@@ -93,6 +93,7 @@ type Model struct {
 	mode           appMode
 	starting       bool // UI 已进入工作台，Host 正在执行启动初始化
 	startupMode    startupMode
+	importHint     string // 启动时检测到未完成导入的提示（欢迎屏显示；发起导入后清空）
 	cocreateSeq    int
 	reportSeq      int
 	err            error
@@ -133,6 +134,13 @@ func NewModel(rt *host.Host, bridge *askUserBridge, version string) Model {
 	stvp := viewport.New(32, 20)
 	stvp.SetContent("")
 
+	// 启动时检测一次未完成导入（LoadState 重算工件 digest，不进快照轮询）；
+	// 半路书若不主动告知，用户只有在创作被门禁拒绝时才会发现（RFC §18.2）。
+	importHint := ""
+	if rt != nil {
+		importHint = rt.ImportResumeHint()
+	}
+
 	return Model{
 		runtime:      rt,
 		askBridge:    bridge,
@@ -141,6 +149,7 @@ func NewModel(rt *host.Host, bridge *askUserBridge, version string) Model {
 		streamScroll: true,
 		mode:         modeNew,
 		startupMode:  startupModeQuick,
+		importHint:   importHint,
 		textarea:     ta,
 		viewport:     vp,
 		streamVP:     svp,
@@ -641,7 +650,7 @@ func (m Model) View() string {
 		if m.err != nil {
 			errMsg = m.err.Error()
 		}
-		body = renderWelcome(m.width, bodyH, errMsg, m.startupMode)
+		body = renderWelcome(m.width, bodyH, errMsg, m.startupMode, m.importHint)
 	} else {
 		leftW := m.sidebarWidth()
 		rightW := m.detailWidth()
