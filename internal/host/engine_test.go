@@ -31,6 +31,22 @@ type scriptedChatModel struct {
 	fn func(msgs []agentcore.Message) agentcore.Message
 }
 
+func TestInterventionDispatchTaskPreservesOriginalAuthority(t *testing.T) {
+	const task = "检查重复内容并安排必要返工"
+	const original = "  后续不要重复解释能力来源；不要改动无关内容。\n"
+
+	got := interventionDispatchTask(task, original)
+	if !strings.Contains(got, task) {
+		t.Fatalf("派单任务丢失: %q", got)
+	}
+	if !strings.Contains(got, original) {
+		t.Fatalf("用户原始干预未被逐字保留: %q", got)
+	}
+	if !strings.Contains(got, "修改授权的唯一来源") {
+		t.Fatalf("缺少授权边界说明: %q", got)
+	}
+}
+
 func (m *scriptedChatModel) Generate(_ context.Context, msgs []agentcore.Message, _ []agentcore.ToolSpec, _ ...agentcore.CallOption) (*agentcore.LLMResponse, error) {
 	return &agentcore.LLMResponse{Message: m.fn(msgs)}, nil
 }
