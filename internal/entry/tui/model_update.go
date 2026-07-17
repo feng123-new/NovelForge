@@ -117,6 +117,9 @@ func (m Model) toggleMouseReporting() (Model, tea.Cmd) {
 	return m, tea.EnableMouseCellMotion
 }
 
+// donePlaceholder 完成态输入框提示：会话内完结（doneMsg）与重启进完结书（bootstrap）共用。
+const donePlaceholder = "创作已完成 · 可输入返工要求(如\"重写第3章\")、/reopen 续写新卷、/export 导出"
+
 // enterRunning 进入创作工作台：开启鼠标上报（工作台需要点击切面板 / 滚轮 /
 // 拖拽侧边栏）。返回的命令需由调用方 Batch 进最终返回值。
 func (m *Model) enterRunning() tea.Cmd {
@@ -433,11 +436,21 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.err = msg.err
 			return m, fetchSnapshot(m.runtime), true
 		}
-		if msg.resumed && m.mode == modeNew {
+		// modeNew：启动恢复/导入完成落台；modeDone：/reopen 重开后回到创作台。
+		if msg.resumed && (m.mode == modeNew || m.mode == modeDone) {
 			enableMouse := m.enterRunning()
 			m.resizeTextarea()
 			m.textarea.Placeholder = defaultSteerPlaceholder()
 			return m, tea.Batch(fetchSnapshot(m.runtime), enableMouse), true
+		}
+		// 完结书：落完成态工作台（enterRunning 开鼠标后改 modeDone），不落欢迎页——
+		// 欢迎页对已有书只字不提，用户会以为书丢了；/reopen、/export、返工输入都在工作台。
+		if msg.completed && m.mode == modeNew {
+			enableMouse := m.enterRunning()
+			m.mode = modeDone
+			m.resizeTextarea()
+			m.textarea.Placeholder = donePlaceholder
+			return m, tea.Batch(fetchSnapshot(m.runtime), enableMouse, m.textarea.Focus()), true
 		}
 		return m, fetchSnapshot(m.runtime), true
 	case askUserMsg:
@@ -467,7 +480,7 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			// 完成态不锁输入框：停止自动续写，但用户仍可输入返工要求（modeDone 输入经
 			// Continue 唤醒新一轮 run，Arbiter 裁定返工或继续创作；/export、/model
 			// 等命令也需可用，输入框必须保持聚焦（issue #27、#38）。
-			m.textarea.Placeholder = "创作已完成 · 可输入返工要求(如\"重写第3章\")、/export 导出，或输入 / 看命令"
+			m.textarea.Placeholder = donePlaceholder
 			return m, tea.Batch(fetchSnapshot(m.runtime), listenDone(m.runtime), m.textarea.Focus()), true
 		}
 		if m.abortPending {

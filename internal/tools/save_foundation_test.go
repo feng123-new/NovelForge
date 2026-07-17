@@ -549,6 +549,42 @@ func TestSaveFoundationCompleteBookRejectsZeroChapters(t *testing.T) {
 	}
 }
 
+// TestSaveFoundationCompleteBookRejectsOpenThreads 守护"长线未收束不可完本"的工具级
+// 防线：OpenThreads 契约即"需收束才能结局"，但实测架构师会在论述里把未收束长线豁免为
+// "作者有意留白"直接完本（导入完本书续写场景，用户续写诉求被完本规则锁死）。豁免必须
+// 显式落盘——update_compass 清空 open_threads 后方可完本。
+func TestSaveFoundationCompleteBookRejectsOpenThreads(t *testing.T) {
+	s := completeBookSetup(t)
+	for ch := 1; ch <= 2; ch++ {
+		if err := s.Progress.MarkChapterComplete(ch, 3000, "", ""); err != nil {
+			t.Fatalf("MarkChapterComplete(%d): %v", ch, err)
+		}
+	}
+	if err := s.Outline.SaveCompass(domain.StoryCompass{
+		EndingDirection: "潜在终局", OpenThreads: []string{"八十年大限走向", "精变重逢可能"},
+	}); err != nil {
+		t.Fatalf("SaveCompass: %v", err)
+	}
+	tool := NewSaveFoundationTool(s)
+	args, _ := json.Marshal(map[string]any{
+		"type": "complete_book", "content": map[string]any{}, "reason": "主线已闭合",
+	})
+	_, err := tool.Execute(context.Background(), args)
+	if err == nil || !strings.Contains(err.Error(), "open_threads") {
+		t.Fatalf("open_threads 非空应拒绝完本并指引 update_compass，得：%v", err)
+	}
+	if p, _ := s.Progress.Load(); p.Phase != domain.PhaseWriting {
+		t.Fatalf("phase 应保持 writing，得 %s", p.Phase)
+	}
+	// 显式收束落盘（update_compass 清空 open_threads）后放行。
+	if err := s.Outline.SaveCompass(domain.StoryCompass{EndingDirection: "终局已达成"}); err != nil {
+		t.Fatalf("SaveCompass: %v", err)
+	}
+	if _, err := tool.Execute(context.Background(), args); err != nil {
+		t.Fatalf("长线清空后完本应放行：%v", err)
+	}
+}
+
 // TestSaveFoundationCompleteBookRejectsUnwrittenChapters 大纲内还有未写章节时
 // 不可完本(提前收束的正规路径是 final 收官卷)。
 func TestSaveFoundationCompleteBookRejectsUnwrittenChapters(t *testing.T) {

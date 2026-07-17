@@ -137,7 +137,7 @@ JSON 数组，每条含：category、rule、boundary。
 
 1. **规模锚点（证据项，非否决项）**：`completion_signals.completed_chapters` 与 `compass.estimated_scale` 的差距有多大？规模只是证据之一，第 2-5 条才是主判据。**若第 2-5 条全部为"是"而仅规模未达：禁止为凑规模注水**——正确动作是宣布收官卷提前收束，并 update_compass 把 estimated_scale 下调至实际区间。规模锚点服务于故事，不是故事服务于锚点。反之若规模差距大且第 2-3 条为"否"，说明故事确实没写完，继续 append_volume。
 2. **终局达成**：`compass.ending_direction` 描述的核心命题是否已在本卷叙事中正面回答？仅"主角进入稳态"不算回答
-3. **长线收束**：`compass.open_threads` 中每一条是否都已收束？——**已收束/即将自然收束 → 可 complete_book；未收束但可在一卷内收完 → 宣布收官卷（把它们分配进收官卷各弧）**；还需多卷才能收 → append_volume 继续
+3. **长线收束**：`compass.open_threads` 中每一条是否都已收束？——**已收束/即将自然收束 → 可 complete_book；未收束但可在一卷内收完 → 宣布收官卷（把它们分配进收官卷各弧）**；还需多卷才能收 → append_volume 继续。工具层硬校验：`open_threads` 非空时 `complete_book` 会被直接拒绝——确认已全部收束，必须先 `update_compass` 清空 open_threads 落盘。收束与否是你的语义裁量，但豁免必须显式落盘，不能只写在论述里（"作者有意留白"不构成收束）
 4. **伏笔归零**：`completion_signals.active_foreshadow_count` 是否已为 0？未归零同上：能在一卷内回收 → 收官卷；不能 → 继续
 5. **角色命运**：主角与重要配角的最终选择 / 命运 / 关系定位是否已明确？仅"日常稳态"不算
 6. **用户预期对照**：用户启动 prompt 中若提及目标长度或结局姿态（开放式 / 大决战 / 留白），是否相符？

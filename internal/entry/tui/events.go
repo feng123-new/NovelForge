@@ -19,9 +19,10 @@ type (
 	doneMsg        struct{ complete bool } // complete=true 全书完成，false 出错停止
 	abortResultMsg struct{ stopped bool }
 	bootstrapMsg   struct {
-		replay  []domain.RuntimeQueueItem
-		resumed bool
-		err     error
+		replay    []domain.RuntimeQueueItem
+		resumed   bool
+		completed bool // 目录里是本已完结的书：落完成态工作台而非欢迎页
+		err       error
 	}
 	reportLoadedMsg struct {
 		reqID      int
@@ -102,17 +103,25 @@ func bootstrapRuntime(rt *host.Host) tea.Cmd {
 		if err != nil {
 			return bootstrapMsg{replay: replay, err: err}
 		}
-		if label == "" && len(replay) == 0 {
-			return nil
+		if label == "" {
+			// 完结书不可续跑（恢复视为无标签），但也不能落欢迎页装作书不存在——
+			// 直接落到完成态工作台：面板照常展示本书，/reopen、/export、返工输入都在原位。
+			if rt.Snapshot().Phase == "complete" {
+				return bootstrapMsg{replay: replay, completed: true}
+			}
+			if len(replay) == 0 {
+				return nil
+			}
 		}
 		return bootstrapMsg{replay: replay, resumed: label != ""}
 	}
 }
 
-// resumeAfterImport 在关闭"导入完成"面板后补跑一次恢复门禁：欢迎页没有续写入口，
-// bootstrap 的 Resume 只在启动时跑一次。不重放事件队列——本会话事件已由常驻
-// listenEvents 呈现过，重放会重复回显。引擎起来后被导入完成 Hold 拦在下一章边界等验收。
-func resumeAfterImport(rt *host.Host) tea.Cmd {
+// resumeBook 会话中补跑一次恢复门禁（bootstrap 的 Resume 只在启动时跑一次）：
+// 导入完成关面板、/reopen 重开后都靠它落回创作工作台。不重放事件队列——本会话事件
+// 已由常驻 listenEvents 呈现过，重放会重复回显。待处理干预（如 /reopen 登记的续写
+// 方向）由 Resume 先经 Arbiter 裁定消化，再续跑引擎。
+func resumeBook(rt *host.Host) tea.Cmd {
 	return func() tea.Msg {
 		label, err := rt.Resume()
 		return bootstrapMsg{resumed: label != "", err: err}

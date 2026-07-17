@@ -167,6 +167,23 @@ func commandRegistryInstance() commandRegistry {
 			},
 		},
 		{
+			Name:        "reopen",
+			Group:       "writing",
+			Usage:       "/reopen [续写方向]",
+			Description: "重开已完结的书继续创作（方向先经裁定注入，再自动续跑）",
+			NeedsIdle:   true,
+			Run: func(m Model, args []string) (tea.Model, tea.Cmd) {
+				if err := m.runtime.Reopen(strings.Join(args, " ")); err != nil {
+					m.applyEvent(host.Event{
+						Time: time.Now(), Category: "ERROR", Summary: "重开失败：" + err.Error(), Level: "error",
+					})
+					m.refreshEventViewport()
+					return m, nil
+				}
+				return m, tea.Batch(m.textarea.Focus(), resumeBook(m.runtime))
+			},
+		},
+		{
 			Name:        "cocreate",
 			Aliases:     []string{"plan"},
 			Group:       "writing",

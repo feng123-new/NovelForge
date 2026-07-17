@@ -254,6 +254,22 @@ func TestCollectInterventionFacts(t *testing.T) {
 	if len(f.FoundationMissing) == 0 {
 		t.Fatal("新书应有基础设定缺项")
 	}
+
+	// /reopen 是可枚举事实，必须进 facts：重开后的书章数已写满，缺了它模型会
+	// 据 completed=total 推断"已完结"、无视 phase=writing（实测事故）。
+	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+	if err := st.Progress.MarkComplete(); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if err := st.Progress.ReopenContinue(); err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	f = CollectInterventionFacts(st)
+	if f.ReopenCount != 1 || f.Phase != string(domain.PhaseWriting) {
+		t.Fatalf("重开事实缺失: phase=%s reopen_count=%d", f.Phase, f.ReopenCount)
+	}
 }
 
 func TestExtractJSON(t *testing.T) {

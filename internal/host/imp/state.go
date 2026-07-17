@@ -38,6 +38,11 @@ type Facts struct {
 // NextAction 沿固定线性管线，返回第一份缺失或未满足的动作。纯函数，无 IO。
 func NextAction(f Facts) Action {
 	switch {
+	case f.Published:
+		// 发布是终态：正式库对账已全量一致，工作区只是审计存档。上游工件因
+		// prompt 版本 / 指导升级失鲜不再要求重做——否则版本升级会把已发布的书
+		// 追溯判回半路，Engine 跨重启门禁将其永久锁死。
+		return ActionDone
 	case !f.WorkspaceReady:
 		return ActionIngest
 	case !f.Segmented:
@@ -50,10 +55,8 @@ func NextAction(f Facts) Action {
 		return ActionSynthesize
 	case f.StoryUncertain && !f.StoryResolved:
 		return ActionAwaitStoryResolution
-	case !f.Published:
-		return ActionPublish
 	default:
-		return ActionDone
+		return ActionPublish
 	}
 }
 
@@ -67,7 +70,7 @@ func artifactFresh[T any](w *Workspace, rel, want string) bool {
 // LoadState 从工作区读出当前事实快照（仅工作区，不含正式 Store）。
 // 线性短路：每一步都校验工件 InputDigest 与当前上游可重建的摘要一致，任一步失配即视为该步未完成，
 // 下游事实保持 false，交 NextAction 从此处重做——这才让「改切分/prompt 版本/源」自然失效下游（RFC §6.2/§6.3 / 不变量 1）。
-// Published 由调用方按正式发布对账补齐（见 ResumeStatus / runner）。
+// Published 由调用方按正式发布对账补齐（统一走 CollectFacts）。
 func LoadState(w *Workspace) Facts {
 	var f Facts
 	if !w.Active() {
@@ -122,6 +125,22 @@ func LoadState(w *Workspace) Facts {
 	return f
 }
 
+// CollectFacts 组合工作区事实与正式发布对账，是 ResumeStatus/ResumeSummary/runner
+// 的统一事实入口。发布对账的期望章数优先取新鲜切分；切分因 prompt 版本 / 指导升级
+// 而失配时，退回工件里当时确认的章数——已发布书的正式章节正是按那份切分落库的，
+// 用当前版本重算 digest 对账反而对不上任何东西。
+func CollectFacts(st *store.Store, w *Workspace) Facts {
+	f := LoadState(w)
+	expected := f.ExpectedChapters
+	if expected == 0 {
+		if segArt, err := readArtifact[Segmentation](w, fileSegmentation); err == nil {
+			expected = len(segArt.Payload.Chapters)
+		}
+	}
+	f.Published = isPublished(st, expected)
+	return f
+}
+
 // ResumeStatus 报告是否存在活动导入工作区，以及它是否已彻底完成（含正式发布对账）。
 // 供跨重启 Engine 门禁使用（RFC §12.5）：active && !done 时禁止普通创作流程消费半发布状态。
 func ResumeStatus(st *store.Store) (active, done bool) {
@@ -129,9 +148,7 @@ func ResumeStatus(st *store.Store) (active, done bool) {
 	if !w.Active() {
 		return false, false
 	}
-	f := LoadState(w)
-	f.Published = isPublished(st, f.ExpectedChapters)
-	return true, NextAction(f) == ActionDone
+	return true, NextAction(CollectFacts(st, w)) == ActionDone
 }
 
 // ResumeSummary 生成未完成导入的一行提示（RFC §18.2）；无未完成导入返回空串。
@@ -141,8 +158,7 @@ func ResumeSummary(st *store.Store) string {
 	if !w.Active() {
 		return ""
 	}
-	f := LoadState(w)
-	f.Published = isPublished(st, f.ExpectedChapters)
+	f := CollectFacts(st, w)
 	var state string
 	switch NextAction(f) {
 	case ActionDone:

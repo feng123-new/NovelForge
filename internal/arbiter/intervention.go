@@ -21,6 +21,7 @@ type InterventionFacts struct {
 	TotalChapters     int              `json:"total_chapters,omitempty"`
 	NextChapter       int              `json:"next_chapter,omitempty"`
 	PendingRewrites   []int            `json:"pending_rewrites,omitempty"`
+	ReopenCount       int              `json:"reopen_count,omitempty"` // 用户显式 /reopen 重开完结书的累计次数
 	FoundationMissing []string         `json:"foundation_missing,omitempty"`
 	PlanningTier      string           `json:"planning_tier,omitempty"`
 	AdvanceMode       string           `json:"advance_mode,omitempty"`
@@ -62,6 +63,7 @@ func CollectInterventionFacts(st *storepkg.Store) InterventionFacts {
 		f.TotalChapters = p.TotalChapters
 		f.NextChapter = p.NextChapter()
 		f.PendingRewrites = append([]int(nil), p.PendingRewrites...)
+		f.ReopenCount = p.ReopenCount
 	}
 	if meta, err := st.RunMeta.Load(); err == nil && meta != nil {
 		f.PlanningTier = string(meta.PlanningTier)

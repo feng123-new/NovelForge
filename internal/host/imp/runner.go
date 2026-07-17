@@ -255,9 +255,7 @@ func (r *runner) saveFailure(err error) {
 
 // facts 组合工作区事实与正式发布对账。
 func (r *runner) facts() Facts {
-	f := LoadState(r.ws)
-	f.Published = isPublished(r.deps.Store, f.ExpectedChapters)
-	return f
+	return CollectFacts(r.deps.Store, r.ws)
 }
 
 // profileFor 派生某档位的调用选项，并把请求退避/校验重问回显到对应阶段的事件流——

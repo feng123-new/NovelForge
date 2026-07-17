@@ -26,6 +26,7 @@ func TestNextActionChain(t *testing.T) {
 		{"uncertain 已裁定待发布", Facts{WorkspaceReady: true, Segmented: true, Confirmed: true, ExpectedChapters: 3, AnalyzedChapters: 3, Synthesized: true, StoryUncertain: true, StoryResolved: true}, ActionPublish},
 		{"明确状态待发布", Facts{WorkspaceReady: true, Segmented: true, Confirmed: true, ExpectedChapters: 3, AnalyzedChapters: 3, Synthesized: true}, ActionPublish},
 		{"全部一致", Facts{WorkspaceReady: true, Segmented: true, Confirmed: true, ExpectedChapters: 3, AnalyzedChapters: 3, Synthesized: true, Published: true}, ActionDone},
+		{"发布终态短路上游失鲜", Facts{Published: true}, ActionDone},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -158,6 +159,51 @@ func TestResumeSummary(t *testing.T) {
 	}
 	if got := ResumeSummary(st); !strings.Contains(got, "已分析 0/1 章") {
 		t.Fatalf("应提示分析进度，得 %q", got)
+	}
+}
+
+// TestResumeStatusPublishedIsTerminal 守护发布终态（实测事故）：书已全量发布后，
+// segmentPromptVersion 升级使工作区切分工件失鲜，ResumeStatus 不得据此把书判回
+// "导入半路"——否则 startEngine 跨重启门禁会永久拒启已发布书的续写。
+func TestResumeStatusPublishedIsTerminal(t *testing.T) {
+	dir := t.TempDir()
+	st := store.NewStore(dir)
+	if err := st.Init(); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(dir, "book.txt")
+	if err := os.WriteFile(src, []byte("第一章\n正文\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ws, _, err := Ingest(dir, src, Intent{})
+	if err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	norm, _ := ws.LoadSource()
+	// 用旧版本号写切分：模拟发布后 prompt 升级导致的 digest 失配。
+	seg := Segmentation{Chapters: []ChapterSpan{{Number: 1, Title: "第一章", Start: 0, End: len(norm)}}}
+	if err := writeArtifact(ws, fileSegmentation, segmentInputDigest(Digest(norm), "", "seg-v0"), seg); err != nil {
+		t.Fatal(err)
+	}
+	// 未发布 + 切分失鲜：仍是半路导入，门禁应拦。
+	if active, done := ResumeStatus(st); !active || done {
+		t.Fatalf("未发布的失鲜工作区应判未完成（active=%v done=%v）", active, done)
+	}
+	// 正式库已按该切分全量落库 → 发布对账通过，终态不受上游失鲜影响。
+	if err := st.Outline.SavePremise("前提"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Outline.SaveOutline([]domain.OutlineEntry{{Chapter: 1, Title: "第一章"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Progress.Save(&domain.Progress{NovelName: "书", CompletedChapters: []int{1}}); err != nil {
+		t.Fatal(err)
+	}
+	if active, done := ResumeStatus(st); !active || !done {
+		t.Fatalf("已发布书应判导入完成（active=%v done=%v）", active, done)
+	}
+	if got := ResumeSummary(st); got != "" {
+		t.Fatalf("已发布书不应提示未完成导入，得 %q", got)
 	}
 }
 

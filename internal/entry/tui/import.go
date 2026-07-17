@@ -362,7 +362,7 @@ func (m Model) handleImportKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// 启动时跑一次），关面板时补跑恢复，让用户落到工作台的导入完成 Hold 门禁上，
 		// 而不是留在误按 Enter 即"开新书"的欢迎页。
 		if succeeded && m.mode == modeNew {
-			return m, tea.Batch(m.textarea.Focus(), resumeAfterImport(m.runtime))
+			return m, tea.Batch(m.textarea.Focus(), resumeBook(m.runtime))
 		}
 		return m, m.textarea.Focus()
 	case tea.KeyUp:

@@ -244,6 +244,28 @@ func (s *ProgressStore) Reopen(chapters []int, reason string) error {
 	})
 }
 
+// ReopenContinue 把已完结的书重开为续写态：仅 phase complete→writing，不入返工队列、
+// 不置 ReopenedFromComplete（那是"返工排空后按原结构自动重新完结"的 drain 语义，
+// 续写重开恰恰要扩展结构）。与 Reopen 同为 phaseOrder"只前进"约束的豁免出口，
+// 同受 phase=complete 前置守卫保护；重开后由卷末路由派发架构师续卷。
+func (s *ProgressStore) ReopenContinue() error {
+	return s.io.WithWriteLock(func() error {
+		p, err := s.loadUnlocked()
+		if err != nil {
+			return err
+		}
+		if p == nil {
+			return fmt.Errorf("progress 未初始化: %w", errs.ErrToolPrecondition)
+		}
+		if p.Phase != domain.PhaseComplete {
+			return fmt.Errorf("重开仅适用于已完结的书（当前 phase=%s）: %w", p.Phase, errs.ErrToolPrecondition)
+		}
+		p.Phase = domain.PhaseWriting
+		p.ReopenCount++ // 审计 + 保证再完结的 progress digest 与上次不同（见字段注释）
+		return s.saveUnlocked(p)
+	})
+}
+
 // ClearInProgress 清除进度中间状态。
 func (s *ProgressStore) ClearInProgress() error {
 	return s.io.WithWriteLock(func() error {

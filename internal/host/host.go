@@ -418,6 +418,38 @@ func (h *Host) startEngine(initial *flow.Instruction) bool {
 	return true
 }
 
+// Reopen 把已完结的书强制重开为创作态。完本与重开都是重决策：完本可由架构师裁定，
+// 重开只能由用户显式发起（/reopen），不经模型裁定。direction 非空时登记为待处理干预，
+// 恢复时先经 Arbiter 裁定注入（与停机期干预同通道），再续跑引擎（卷末路由派发续卷）。
+func (h *Host) Reopen(direction string) error {
+	h.mu.Lock()
+	switch {
+	case h.lifecycle == lifecycleRunning:
+		h.mu.Unlock()
+		return fmt.Errorf("创作引擎运行中，无需重开")
+	case h.cocreating:
+		h.mu.Unlock()
+		return fmt.Errorf("阶段共创进行中，请先结束共创")
+	case h.exclusive != "":
+		ex := h.exclusive
+		h.mu.Unlock()
+		return fmt.Errorf("%s进行中，请先完成后再重开", ex)
+	}
+	h.mu.Unlock()
+
+	if err := h.store.Progress.ReopenContinue(); err != nil {
+		return err
+	}
+	slog.Info("重开已完结书为创作状态", "module", "host", "direction", direction)
+	h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "已重开本书为创作状态（用户撤销完结裁定）", Level: "info"})
+	if d := strings.TrimSpace(direction); d != "" {
+		if err := h.store.RunMeta.SetPendingSteer(d); err != nil {
+			return fmt.Errorf("已重开，但续写方向登记失败：%v，请直接在输入框重新输入方向", err)
+		}
+	}
+	return nil
+}
+
 // Resume 恢复模式：从 checkpoint + progress 生成 resume prompt 并启动。
 func (h *Host) Resume() (string, error) {
 	h.mu.Lock()
@@ -589,8 +621,9 @@ func (h *Host) doIntervention(text string, restart bool) {
 		}
 		h.refreshWriterRestore()
 		if !h.startEngine(nil) {
+			// 此时干预动作已生效并清除 PendingSteer，只是引擎未能立即拉起——不能谎称"已保存"。
 			h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Level: "warn",
-				Summary: "Engine 正在完成上一轮停止；干预已保存，请稍后继续"})
+				Summary: "干预已生效，但 Engine 未能立即续跑；请稍后在输入框继续或重启应用恢复"})
 		}
 	}
 }

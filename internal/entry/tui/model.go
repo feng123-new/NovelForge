@@ -561,7 +561,7 @@ func (m *Model) syncRuntimePlaceholder() {
 	}
 	switch m.snapshot.RuntimeState {
 	case "completed":
-		m.textarea.Placeholder = "创作已完成"
+		m.textarea.Placeholder = donePlaceholder
 	case "pausing":
 		m.textarea.Placeholder = "正在暂停创作..."
 	case "paused":
