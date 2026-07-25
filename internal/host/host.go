@@ -1159,9 +1159,25 @@ func (h *Host) fillDetails(snap *UISnapshot, progress *domain.Progress) {
 		snap.Premise = truncate(premise, 80)
 	}
 	if outline, _ := h.store.Outline.LoadOutline(); len(outline) > 0 {
+		completed := make(map[int]struct{})
+		if progress != nil {
+			completed = make(map[int]struct{}, len(progress.CompletedChapters))
+			for _, chapter := range progress.CompletedChapters {
+				completed[chapter] = struct{}{}
+			}
+		}
 		for _, e := range outline {
+			title := e.Title
+			if _, ok := completed[e.Chapter]; ok {
+				summary, err := h.store.Summaries.LoadSummary(e.Chapter)
+				if err != nil {
+					slog.Warn("章节标题投影失败", "module", "host.snapshot", "chapter", e.Chapter, "err", err)
+				} else if summary != nil && strings.TrimSpace(summary.Title) != "" {
+					title = summary.Title
+				}
+			}
 			snap.Outline = append(snap.Outline, OutlineSnapshot{
-				Chapter: e.Chapter, Title: e.Title, CoreEvent: e.CoreEvent,
+				Chapter: e.Chapter, Title: title, CoreEvent: e.CoreEvent,
 			})
 		}
 	}

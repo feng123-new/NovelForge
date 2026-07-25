@@ -39,6 +39,7 @@ type commitOutput struct {
 // PendingCommit；崩溃恢复一律重放这份冻结意图，忽略新 Worker 生成的参数和草稿。
 type commitArgs struct {
 	Chapter             int                        `json:"chapter"`
+	Title               string                     `json:"title"`
 	Summary             string                     `json:"summary"`
 	Characters          []string                   `json:"characters"`
 	KeyEvents           []string                   `json:"key_events"`
@@ -94,6 +95,7 @@ func (t *CommitChapterTool) Schema() map[string]any {
 	feedbackSchema["description"] = "对后续大纲的建议对象；必须直接传 JSON object，不要传字符串化 JSON"
 	return schema.Object(
 		schema.Property("chapter", schema.Int("章节号")).Required(),
+		schema.Property("title", schema.String("本章最终标题；可与计划大纲不同")).Required(),
 		schema.Property("summary", schema.String("本章内容摘要（200字以内）")).Required(),
 		schema.Property("characters", schema.Array("本章出场角色名", schema.String(""))).Required(),
 		schema.Property("key_events", schema.Array("本章关键事件", schema.String(""))).Required(),
@@ -176,7 +178,7 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 	}
 	if existingPending == nil && completed {
 		if slices.Contains(progress.PendingRewrites, a.Chapter) {
-			content, err := t.validateRewriteDraft(a.Chapter, progress)
+			content, err := t.validateRewriteDraft(a.Chapter, a.Title, progress)
 			if err != nil {
 				return nil, err
 			}
@@ -279,7 +281,7 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 
 		// 3. 保存摘要
 		summary := domain.ChapterSummary{
-			Chapter: a.Chapter, Summary: a.Summary, Characters: a.Characters, KeyEvents: a.KeyEvents,
+			Chapter: a.Chapter, Title: a.Title, Summary: a.Summary, Characters: a.Characters, KeyEvents: a.KeyEvents,
 		}
 		if err := t.store.Summaries.SaveSummary(summary); err != nil {
 			return nil, fmt.Errorf("save summary: %w: %w", errs.ErrStoreWrite, err)
@@ -499,7 +501,7 @@ func (t *CommitChapterTool) finishPendingCommit(pending domain.PendingCommit, pr
 	return t.buildSkipResult(pending.Chapter, progress)
 }
 
-func (t *CommitChapterTool) validateRewriteDraft(chapter int, progress *domain.Progress) (string, error) {
+func (t *CommitChapterTool) validateRewriteDraft(chapter int, title string, progress *domain.Progress) (string, error) {
 	content, _, err := t.store.Drafts.LoadChapterContent(chapter)
 	if err != nil {
 		return "", fmt.Errorf("rewrite: load chapter content: %w: %w", errs.ErrStoreRead, err)
@@ -507,25 +509,41 @@ func (t *CommitChapterTool) validateRewriteDraft(chapter int, progress *domain.P
 	if content == "" {
 		return "", fmt.Errorf("no content found for chapter %d: %w", chapter, errs.ErrToolPrecondition)
 	}
-	existingFinal, err := t.store.Drafts.LoadChapterText(chapter)
+	changed, err := t.rewriteChanged(chapter, content, title)
 	if err != nil {
-		return "", fmt.Errorf("rewrite: load final chapter: %w: %w", errs.ErrStoreRead, err)
+		return "", err
 	}
-	if existingFinal == "" || existingFinal != content {
+	if changed {
 		return content, nil
 	}
 	mode := "重写"
 	if progress != nil && progress.Flow == domain.FlowPolishing {
 		mode = "打磨"
 	}
-	return "", fmt.Errorf("第 %d 章 drafts 与 chapters 内容完全相同，未检测到%s改动。请先调 draft_chapter(mode=write, chapter=%d) 写入%s后的新正文，再 commit_chapter: %w",
-		chapter, mode, chapter, mode, errs.ErrToolPrecondition)
+	return "", fmt.Errorf("第 %d 章正文和标题均未发生变化，未检测到%s改动: %w",
+		chapter, mode, errs.ErrToolPrecondition)
+}
+
+func (t *CommitChapterTool) rewriteChanged(chapter int, content, title string) (bool, error) {
+	existingFinal, err := t.store.Drafts.LoadChapterText(chapter)
+	if err != nil {
+		return false, fmt.Errorf("rewrite: load final chapter: %w: %w", errs.ErrStoreRead, err)
+	}
+	if existingFinal != content {
+		return true, nil
+	}
+	summary, err := t.store.Summaries.LoadSummary(chapter)
+	if err != nil {
+		return false, fmt.Errorf("rewrite: load chapter summary: %w: %w", errs.ErrStoreRead, err)
+	}
+	return summary == nil || strings.TrimSpace(summary.Title) != strings.TrimSpace(title), nil
 }
 
 func (t *CommitChapterTool) appendCommitCheckpoint(chapter int) error {
-	_, err := t.store.Checkpoints.AppendArtifact(
+	_, err := t.store.Checkpoints.AppendArtifacts(
 		domain.ChapterScope(chapter), "commit",
 		fmt.Sprintf("chapters/%02d.md", chapter),
+		fmt.Sprintf("summaries/%02d.json", chapter),
 	)
 	return err
 }
@@ -553,19 +571,20 @@ func (t *CommitChapterTool) executeRewriteCommit(a commitArgs, progress *domain.
 	}
 	wordCount := utf8.RuneCountInString(content)
 
-	// 2. 硬校验：drafts 与现终稿完全相同 → 判定为未真正打磨/重写（writer 跳过了 draft_chapter）
-	// 拒绝 commit，强制 writer 先调 draft_chapter(mode=write) 写入新版本。
-	existingFinal, err := t.store.Drafts.LoadChapterText(chapter)
-	if err != nil {
-		return nil, fmt.Errorf("rewrite: load final chapter: %w: %w", errs.ErrStoreRead, err)
-	}
-	if !recovering && existingFinal != "" && existingFinal == content {
-		mode := "重写"
-		if progress != nil && progress.Flow == domain.FlowPolishing {
-			mode = "打磨"
+	// 2. 正文或标题至少一项发生变化；标题打磨无需伪造正文改动。
+	if !recovering {
+		changed, err := t.rewriteChanged(chapter, content, a.Title)
+		if err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("第 %d 章 drafts 与 chapters 内容完全相同，未检测到%s改动。请先调 draft_chapter(mode=write, chapter=%d) 写入%s后的新正文，再 commit_chapter: %w",
-			chapter, mode, chapter, mode, errs.ErrToolPrecondition)
+		if !changed {
+			mode := "重写"
+			if progress != nil && progress.Flow == domain.FlowPolishing {
+				mode = "打磨"
+			}
+			return nil, fmt.Errorf("第 %d 章正文和标题均未发生变化，未检测到%s改动: %w",
+				chapter, mode, errs.ErrToolPrecondition)
+		}
 	}
 
 	if pending.Stage == domain.CommitStageStarted {
@@ -574,7 +593,7 @@ func (t *CommitChapterTool) executeRewriteCommit(a commitArgs, progress *domain.
 			return nil, fmt.Errorf("rewrite: save final chapter: %w: %w", errs.ErrStoreWrite, err)
 		}
 		if err := t.store.Summaries.SaveSummary(domain.ChapterSummary{
-			Chapter: chapter, Summary: a.Summary, Characters: a.Characters, KeyEvents: a.KeyEvents,
+			Chapter: chapter, Title: a.Title, Summary: a.Summary, Characters: a.Characters, KeyEvents: a.KeyEvents,
 		}); err != nil {
 			return nil, fmt.Errorf("rewrite: save summary: %w: %w", errs.ErrStoreWrite, err)
 		}

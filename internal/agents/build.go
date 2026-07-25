@@ -123,6 +123,7 @@ func BuildWorkers(
 	architectTools := []agentcore.Tool{
 		contextTool,
 		tools.NewSaveFoundationTool(store),
+		tools.NewReviseOutlineTool(store),
 		tools.NewAuditFoundationTool(store),
 	}
 	writerTools := []agentcore.Tool{
