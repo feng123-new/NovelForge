@@ -95,7 +95,7 @@ func (t *CommitChapterTool) Schema() map[string]any {
 	feedbackSchema["description"] = "对后续大纲的建议对象；必须直接传 JSON object，不要传字符串化 JSON"
 	return schema.Object(
 		schema.Property("chapter", schema.Int("章节号")).Required(),
-		schema.Property("title", schema.String("本章最终标题；可与计划大纲不同")).Required(),
+		schema.Property("title", schema.String("与终稿正文一致的最终标题")).Required(),
 		schema.Property("summary", schema.String("本章内容摘要（200字以内）")).Required(),
 		schema.Property("characters", schema.Array("本章出场角色名", schema.String(""))).Required(),
 		schema.Property("key_events", schema.Array("本章关键事件", schema.String(""))).Required(),
