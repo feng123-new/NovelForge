@@ -41,9 +41,8 @@ func promptCacheBase(bookDir string) string {
 
 // subagentMaxRetries 是所有 Worker 的 LLM retry 上限。
 // 退避策略：指数退避（受 maxDelay 上限约束），优先服从 server Retry-After。
-// 配合 ToolsAreIdempotent=true 让 stream-idle / 503 / 短暂网络抖动这类 retryable
-// 错误能在 Worker 层就近重试，而不是让 Engine 重跑整个任务。
-// 项目铁律一保证写类工具走 checkpoint+digest 幂等，重试是安全的。
+// 工具只在完整 Assistant 消息提交后启动，因此 stream-idle / 503 /
+// 短暂网络抖动可以在 Worker 内安全重试，不会重放工具副作用。
 const subagentMaxRetries = 7
 
 // UsageRecorder 是 BuildWorkers 可选的用量回调；签名与 OnMessage 一致，
@@ -103,9 +102,9 @@ func resolvedRoleThinking(model agentcore.ChatModel, cfg bootstrap.Config, role 
 }
 
 // BuildWorkers 组装三个 Worker(architect_short/long、writer、editor)为可程序化
-// 调用的 subagent.Tool——Engine 直接调用其 Run(类型化入口),无 LLM 中间层
+// 调用的 subagent.Runner。Engine 直接调用其类型化入口，无 LLM 工具层
 // (docs/engine-rfc.md §1)。
-// 返回 Tool、AskUserTool、WriterRestorePack 与 ApplyThinking(运行时 /model 联动
+// 返回 Runner、AskUserTool、WriterRestorePack 与 ApplyThinking(运行时 /model 联动
 // 各角色推理强度;writer/architect/editor 的 ContextManager 走工厂自动重建)。
 // onGuardBlock 可选(nil 安全):各 Worker StopGuard 的拦截/升级审计回调。
 func BuildWorkers(
@@ -115,7 +114,7 @@ func BuildWorkers(
 	bundle assets.Bundle,
 	recordUsage UsageRecorder,
 	onGuardBlock guard.BlockHook,
-) (*subagent.Tool, *tools.AskUserTool, *ctxpack.WriterRestorePack, ApplyThinking) {
+) (*subagent.Runner, *tools.AskUserTool, *ctxpack.WriterRestorePack, ApplyThinking) {
 	// 共享工具
 	contextTool := tools.NewContextTool(store, bundle.References, cfg.Style)
 	readChapter := tools.NewReadChapterTool(store)
@@ -190,18 +189,17 @@ func BuildWorkers(
 	}
 	architectThinking, _ := ResolveThinkingForModel(architectModel, roleThinking(cfg, "architect"))
 	architectShort := subagent.Config{
-		Name:               "architect_short",
-		Description:        "短篇规划师：为单卷、单冲突、高密度故事生成紧凑设定与扁平大纲",
-		Model:              architectModel,
-		SystemPrompt:       bundle.Prompts.ArchitectShort,
-		Tools:              architectTools,
-		MaxTurns:           15,
-		MaxRetries:         subagentMaxRetries,
-		ThinkingLevel:      architectThinking,
-		ToolsAreIdempotent: true,
-		OnMessage:          onMsg,
-		CacheLastMessage:   "ephemeral",
-		PromptCacheKey:     cacheBase + "-architect_short",
+		Name:             "architect_short",
+		Description:      "短篇规划师：为单卷、单冲突、高密度故事生成紧凑设定与扁平大纲",
+		Model:            architectModel,
+		SystemPrompt:     bundle.Prompts.ArchitectShort,
+		Tools:            architectTools,
+		MaxTurns:         15,
+		MaxRetries:       subagentMaxRetries,
+		ThinkingLevel:    architectThinking,
+		OnMessage:        onMsg,
+		CacheLastMessage: "ephemeral",
+		PromptCacheKey:   cacheBase + "-architect_short",
 		StopAfterToolResult: func(toolName string, result json.RawMessage) bool {
 			return foundationReadyResult(toolName, result)
 		},
@@ -216,7 +214,6 @@ func BuildWorkers(
 		MaxTurns:            20,
 		MaxRetries:          subagentMaxRetries,
 		ThinkingLevel:       architectThinking,
-		ToolsAreIdempotent:  true,
 		OnMessage:           onMsg,
 		CacheLastMessage:    "ephemeral",
 		PromptCacheKey:      cacheBase + "-architect_long",
@@ -232,19 +229,18 @@ func BuildWorkers(
 	restore.Refresh(store)
 
 	writer := subagent.Config{
-		Name:               "writer",
-		Description:        "创作者：自主完成一章的构思、写作、自审和提交",
-		Model:              writerModel,
-		SystemPrompt:       writerPrompt,
-		Tools:              writerTools,
-		MaxTurns:           30,
-		MaxRetries:         subagentMaxRetries,
-		ThinkingLevel:      resolvedRoleThinking(writerModel, cfg, "writer"),
-		ToolsAreIdempotent: true,
-		StopAfterTools:     []string{"commit_chapter"},
-		OnMessage:          onMsg,
-		CacheLastMessage:   "ephemeral",
-		PromptCacheKey:     cacheBase + "-writer",
+		Name:             "writer",
+		Description:      "创作者：自主完成一章的构思、写作、自审和提交",
+		Model:            writerModel,
+		SystemPrompt:     writerPrompt,
+		Tools:            writerTools,
+		MaxTurns:         30,
+		MaxRetries:       subagentMaxRetries,
+		ThinkingLevel:    resolvedRoleThinking(writerModel, cfg, "writer"),
+		StopAfterTools:   []string{"commit_chapter"},
+		OnMessage:        onMsg,
+		CacheLastMessage: "ephemeral",
+		PromptCacheKey:   cacheBase + "-writer",
 		StopGuardFactory: func(_, _ string) agentcore.StopGuard {
 			return guard.NewWriterStopGuard(store, onGuardBlock)
 		},
@@ -283,18 +279,17 @@ func BuildWorkers(
 	}
 
 	editor := subagent.Config{
-		Name:               "editor",
-		Description:        "审阅者：阅读原文，从结构和审美两个层面发现问题",
-		Model:              editorModel,
-		SystemPrompt:       bundle.Prompts.Editor,
-		Tools:              editorTools,
-		MaxTurns:           20,
-		MaxRetries:         subagentMaxRetries,
-		ThinkingLevel:      resolvedRoleThinking(editorModel, cfg, "editor"),
-		ToolsAreIdempotent: true,
-		OnMessage:          onMsg,
-		CacheLastMessage:   "ephemeral",
-		PromptCacheKey:     cacheBase + "-editor",
+		Name:             "editor",
+		Description:      "审阅者：阅读原文，从结构和审美两个层面发现问题",
+		Model:            editorModel,
+		SystemPrompt:     bundle.Prompts.Editor,
+		Tools:            editorTools,
+		MaxTurns:         20,
+		MaxRetries:       subagentMaxRetries,
+		ThinkingLevel:    resolvedRoleThinking(editorModel, cfg, "editor"),
+		OnMessage:        onMsg,
+		CacheLastMessage: "ephemeral",
+		PromptCacheKey:   cacheBase + "-editor",
 		// 终态产物命中即停。终态退出仍会咨询 StopGuard（契约测试 TestContract_
 		// TerminalToolExitConsultsStopGuard），任务感知的 NewEditorStopGuard 负责
 		// 否决"被派生成摘要却只做了复核"的提前退出，所以 save_review 可以安全硬停。
@@ -306,22 +301,22 @@ func BuildWorkers(
 		},
 	}
 
-	subagentTool := subagent.New(architectShort, architectLong, writer, editor)
+	runner := subagent.NewRunner(architectShort, architectLong, writer, editor)
 
-	// 运行时联动各角色推理强度(经 subagentTool override;/model 调整用)。
+	// 运行时联动各角色推理强度（/model 调整用）。
 	applyThinking := func(role string, level agentcore.ThinkingLevel) {
 		switch role {
 		case "architect":
 			level, _ = ResolveThinkingForModel(models.ForRole("architect"), level)
-			subagentTool.SetThinkingLevel("architect_short", level)
-			subagentTool.SetThinkingLevel("architect_long", level)
+			runner.SetThinkingLevel("architect_short", level)
+			runner.SetThinkingLevel("architect_long", level)
 		case "writer", "editor":
 			level, _ = ResolveThinkingForModel(models.ForRole(role), level)
-			subagentTool.SetThinkingLevel(role, level)
+			runner.SetThinkingLevel(role, level)
 		}
 	}
 
-	return subagentTool, askUser, restore, applyThinking
+	return runner, askUser, restore, applyThinking
 }
 
 type saveFoundationResult struct {

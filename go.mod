@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/muesli/termenv v0.16.0
-	github.com/voocel/agentcore v1.7.12
+	github.com/voocel/agentcore v1.7.13
 	github.com/voocel/litellm v1.8.8
 	golang.org/x/text v0.40.0
 )
