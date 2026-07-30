@@ -38,6 +38,7 @@ type Host struct {
 	bundle          assets.Bundle
 	store           *storepkg.Store
 	bookLease       *bookLease
+	styleStats      *tools.StyleStatsIndex
 	models          *bootstrap.ModelSet
 	engine          *engine
 	thinkingApplier agents.ApplyThinking // /model 调推理强度时联动各 Worker
@@ -152,7 +153,8 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 
 	// onGuardBlock 前置声明:h 构造后才能挂事件浮出闭包。
 	var onGuardBlock func(agent, reason string, consecutive int32)
-	workers, askUser, restore, applyThinking := agents.BuildWorkers(cfg, store, models, bundle, usage.Record,
+	styleStats := tools.NewStyleStatsIndex(store)
+	workers, askUser, restore, applyThinking := agents.BuildWorkers(cfg, store, styleStats, models, bundle, usage.Record,
 		func(agent, reason string, consecutive int32) {
 			if onGuardBlock != nil {
 				onGuardBlock(agent, reason, consecutive)
@@ -165,6 +167,7 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 		bundle:          bundle,
 		store:           store,
 		bookLease:       bookLease,
+		styleStats:      styleStats,
 		models:          models,
 		thinkingApplier: applyThinking,
 		askUser:         askUser,
@@ -1572,7 +1575,7 @@ func (h *Host) ImportFrom(ctx context.Context, opts imp.Options) (<-chan imp.Eve
 
 	deps := imp.Deps{
 		Store:         h.store,
-		CommitChapter: tools.NewCommitChapterTool(h.store),
+		CommitChapter: tools.NewCommitChapterTool(h.store, h.styleStats),
 		Segment:       h.importCaller("segment"),
 		Analyze:       h.importCaller("analyze"),
 		Synthesize:    h.importCaller("synthesize"),

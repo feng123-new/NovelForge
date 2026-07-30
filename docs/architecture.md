@@ -483,7 +483,7 @@ assets/
 
 改文风 → 改 `<书目录>/style/`（用户级）或 assets/voice.md（内置），文风评测集 A/B 验证；新增评审维度 → 改 editor.md（save_review 结构化接收）；新增参考资料 → 三处显式接线（`tools.References` + `loadReferences` + novel_context 注入映射）。
 
-**全书级风格统计（`internal/stylestat`）**：对全部已完成章节跑确定性统计（句式模式/高频短语/跨章重复句/章末形态），注入 `episodic_memory.style_stats`：editor 按数字裁定，writer 据此自避免。**统计归代码，裁定归 LLM**。
+**全书级风格统计（`internal/stylestat`）**：Host 为每本书创建唯一 `StyleStatsIndex`，并显式注入 `novel_context` 与 `commit_chapter`。首次启动从全部已完成章节恢复索引，后续对新增/重写章节增量更新（句式模式/高频短语/跨章重复句/章末形态），相同书状态下复用快照并注入 `episodic_memory.style_stats`：editor 按数字裁定，writer 据此自避免。离线 eval 仍可直接调用纯函数 `Compute`。**统计归代码，裁定归 LLM**。
 
 ---
 
