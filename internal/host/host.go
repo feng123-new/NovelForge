@@ -37,6 +37,7 @@ type Host struct {
 	cfg             bootstrap.Config
 	bundle          assets.Bundle
 	store           *storepkg.Store
+	bookLease       *bookLease
 	models          *bootstrap.ModelSet
 	engine          *engine
 	thinkingApplier agents.ApplyThinking // /model 调推理强度时联动各 Worker
@@ -90,6 +91,21 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 	if err := cfg.ValidateBase(); err != nil {
 		return nil, err
 	}
+
+	bookLease, err := acquireBookLease(cfg.OutputDir)
+	if err != nil {
+		return nil, err
+	}
+	keepBookLease := false
+	defer func() {
+		if keepBookLease {
+			return
+		}
+		if err := bookLease.Close(); err != nil {
+			slog.Error("释放小说目录占用失败", "module", "host", "dir", cfg.OutputDir, "err", err)
+		}
+	}()
+
 	slog.Info("启动", "module", "boot", "provider", cfg.Provider, "model", cfg.ModelName, "output", cfg.OutputDir)
 
 	// 起后台 goroutine 从 OpenRouter 刷新模型元数据（窗口/价格），磁盘缓存 24h。
@@ -148,6 +164,7 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 		cfg:             cfg,
 		bundle:          bundle,
 		store:           store,
+		bookLease:       bookLease,
 		models:          models,
 		thinkingApplier: applyThinking,
 		askUser:         askUser,
@@ -237,6 +254,7 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 		onDone:  h.runEnded,
 	}
 
+	keepBookLease = true
 	return h, nil
 }
 
@@ -874,6 +892,9 @@ func (h *Host) Close() {
 		close(h.done)
 		close(h.events)
 		close(h.streamCh)
+		if err := h.bookLease.Close(); err != nil {
+			slog.Error("释放小说目录占用失败", "module", "host", "dir", h.cfg.OutputDir, "err", err)
+		}
 	})
 }
 
