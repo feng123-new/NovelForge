@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -12,7 +11,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/voocel/ainovel-cli/internal/host"
-	"github.com/voocel/ainovel-cli/internal/tools"
 	"github.com/voocel/ainovel-cli/internal/utils"
 )
 
@@ -54,8 +52,6 @@ var toolSpinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯"
 // Model 是 TUI 的顶层状态。
 type Model struct {
 	runtime        *host.Host
-	askBridge      *askUserBridge
-	askState       *askUserState
 	cocreate       *cocreateState
 	help           *helpState
 	modelSwitch    *modelSwitchState
@@ -109,7 +105,7 @@ type Model struct {
 }
 
 // NewModel 创建 TUI Model。
-func NewModel(rt *host.Host, bridge *askUserBridge, version string) Model {
+func NewModel(rt *host.Host, version string) Model {
 	ta := textarea.New()
 	ta.Placeholder = placeholderForNewMode(startupModeQuick)
 	ta.CharLimit = 5000
@@ -145,7 +141,6 @@ func NewModel(rt *host.Host, bridge *askUserBridge, version string) Model {
 
 	return Model{
 		runtime:      rt,
-		askBridge:    bridge,
 		version:      strings.TrimSpace(version),
 		autoScroll:   true,
 		streamScroll: true,
@@ -166,7 +161,6 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		textarea.Blink,
 		listenEvents(m.runtime),
-		listenAskUser(m.askBridge),
 		listenDone(m.runtime),
 		listenStream(m.runtime),
 		tickSnapshot(m.runtime),
@@ -626,9 +620,6 @@ func (m Model) View() string {
 			AlignVertical(lipgloss.Center).
 			Render("终端宽度不足，请至少扩展到 100 列")
 	}
-	if m.askState != nil {
-		return renderAskUserModal(m.width, m.height, m.askState)
-	}
 	if m.cocreate != nil {
 		return renderCoCreateModal(m.width, m.height, m.cocreate, errorText(m.err), m.textarea.View(), m.spinnerIdx, m.quitPending)
 	}
@@ -875,83 +866,6 @@ func (m Model) exitCoCreate() (tea.Model, tea.Cmd) {
 	m.textarea.SetValue(initial)
 	m.textarea.Placeholder = placeholderForNewMode(m.startupMode)
 	return m, m.textarea.Focus()
-}
-
-func (m Model) handleAskUserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.askState == nil {
-		return m, nil
-	}
-	state := m.askState
-	q := state.currentQuestion()
-
-	if state.typing {
-		switch msg.Type {
-		case tea.KeyEsc:
-			state.cancelCurrentTyping()
-			return m, nil
-		case tea.KeyEnter:
-			if state.finishCurrentAnswer() {
-				state.submit()
-				m.askState = nil
-				return m, m.textarea.Focus()
-			}
-			return m, nil
-		case tea.KeyBackspace, tea.KeyCtrlH:
-			if state.input != "" {
-				_, size := utf8.DecodeLastRuneInString(state.input)
-				state.input = state.input[:len(state.input)-size]
-			}
-			return m, nil
-		default:
-			if msg.Type == tea.KeyRunes {
-				state.input += utils.CleanInputRunes(msg.Runes)
-			}
-			return m, nil
-		}
-	}
-
-	switch msg.Type {
-	case tea.KeyEsc:
-		// 关闭弹窗，返回空答案
-		state.request.resultCh <- askUserResult{
-			resp: &tools.AskUserResponse{
-				Answers: make(map[string]string),
-				Notes:   make(map[string]string),
-			},
-		}
-		m.askState = nil
-		return m, m.textarea.Focus()
-	case tea.KeyUp:
-		state.moveCursor(-1)
-	case tea.KeyDown:
-		state.moveCursor(1)
-	case tea.KeySpace:
-		if q.MultiSelect {
-			state.toggleSelection()
-			if state.cursor == len(q.Options) && !state.selected[state.cursor] {
-				state.input = ""
-			}
-		}
-	case tea.KeyEnter:
-		if q.MultiSelect {
-			if state.cursor == len(q.Options) {
-				state.toggleSelection()
-				if state.selected[state.cursor] {
-					state.typing = true
-				}
-				return m, nil
-			}
-			if len(state.selected) == 0 {
-				state.toggleSelection()
-			}
-		}
-		if state.finishCurrentAnswer() {
-			state.submit()
-			m.askState = nil
-			return m, m.textarea.Focus()
-		}
-	}
-	return m, nil
 }
 
 // overlayAboveInput 将 overlay 浮动叠加在 base 视图的底部（inputBox 上方），

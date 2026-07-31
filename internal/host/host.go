@@ -42,7 +42,6 @@ type Host struct {
 	models          *bootstrap.ModelSet
 	engine          *engine
 	thinkingApplier agents.ApplyThinking // /model 调推理强度时联动各 Worker
-	askUser         *tools.AskUserTool
 	writerRestore   *ctxpack.WriterRestorePack
 	userRules       *userrules.Service
 	observer        *observer
@@ -154,7 +153,7 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 	// onGuardBlock 前置声明:h 构造后才能挂事件浮出闭包。
 	var onGuardBlock func(agent, reason string, consecutive int32)
 	styleStats := tools.NewStyleStatsIndex(store)
-	workers, askUser, restore, applyThinking := agents.BuildWorkers(cfg, store, styleStats, models, bundle, usage.Record,
+	workers, restore, applyThinking := agents.BuildWorkers(cfg, store, styleStats, models, bundle, usage.Record,
 		func(agent, reason string, consecutive int32) {
 			if onGuardBlock != nil {
 				onGuardBlock(agent, reason, consecutive)
@@ -170,7 +169,6 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 		styleStats:      styleStats,
 		models:          models,
 		thinkingApplier: applyThinking,
-		askUser:         askUser,
 		writerRestore:   restore,
 		userRules:       userrules.NewService(store, models.Default, rules.DefaultOptions()),
 		usage:           usage,
@@ -980,11 +978,10 @@ func (h *Host) runEndBody(novelName, summary string) string {
 // 不再用独立 clearCh —— 双通道无序导致 ✻ header 时常落到上一个 round 末尾。
 const StreamClearSentinel = "\x00\x00CLEAR\x00\x00"
 
-func (h *Host) Events() <-chan Event        { return h.events }
-func (h *Host) Stream() <-chan string       { return h.streamCh }
-func (h *Host) Done() <-chan struct{}       { return h.done }
-func (h *Host) Dir() string                 { return h.store.Dir() }
-func (h *Host) AskUser() *tools.AskUserTool { return h.askUser }
+func (h *Host) Events() <-chan Event  { return h.events }
+func (h *Host) Stream() <-chan string { return h.streamCh }
+func (h *Host) Done() <-chan struct{} { return h.done }
+func (h *Host) Dir() string           { return h.store.Dir() }
 
 // ── 事件发射 ──
 

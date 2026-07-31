@@ -104,8 +104,8 @@ func resolvedRoleThinking(model agentcore.ChatModel, cfg bootstrap.Config, role 
 // BuildWorkers 组装三个 Worker(architect_short/long、writer、editor)为可程序化
 // 调用的 subagent.Runner。Engine 直接调用其类型化入口，无 LLM 工具层
 // (docs/engine-rfc.md §1)。
-// 返回 Runner、AskUserTool、WriterRestorePack 与 ApplyThinking(运行时 /model 联动
-// 各角色推理强度;writer/architect/editor 的 ContextManager 走工厂自动重建)。
+// 返回 Runner、WriterRestorePack 与 ApplyThinking(运行时 /model 联动各角色推理强度;
+// writer/architect/editor 的 ContextManager 走工厂自动重建)。
 // onGuardBlock 可选(nil 安全):各 Worker StopGuard 的拦截/升级审计回调。
 func BuildWorkers(
 	cfg bootstrap.Config,
@@ -115,11 +115,10 @@ func BuildWorkers(
 	bundle assets.Bundle,
 	recordUsage UsageRecorder,
 	onGuardBlock guard.BlockHook,
-) (*subagent.Runner, *tools.AskUserTool, *ctxpack.WriterRestorePack, ApplyThinking) {
+) (*subagent.Runner, *ctxpack.WriterRestorePack, ApplyThinking) {
 	// 共享工具
 	contextTool := tools.NewContextTool(store, bundle.References, cfg.Style, styleStats)
 	readChapter := tools.NewReadChapterTool(store)
-	askUser := tools.NewAskUserTool()
 
 	architectTools := []agentcore.Tool{
 		contextTool,
@@ -318,7 +317,7 @@ func BuildWorkers(
 		}
 	}
 
-	return runner, askUser, restore, applyThinking
+	return runner, restore, applyThinking
 }
 
 type saveFoundationResult struct {
