@@ -198,7 +198,7 @@ ToolResultMicrocompact → LightTrim → StoreSummaryCompact → FullSummary
 curl -fsSL https://raw.githubusercontent.com/voocel/ainovel-cli/main/scripts/install.sh | sh
 
 # 安装指定版本
-curl -fsSL https://raw.githubusercontent.com/voocel/ainovel-cli/main/scripts/install.sh | sh -s -- v1.2.3
+curl -fsSL https://raw.githubusercontent.com/voocel/ainovel-cli/v1.2.3/scripts/install.sh | sh -s -- v1.2.3
 
 # 或通过 Go 安装
 go install github.com/voocel/ainovel-cli/cmd/ainovel-cli@latest
@@ -212,6 +212,7 @@ ainovel-cli
 ```
 
 > Windows 或手动安装：前往 [Releases](https://github.com/voocel/ainovel-cli/releases/latest) 下载对应平台的包。
+> 安装脚本会从同一 GitHub Release 下载 SHA256 清单，校验通过后才提取并安装二进制。
 
 ### Docker
 
@@ -566,6 +567,8 @@ output/{novel_name}/
 ├── summaries/          # 章节摘要（JSON）
 ├── drafts/             # 章节草稿
 ├── reviews/            # 评审报告
+├── timeline.jsonl      # 时间线事实（追加日志）
+├── timeline.md         # 时间线可读投影
 ├── meta/
 │   ├── premise.md      # 故事前提
 │   ├── outline.json    # 扁平章节大纲（仅含已展开的章节）
@@ -574,9 +577,8 @@ output/{novel_name}/
 │   ├── characters.json # 角色档案
 │   ├── world_rules.json# 世界规则
 │   ├── progress.json   # 进度状态
-│   ├── timeline.json   # 时间线
 │   ├── foreshadow.json # 伏笔台账
-│   ├── state_changes.json # 角色状态变化记录
+│   ├── state_changes.jsonl # 角色状态变化追加日志
 │   ├── style_rules.json# 写作风格规则（弧边界时提炼）
 │   ├── snapshots/      # 角色状态快照（长篇）
 │   ├── checkpoints.jsonl # Step 级 checkpoint（每个工具成功后追加）

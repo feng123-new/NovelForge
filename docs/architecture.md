@@ -151,6 +151,7 @@ Artifact 在 `store/outline.go` `drafts.go` `summaries.go` `characters.go` `worl
 
 - **Signals**：`PendingCommit`（commit 中断恢复）。启动/恢复时读，运行时不读。
 - **Decisions**（`meta/decisions.jsonl`）：每次 Arbiter 裁定的审计记录（facts+input+decision），可离线重放；**不是恢复数据源**（恢复只依赖 Progress/Checkpoint/RunMeta）。
+- **增长型世界事实**：时间线与角色状态变化分别以 `timeline.jsonl`、`meta/state_changes.jsonl` 追加；进程内维护去重索引，正常提交只写本章增量。旧版 JSON 数组在下一次追加时按“先原子写新日志、后删除旧文件”的幂等协议迁移，`timeline.md` 是可重建的人类可读投影。
 - **大纲反馈池**（`meta/outline_feedback.jsonl`）：writer 的 commit feedback 落盘（仅分层书），architect 下次结构操作经 novel_context 参考后清空。
 - **机械违规记录**（`meta/rule_violations.jsonl`）：commit 时按 user_rules 检查的结果，editor 评审经 `novel_context(chapter=N)` 消费；best-effort 质量元数据，非与提交同级强一致。
 
