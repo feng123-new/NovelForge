@@ -792,6 +792,7 @@ func (m Model) handleCoCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// 导致 "abc\ndef" 被吞成 "abcdef"，与 base 路径语义不一致。
 		if !m.lastKeyAt.IsZero() && time.Since(m.lastKeyAt) < 50*time.Millisecond {
 			var cmd tea.Cmd
+			state.resetSuggestionInput()
 			m.textarea, cmd = m.textarea.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
 			m.refitTextareaHeight()
 			return m, cmd
@@ -811,22 +812,21 @@ func (m Model) handleCoCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd := m.sendCoCreate()
 		return m, cmd
 	case tea.KeyCtrlU:
+		state.resetSuggestionInput()
 		m.textarea.Reset()
 		m.refitTextareaHeight()
 		return m, nil
 	}
 
-	// 数字键 1/2/3 在 textarea 为空且有建议时 → 填入对应建议（不发送，可编辑）。
-	// 仅在空输入框时拦截，避免影响用户主动打数字。awaiting 时建议不展示，
-	// 这里也无需额外判断（state.suggestions 为空即跳过）。
+	// 数字键 1/2/3 可连续组合建议：首次填入，后续用分号追加，重复选择忽略。
+	// 任意手动编辑都会退出快捷组合状态，之后的数字保持普通输入语义。
 	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && !state.awaiting {
 		if r := msg.Runes[0]; r >= '1' && r <= '3' {
-			if strings.TrimSpace(m.textarea.Value()) == "" {
-				if sugs := state.suggestions(); int(r-'0') <= len(sugs) {
-					m.textarea.SetValue(sugs[r-'1'])
-					m.refitTextareaHeight()
-					return m, nil
-				}
+			if value, handled := state.appendSuggestion(int(r-'1'), m.textarea.Value()); handled {
+				m.textarea.SetValue(value)
+				m.textarea.CursorEnd()
+				m.refitTextareaHeight()
+				return m, nil
 			}
 		}
 	}
@@ -839,6 +839,7 @@ func (m Model) handleCoCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg, ok = cleanHumanKeyRunes(msg); !ok {
 		return m, nil
 	}
+	state.resetSuggestionInput()
 	if msg.Type == tea.KeyRunes {
 		m.lastKeyAt = time.Now()
 	}
