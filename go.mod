@@ -9,8 +9,8 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/gofrs/flock v0.13.0
 	github.com/muesli/termenv v0.16.0
-	github.com/voocel/agentcore v1.8.0
-	github.com/voocel/litellm v1.8.8
+	github.com/voocel/agentcore v1.8.1
+	github.com/voocel/litellm v1.8.9
 	golang.org/x/text v0.40.0
 )
 

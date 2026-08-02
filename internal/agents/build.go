@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/voocel/agentcore"
 	corecontext "github.com/voocel/agentcore/context"
@@ -246,21 +245,17 @@ func BuildWorkers(
 			return guard.NewWriterStopGuard(store, onGuardBlock)
 		},
 		ContextManagerFactory: func(model agentcore.ChatModel) agentcore.ContextManager {
-			// 每次 subagent(writer) 调用都会重建，从当前 runModel 读取最新模型名。
-			// /model 切换 writer 后下一章自动用新窗口。
+			// 每章按当前 writer 模型重建上下文管理器。
 			window, _ := models.ResolveContextWindow(bootstrap.ModelProvider(model), bootstrap.ModelName(model))
 			return newContextManager(contextManagerConfig{
-				Model:            model,
-				ContextWindow:    window,
-				ReserveTokens:    bootstrap.CompactReserveTokens(window),
-				KeepRecentTokens: 20000,
-				Agent:            "writer",
-				// 投影提交为新 baseline。瞬态投影在越阈后每次调用都重投影、
-				// 切点滑动，等于每轮改写请求前缀（缓存全灭）；提交后回到
-				// append-only，直到下次越阈。
-				CommitOnProject: true,
+				Model:         model,
+				ContextWindow: window,
+				ReserveTokens: bootstrap.CompactReserveTokens(window),
+				Agent:         "writer",
+				// 提交投影，避免后续轮次反复改写请求前缀。
+				CommitProjected: true,
 				ToolMicrocompact: &corecontext.ToolResultMicrocompactConfig{
-					IdleThreshold: 5 * time.Minute,
+					MinResultTokens: 200,
 				},
 				ExtraStrategies: []corecontext.Strategy{
 					ctxpack.NewStoreSummaryCompact(ctxpack.StoreSummaryCompactConfig{
