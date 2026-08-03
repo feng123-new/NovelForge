@@ -1,6 +1,7 @@
 package host
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ func TestObserverSubagentRetryEventsUpdateSameLinePerAgent(t *testing.T) {
 				Agent:      "writer",
 				Attempt:    i,
 				MaxRetries: 7,
-				Message:    "stream failed",
+				Message:    "stream read error: INTERNAL_ERROR; received from peer [network, openai]",
 			},
 		})
 	}
@@ -54,6 +55,29 @@ func TestObserverSubagentRetryEventsUpdateSameLinePerAgent(t *testing.T) {
 	}
 	if events[1].RetryAt.IsZero() || !strings.Contains(events[1].Detail, "重试 (2/7，2s后)") {
 		t.Fatalf("event = %+v, want RetryAt deadline + static delay in Detail", events[1])
+	}
+	if events[1].Kind != "network" {
+		t.Fatalf("event kind = %q, want network", events[1].Kind)
+	}
+}
+
+func TestObserverDispatchErrorUpdatesSingleEventWithDetail(t *testing.T) {
+	var events []Event
+	o := testObserver(&events)
+
+	o.dispatchStart("architect_long", "规划长篇小说")
+	runErr := errors.New("stream read error: INTERNAL_ERROR; received from peer [network, openai]")
+	o.dispatchFinish("architect_long", runErr)
+
+	if len(events) != 2 {
+		t.Fatalf("start + failed update 应只有 2 个原始事件，got %d: %+v", len(events), events)
+	}
+	start, failed := events[0], events[1]
+	if failed.ID != start.ID || failed.Category != "DISPATCH" || !failed.Failed || failed.Level != "error" {
+		t.Fatalf("失败应原地更新 DISPATCH: start=%+v failed=%+v", start, failed)
+	}
+	if failed.Detail != runErr.Error() || failed.Kind != "network" || !strings.Contains(failed.Summary, "INTERNAL_ERROR") {
+		t.Fatalf("DISPATCH 应携带完整错误和分类: %+v", failed)
 	}
 }
 
@@ -100,5 +124,39 @@ func TestObserverSubagentToolDeltaUpdatesSaveFoundationTypeAcrossChunks(t *testi
 	}
 	if !strings.Contains(strings.Join(summaries, "\n"), "save_foundation[premise]") {
 		t.Fatalf("summaries = %v, want save_foundation[premise]", summaries)
+	}
+}
+
+func TestObserverToolErrorUpdatesSingleToolEventWithFullDetail(t *testing.T) {
+	var events []Event
+	o := testObserver(&events)
+
+	o.handleToolUpdate(agentcore.Event{
+		Type: agentcore.EventToolExecUpdate,
+		Progress: &agentcore.ProgressPayload{
+			Kind:  agentcore.ProgressToolStart,
+			Agent: "writer",
+			Tool:  "edit_chapter",
+		},
+	})
+	o.handleToolUpdate(agentcore.Event{
+		Type: agentcore.EventToolExecUpdate,
+		Progress: &agentcore.ProgressPayload{
+			Kind:    agentcore.ProgressToolError,
+			Agent:   "writer",
+			Tool:    "edit_chapter",
+			Message: "old_string 无法精确匹配草稿",
+		},
+	})
+
+	if len(events) != 2 {
+		t.Fatalf("start + failed update 应只有 2 个原始事件，got %d: %+v", len(events), events)
+	}
+	start, failed := events[0], events[1]
+	if failed.ID == "" || failed.ID != start.ID || !failed.Failed || failed.Category != "TOOL" || failed.Level != "error" {
+		t.Fatalf("失败事件应原地更新 TOOL 行: start=%+v failed=%+v", start, failed)
+	}
+	if !strings.Contains(failed.Summary, "old_string") || !strings.Contains(failed.Detail, "无法精确匹配草稿") {
+		t.Fatalf("失败事件应同时保留 UI 摘要和完整日志详情: %+v", failed)
 	}
 }

@@ -62,6 +62,9 @@ type engine struct {
 	repeats int
 	// 失败重试:同指令键仅重试一次,再败问 Arbiter。
 	failedKey string
+	// 保留同指令最近一次 Worker 错误，让僵局裁定看到真实失败原因。
+	lastWorkerErrorKey string
+	lastWorkerError    error
 }
 
 // deadlockConsultAt / deadlockAbortAt:repeats 达到前者问 Arbiter,达到后者硬熔断。
@@ -100,6 +103,7 @@ func (e *engine) start(initial *flow.Instruction) bool {
 		e.deferGateForNext = false
 	}
 	e.lastKey, e.repeats, e.failedKey = "", 0, ""
+	e.lastWorkerErrorKey, e.lastWorkerError = "", nil
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
@@ -237,7 +241,11 @@ func (e *engine) run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		e.rememberWorkerError(inst, err)
 		if err != nil {
+			// trackDeadlock 在派发前预记本次尝试。未进入有效 Worker
+			// 语义执行的错误不能被计为“同一任务无进展”。
+			e.discardNonSemanticDeadlockAttempt(inst, err)
 			if stop := e.handleWorkerError(ctx, inst, err); stop {
 				return
 			}
@@ -414,7 +422,7 @@ func (e *engine) trackDeadlock(ctx context.Context, inst **flow.Instruction) (st
 		*inst = nil
 		return false
 	}
-	key := in.Agent + "\x00" + in.Task
+	key := instructionKey(in)
 	if key == e.lastKey {
 		e.repeats++
 	} else {
@@ -428,7 +436,7 @@ func (e *engine) trackDeadlock(ctx context.Context, inst **flow.Instruction) (st
 		return true
 	}
 	// Arbiter 僵局咨询(repeats ∈ [consultAt, abortAt))。裁定 retry 不清零计数。
-	facts := e.failureFacts("deadlock", in, nil)
+	facts := e.failureFacts("deadlock", in, e.workerErrorFor(in))
 	decision, err := runObservedDecision(e.observer, "僵局裁定", func() (arbiter.FailureDecision, error) {
 		return arbiter.DecideFailure(ctx, e.arbiterModel, e.failurePrompt, facts)
 	})
@@ -456,12 +464,14 @@ func (e *engine) runWorker(ctx context.Context, inst *flow.Instruction) error {
 	// Writer 任务预标进行中(与旧 Dispatcher 一致:UI 大纲立即反映"▸ 进行中")。
 	if inst.Agent == "writer" && inst.Chapter > 0 {
 		if err := e.store.Progress.ValidateChapterWork(inst.Chapter); err != nil {
-			e.observer.dispatchFinish(inst.Agent, true)
-			return fmt.Errorf("%w: %w", errInvalidWriteTarget, err)
+			runErr := fmt.Errorf("%w: %w", errInvalidWriteTarget, err)
+			e.observer.dispatchFinish(inst.Agent, runErr)
+			return runErr
 		}
 		if err := e.store.Progress.StartChapter(inst.Chapter); err != nil {
-			e.observer.dispatchFinish(inst.Agent, true)
-			return fmt.Errorf("%w: 预标第 %d 章进行中失败: %w", errInvalidWriteTarget, inst.Chapter, err)
+			runErr := fmt.Errorf("%w: 预标第 %d 章进行中失败: %w", errInvalidWriteTarget, inst.Chapter, err)
+			e.observer.dispatchFinish(inst.Agent, runErr)
+			return runErr
 		}
 	}
 
@@ -474,7 +484,7 @@ func (e *engine) runWorker(ctx context.Context, inst *flow.Instruction) error {
 		// 成功即清失败追踪:同键的下一次失败重新享有"先重试一次"额度。
 		e.failedKey = ""
 	}
-	e.observer.dispatchFinish(inst.Agent, err != nil)
+	e.observer.dispatchFinish(inst.Agent, err)
 	return err
 }
 
@@ -483,10 +493,8 @@ func (e *engine) runWorker(ctx context.Context, inst *flow.Instruction) error {
 // 负责阻止不合法写入。
 func (e *engine) handleWorkerError(ctx context.Context, inst *flow.Instruction, werr error) (stop bool) {
 	msg := werr.Error()
-	e.emitEvent(Event{Time: time.Now(), Category: "ERROR", Agent: inst.Agent,
-		Summary: truncate(fmt.Sprintf("%s 失败: %s", inst.Agent, msg), 120), Detail: msg, Level: "error"})
 
-	key := inst.Agent + "\x00" + inst.Task
+	key := instructionKey(inst)
 	if e.failedKey != key {
 		// 首败:原指令重试一次(下一轮 Route 重算,事实驱动天然幂等)。
 		e.failedKey = key
@@ -515,6 +523,61 @@ func (e *engine) handleWorkerError(ctx context.Context, inst *flow.Instruction, 
 		e.pauseWithNotify(notify.KindWorkerFailure, "失败裁定: "+decision.Reason+contentFilterAdvice(werr))
 		return true
 	}
+}
+
+// discardNonSemanticDeadlockAttempt 撤销 trackDeadlock 为本次派发预记的
+// 语义尝试。只排除模型调用未完整执行的稳定错误类型；content_filter
+// 保留在原有自愈路径，max_turns、stop_guard、取消等真实无进展仍计数。
+func (e *engine) discardNonSemanticDeadlockAttempt(inst *flow.Instruction, werr error) {
+	if inst == nil || !isNonSemanticWorkerFailure(werr) {
+		return
+	}
+	key := instructionKey(inst)
+	if e.lastKey != key || e.repeats <= 0 {
+		return
+	}
+	e.repeats--
+	if e.repeats == 0 {
+		e.lastKey = ""
+	}
+}
+
+// isNonSemanticWorkerFailure 仅识别“本次模型执行没有产生可判断语义”的错误。
+// 依赖 agentcore 的错误链契约与 Provider 边界分类，不在 host 层匹配错误文案。
+func isNonSemanticWorkerFailure(err error) bool {
+	if errors.Is(err, agentcore.ErrContextOverflow) || errors.Is(err, agentcore.ErrStreamPartial) {
+		return true
+	}
+	providerErr := agentcore.ClassifyProvider(err)
+	return errors.Is(providerErr, agentcore.ErrProviderStreamIdle) ||
+		errors.Is(providerErr, agentcore.ErrProviderQuota) ||
+		errors.Is(providerErr, agentcore.ErrProviderRateLimit) ||
+		errors.Is(providerErr, agentcore.ErrProviderTimeout) ||
+		errors.Is(providerErr, agentcore.ErrProviderAuth) ||
+		errors.Is(providerErr, agentcore.ErrProviderNetwork) ||
+		errors.Is(providerErr, agentcore.ErrProviderOverloaded)
+}
+
+func instructionKey(inst *flow.Instruction) string {
+	if inst == nil {
+		return ""
+	}
+	return inst.Agent + "\x00" + inst.Task
+}
+
+func (e *engine) rememberWorkerError(inst *flow.Instruction, workerErr error) {
+	if workerErr == nil || inst == nil {
+		e.lastWorkerErrorKey, e.lastWorkerError = "", nil
+		return
+	}
+	e.lastWorkerErrorKey, e.lastWorkerError = instructionKey(inst), workerErr
+}
+
+func (e *engine) workerErrorFor(inst *flow.Instruction) error {
+	if e.lastWorkerErrorKey != instructionKey(inst) {
+		return nil
+	}
+	return e.lastWorkerError
 }
 
 // contentFilterAdvice 给内容审核拦截的暂停附上用户可执行的出路。

@@ -805,6 +805,12 @@ func (m *Model) applyEvent(ev host.Event) {
 			if ev.Level != "" {
 				existing.Level = ev.Level
 			}
+			if ev.Detail != "" {
+				existing.Detail = ev.Detail
+			}
+			if ev.Kind != "" {
+				existing.Kind = ev.Kind
+			}
 			// Summary 非空时允许覆盖（结束态可能带补充信息）；否则保留首次
 			if ev.Summary != "" {
 				existing.Summary = ev.Summary

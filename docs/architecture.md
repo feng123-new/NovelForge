@@ -194,7 +194,7 @@ Artifact 在 `store/outline.go` `drafts.go` `summaries.go` `characters.go` `worl
 
 `commit_chapter` 承担弧/卷/全书完成检测，返回结构化事实；`save_review` 不做文学阈值裁定，只校验审阅事实并把 Editor 给出的 verdict 原子映射为 Flow 与返工队列。
 
-`edit_chapter` 是 `agentcore.EditTool` 的薄封装，归属检查保证已完成章节必须在 `PendingRewrites` 中才能编辑。
+`edit_chapter` 是 `agentcore.EditTool` 的薄封装，仅允许编辑已完成且位于 `PendingRewrites` 的章节；新章初稿需通过 `draft_chapter(mode="write")` 整章覆盖。
 
 ### 5.3 错误分层
 
@@ -255,7 +255,7 @@ Worker 之间不直接通信，所有信息流经 Store 中的结构化工件：
 | `StopAfterTools` / `StopAfterToolResult` | `agents/build.go` SubAgentConfig | 关键工具成功即退出 Worker run（终态退出仍咨询 StopGuard，见契约测试）。Writer `commit_chapter` 命中即停；Editor 的 `save_review`/`save_arc_summary`/`save_volume_summary`、Architect 弧/卷收尾走 `StopAfterToolResult` |
 | `CheckpointDeltaGuard` | `agents/guard/subagent_guards.go` | 以 baseline checkpoint 为分界，本轮结束前必须看到对应 step 的新 checkpoint，否则拒绝 `end_turn`；连续拦 3 次升级 terminate（弱模型死循环兜底）。Editor 的 guard 任务感知：被派生成摘要时仅复核不算完成 |
 | 工具内联 `next_step` | 各工具返回值字段 | 每个事实自带"下一步建议"，LLM 看到事实就知道下一步 |
-| 工具内归属/前置检查 | `edit_chapter` `commit_chapter` 等 | 数据层物理拦截：改未入队的已完成章被拒、空提交被拒、`ConcurrencySafe=false` 阻止并发竞态 |
+| 工具内归属/前置检查 | `edit_chapter` `commit_chapter` 等 | 数据层物理拦截：初稿定点编辑、改未入队的已完成章、空提交均被拒，`ConcurrencySafe=false` 阻止并发竞态 |
 
 writer.md 只承担：执行协议、断点续跑认知模型、章节契约解读；写作标准在文风层（`{{VOICE}}` 占位回填，用户可覆盖，见 `docs/voice-layer.md`）。**这正是文风层敢开放给用户的前提：不变量住在工具层，prompt 随便改坏不了状态机。**
 

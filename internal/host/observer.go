@@ -6,12 +6,12 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/voocel/agentcore"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
-	"sync/atomic"
 )
 
 // errorKind classifies a runtime error into a stable, short label for log
@@ -21,11 +21,19 @@ import (
 // the rendered string fallback used when the chain has been flattened
 // (e.g. inside sub-agent JSON results).
 func errorKind(err error, msg string) string {
-	if err != nil && errors.Is(err, agentcore.ErrProviderStreamIdle) {
-		return "stream_idle"
+	if kind := agentcore.ErrorKind(err); kind != "" && kind != "unknown" {
+		return kind
 	}
-	if msg != "" && agentcore.IsStreamIdleMessage(msg) {
-		return "stream_idle"
+	if msg == "" {
+		return ""
+	}
+	if kind := agentcore.ErrorKind(errors.New(msg)); kind != "unknown" {
+		return kind
+	}
+	// providerError 会把 litellm 的结构化类型附在文本末尾。
+	// HTTP/2 INTERNAL_ERROR 本身没有可分类关键词，保留这个显式 network 标记即可。
+	if strings.Contains(strings.ToLower(msg), "[network,") {
+		return "network"
 	}
 	return ""
 }
@@ -138,7 +146,7 @@ func (o *observer) dispatchStart(agent, task string) {
 
 // dispatchFinish 把 DISPATCH 行落成完成态并复位 Worker 状态;
 // 清理该 Worker 名下的孤儿 TOOL 行(abort/错误路径 ProgressToolEnd 可能缺席)。
-func (o *observer) dispatchFinish(agent string, failed bool) {
+func (o *observer) dispatchFinish(agent string, runErr error) {
 	o.updateAgent(agent, func(a *agentState) {
 		a.state = "idle"
 		a.tool = ""
@@ -147,11 +155,11 @@ func (o *observer) dispatchFinish(agent string, failed bool) {
 	if call, ok := o.toolStarts[agent]; ok {
 		delete(o.toolStarts, agent)
 		delete(o.streamExtractors, agent)
-		o.emitCallFinish(call, "TOOL", agent, failed)
+		o.emitCallFinish(call, "TOOL", agent, runErr)
 	}
 	if call, ok := o.dispatchStarts[agent]; ok {
 		delete(o.dispatchStarts, agent)
-		o.emitCallFinish(call, "DISPATCH", agent, failed)
+		o.emitCallFinish(call, "DISPATCH", agent, runErr)
 	}
 	o.streamClear()
 }
@@ -200,8 +208,10 @@ func (o *observer) persistEvent(ev Event) {
 		return
 	}
 	priority := domain.RuntimePriorityBackground
-	switch ev.Category {
-	case "SYSTEM", "ERROR":
+	switch {
+	case ev.Level == "error":
+		priority = domain.RuntimePriorityControl
+	case ev.Category == "SYSTEM" || ev.Category == "ERROR":
 		priority = domain.RuntimePriorityControl
 	}
 	if _, err := o.store.Runtime.AppendQueue(domain.RuntimeQueueItem{

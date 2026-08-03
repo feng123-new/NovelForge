@@ -1,11 +1,11 @@
 package host
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"encoding/json"
 	"github.com/voocel/agentcore"
 )
 
@@ -112,9 +112,12 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 		if msg == "" {
 			msg = "unknown error"
 		}
-		// 如果有进行中的 TOOL 行，原地标记为失败；否则独立追加 ERROR 行。
+		// 如果有进行中的 TOOL 行，原地标记为失败并把完整错误放进 Detail。
+		// 同一次失败只生成一个 ERROR 级事件，避免 TOOL 失败态与附加 ERROR
+		// 详情在 tui.log 中被误读成两次独立故障。
 		if call, ok := o.toolStarts[ev.Progress.Agent]; ok {
 			delete(o.toolStarts, ev.Progress.Agent)
+			detail := fmt.Sprintf("%s 错误: %s", ev.Progress.Tool, msg)
 			finishEv := Event{
 				ID:         call.id,
 				Time:       call.start,
@@ -122,15 +125,18 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 				Failed:     true,
 				Category:   "TOOL",
 				Agent:      ev.Progress.Agent,
-				Summary:    call.summary,
+				Summary:    fmt.Sprintf("%s 错误: %s", call.summary, truncate(msg, 100)),
+				Detail:     detail,
+				Kind:       errorKind(nil, msg),
 				Level:      "error",
 				Depth:      call.depth,
 				Duration:   time.Since(call.start),
 			}
 			o.emitEv(finishEv)
 			o.persistEvent(finishEv)
+			return
 		}
-		// 附加 ERROR 详情行（补充错误信息，便于排查）
+		// 极少数缺失 start 的进度流无法原地更新，保留独立 ERROR 事件暴露故障。
 		errEv := Event{
 			Time:     time.Now(),
 			Category: "ERROR",
@@ -283,13 +289,22 @@ func firstJSONStringField(raw, field string) string {
 	return ""
 }
 
-func (o *observer) emitCallFinish(call *activeCall, category, agentName string, failed bool) {
+func (o *observer) emitCallFinish(call *activeCall, category, agentName string, callErr error) {
 	if call == nil {
 		return
 	}
+	failed := callErr != nil
 	level := "success"
 	if failed {
 		level = "error"
+	}
+	summary := call.summary
+	detail := ""
+	kind := ""
+	if failed {
+		detail = callErr.Error()
+		kind = errorKind(callErr, detail)
+		summary = fmt.Sprintf("%s 错误: %s", call.summary, truncate(detail, 100))
 	}
 	finishEv := Event{
 		ID:         call.id,
@@ -298,7 +313,9 @@ func (o *observer) emitCallFinish(call *activeCall, category, agentName string, 
 		Failed:     failed,
 		Category:   category,
 		Agent:      agentName,
-		Summary:    call.summary,
+		Summary:    summary,
+		Detail:     detail,
+		Kind:       kind,
 		Level:      level,
 		Depth:      call.depth,
 		Duration:   time.Since(call.start),
