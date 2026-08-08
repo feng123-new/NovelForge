@@ -543,19 +543,23 @@ func (e *engine) discardNonSemanticDeadlockAttempt(inst *flow.Instruction, werr 
 }
 
 // isNonSemanticWorkerFailure 仅识别“本次模型执行没有产生可判断语义”的错误。
-// 依赖 agentcore 的错误链契约与 Provider 边界分类，不在 host 层匹配错误文案。
+// 优先依赖 agentcore 的错误链契约；错误链被供应商扁平化时复用日志分类。
 func isNonSemanticWorkerFailure(err error) bool {
+	if err == nil {
+		return false
+	}
 	if errors.Is(err, agentcore.ErrContextOverflow) || errors.Is(err, agentcore.ErrStreamPartial) {
 		return true
 	}
 	providerErr := agentcore.ClassifyProvider(err)
-	return errors.Is(providerErr, agentcore.ErrProviderStreamIdle) ||
+	classified := errors.Is(providerErr, agentcore.ErrProviderStreamIdle) ||
 		errors.Is(providerErr, agentcore.ErrProviderQuota) ||
 		errors.Is(providerErr, agentcore.ErrProviderRateLimit) ||
 		errors.Is(providerErr, agentcore.ErrProviderTimeout) ||
 		errors.Is(providerErr, agentcore.ErrProviderAuth) ||
 		errors.Is(providerErr, agentcore.ErrProviderNetwork) ||
 		errors.Is(providerErr, agentcore.ErrProviderOverloaded)
+	return classified || errorKind(err, err.Error()) == "overloaded"
 }
 
 func instructionKey(inst *flow.Instruction) string {
@@ -599,7 +603,10 @@ func (e *engine) failureFacts(kind string, inst *flow.Instruction, workerErr err
 	f := arbiter.FailureFacts{Kind: kind, Agent: inst.Agent, Task: inst.Task, Repeats: e.repeats}
 	if workerErr != nil {
 		f.Error = workerErr.Error()
-		f.ErrorKind = agentcore.ErrorKind(workerErr)
+		f.ErrorKind = errorKind(workerErr, f.Error)
+		if f.ErrorKind == "" {
+			f.ErrorKind = "unknown"
+		}
 	}
 	missing, err := e.store.FoundationMissing()
 	if err != nil {

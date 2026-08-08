@@ -64,6 +64,7 @@ func TestIsNonSemanticWorkerFailure(t *testing.T) {
 		err  error
 		want bool
 	}{
+		{name: "nil", err: nil, want: false},
 		{name: "context overflow", err: agentcore.ErrContextOverflow, want: true},
 		{name: "partial stream", err: agentcore.ErrStreamPartial, want: true},
 		{name: "stream idle", err: agentcore.ErrProviderStreamIdle, want: true},
@@ -74,6 +75,7 @@ func TestIsNonSemanticWorkerFailure(t *testing.T) {
 		{name: "network wrapped", err: fmt.Errorf("provider: %w", agentcore.ErrProviderNetwork), want: true},
 		{name: "raw EOF", err: fmt.Errorf("upstream closed: EOF"), want: true},
 		{name: "overloaded", err: agentcore.ErrProviderOverloaded, want: true},
+		{name: "flattened overloaded", err: fmt.Errorf("bad_response_status_code: Too many concurrent requests [provider, HTTP 500, openai]"), want: true},
 		{name: "content filter", err: agentcore.ErrProviderContentFilter, want: false},
 		{name: "max turns", err: agentcore.ErrMaxTurns, want: false},
 		{name: "stop guard", err: agentcore.ErrStopGuard, want: false},

@@ -1,6 +1,7 @@
 package host
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -39,6 +40,7 @@ func TestObserverSubagentRetryEventsUpdateSameLinePerAgent(t *testing.T) {
 				Attempt:    i,
 				MaxRetries: 7,
 				Message:    "stream read error: INTERNAL_ERROR; received from peer [network, openai]",
+				Meta:       json.RawMessage(`{"retry_delay_ms":2000}`),
 			},
 		})
 	}
@@ -58,6 +60,32 @@ func TestObserverSubagentRetryEventsUpdateSameLinePerAgent(t *testing.T) {
 	}
 	if events[1].Kind != "network" {
 		t.Fatalf("event kind = %q, want network", events[1].Kind)
+	}
+}
+
+func TestRetryProgressDelayRequiresReportedDelay(t *testing.T) {
+	p := &agentcore.ProgressPayload{Attempt: 3, MaxRetries: 7}
+	if got := retryProgressDelay(p); got != 0 {
+		t.Fatalf("unreported delay = %s, want 0", got)
+	}
+	p.Meta = json.RawMessage(`{"retry_delay_ms":4500}`)
+	if got := retryProgressDelay(p); got.String() != "4.5s" {
+		t.Fatalf("reported delay = %s, want 4.5s", got)
+	}
+}
+
+func TestErrorKindFromFlattenedMessage(t *testing.T) {
+	tests := []struct {
+		message string
+		want    string
+	}{
+		{message: "tool argument validation failed: invalid JSON", want: "tool_validation"},
+		{message: "bad_response_status_code: Too many concurrent requests [provider, HTTP 500, openai]", want: "overloaded"},
+	}
+	for _, tt := range tests {
+		if got := errorKind(nil, tt.message); got != tt.want {
+			t.Fatalf("errorKind(%q) = %q, want %q", tt.message, got, tt.want)
+		}
 	}
 }
 

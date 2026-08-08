@@ -30,9 +30,15 @@ func errorKind(err error, msg string) string {
 	if kind := agentcore.ErrorKind(errors.New(msg)); kind != "unknown" {
 		return kind
 	}
+	lower := strings.ToLower(msg)
+	switch {
+	case strings.Contains(lower, "tool argument validation failed"):
+		return "tool_validation"
+	case strings.Contains(lower, "too many concurrent requests"):
+		return "overloaded"
 	// providerError 会把 litellm 的结构化类型附在文本末尾。
 	// HTTP/2 INTERNAL_ERROR 本身没有可分类关键词，保留这个显式 network 标记即可。
-	if strings.Contains(strings.ToLower(msg), "[network,") {
+	case strings.Contains(lower, "[network,"):
 		return "network"
 	}
 	return ""
