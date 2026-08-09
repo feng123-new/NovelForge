@@ -41,6 +41,8 @@
 
 UI、诊断、事件日志都是从事件流 / 只读工件投影出来的被动消费者。读事实，不产生事实，不影响控制流。
 
+观测数据严格分三层：`agentcore.ProgressPayload` 是传输层，错误文本必须完整且不得包含 UI 截断策略；`host.Event.Summary` 是短展示语义，`Detail` 是完整诊断；文件日志优先写完整 `Detail`，TUI 只读 `Summary` 并在最终渲染时按终端宽度截断。文件 logger 由 `Host` 持有：先取得小说目录租约，再建立日志会话，随后才装配 Store、模型和 Engine；这样既不会绕过单书独占，也能覆盖全部装配和关闭日志。所谓“完整日志”指错误链、原始非法参数和生命周期元数据不丢失，不是把成功生成的小说正文重复转录到 `tui.log`；大内容仍由 Store 工件和 `meta/sessions` 承载。
+
 **`internal/diag` 是引擎唯一的可观测性子系统**——一等支撑设施，但不是产品核心。它跨读几乎所有工件 + session + log + checkpoint，承担两职：① **创作质量诊断**（规则 → Finding，`/diag` 屏上报告）；② **运行时排错 + 脱敏导出**（行为骨架剥正文 + 循环聚合 → 覆盖式 `meta/diag-export.md`）。
 
 **观察者纪律（不可松动）**：diag 可以诊断、可以建议，但**永不自己动手**——不自动修复、不续跑、不改流程（历史教训见 §10 第 5 条）。
@@ -265,7 +267,7 @@ writer.md 只承担：执行协议、断点续跑认知模型、章节契约解�
 
 **修改边界**：可进 agentcore——新 ContextManager 策略、新 provider 适配、新事件类型；不进 agentcore——业务模型与业务工具。判断准则：假设 agentcore 未来会被 coding agent / 客服 agent 引入，新能力在那个场景仍有意义才允许进。**禁止在应用层写兜底补丁**——缺能力直接改上游。
 
-**契约测试**（`internal/agents/agentcore_contract_test.go`，5 条，全部经 `Runner.Run` 驱动）：把本项目依赖的框架行为钉成可执行断言（终态退出咨询 StopGuard、Error/Aborted 不触达 guard、Escalate 错误链可 `errors.Is` 匹配、`Run` 的类型化 `ErrUnknownAgent` 等）。**bump agentcore 前必须全绿**——注释会过时，测试不会（这条纪律已经抓到过一次失效假设并省下一个 workaround）。
+**契约测试**（`internal/agents/agentcore_contract_test.go`，6 条，全部经 `Runner.Run` 驱动）：把本项目依赖的框架行为钉成可执行断言（终态退出咨询 StopGuard、Error/Aborted 不触达 guard、Escalate 错误链可 `errors.Is` 匹配、`Run` 的类型化 `ErrUnknownAgent`、工具错误进度完整且为纯文本）。**bump agentcore 前必须全绿**——注释会过时，测试不会（这条纪律已经抓到过一次失效假设并省下一个 workaround）。
 
 ### 6.5 提示词缓存
 

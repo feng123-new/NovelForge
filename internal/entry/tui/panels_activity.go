@@ -107,16 +107,11 @@ func renderEventLine(ev host.Event, width, spinnerFrame int) string {
 	case ev.Category == "ERROR":
 		icon := lipgloss.NewStyle().Foreground(colorError).Bold(true).Render("✕")
 		errStyle := lipgloss.NewStyle().Foreground(colorError)
-		lines := wrapStreamText(ev.Summary, maxSumW)
-		first := tsStr + " " + indent + icon + " " + errStyle.Render(lines[0])
-		pad := strings.Repeat(" ", 10+len(indent))
-		for _, l := range lines[1:] {
-			first += "\n" + pad + errStyle.Render(l)
-		}
+		line := tsStr + " " + indent + icon + " " + errStyle.Render(truncate(ev.Summary, maxSumW))
 		if durStr != "" {
-			first += durStr
+			line += durStr
 		}
-		return first
+		return line
 
 	case ev.Category == "SYSTEM":
 		icon := lipgloss.NewStyle().Foreground(colorAccent).Render("⚙")

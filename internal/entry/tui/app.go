@@ -9,7 +9,6 @@ import (
 	"github.com/voocel/ainovel-cli/assets"
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
 	"github.com/voocel/ainovel-cli/internal/host"
-	"github.com/voocel/ainovel-cli/internal/logger"
 	buildversion "github.com/voocel/ainovel-cli/internal/version"
 )
 
@@ -19,26 +18,19 @@ import (
 // 2. 正式创作会话进入 host.Host；
 // 3. 未来若新增“续写已有小说”等共享模式，统一落到 internal/entry/startup。
 func Run(cfg bootstrap.Config, bundle assets.Bundle, build buildversion.Info) error {
-	rt, err := host.New(cfg, bundle)
-	if err != nil {
-		return err
-	}
-	cleanup, err := logger.SetupFile(rt.Dir(), "tui.log", false,
+	rt, err := host.New(cfg, bundle, host.WithFileLog("tui.log", false,
 		slog.String("version", build.Version),
 		slog.String("commit", build.Commit),
 		slog.String("built", build.Date),
-	)
-	var logWarning error
+	))
 	if err != nil {
-		logWarning = fmt.Errorf("文件日志不可用，已继续使用终端日志：%w", err)
-		slog.Warn("TUI 文件日志不可用，继续运行", "module", "tui", "err", err)
-		cleanup = func() {}
+		return err
 	}
-	defer cleanup()
 	defer rt.Close()
 
 	m := NewModel(rt, build.Version)
-	if logWarning != nil {
+	if logErr := rt.FileLogError(); logErr != nil {
+		logWarning := fmt.Errorf("文件日志不可用，已继续使用终端日志：%w", logErr)
 		m.err = logWarning
 		m.applyEvent(host.Event{
 			Time: time.Now(), Category: "SYSTEM", Level: "warn",

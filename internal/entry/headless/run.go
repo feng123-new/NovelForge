@@ -12,7 +12,6 @@ import (
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/entry/startup"
 	"github.com/voocel/ainovel-cli/internal/host"
-	"github.com/voocel/ainovel-cli/internal/logger"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
@@ -34,17 +33,14 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle, opts Options) error {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
-	eng, err := host.New(cfg, bundle)
+	eng, err := host.New(cfg, bundle, host.WithFileLog("headless.log", false))
 	if err != nil {
 		return err
 	}
-	cleanup, err := logger.SetupFile(eng.Dir(), "headless.log", false)
-	if err != nil {
-		fmt.Fprintf(stderr, "警告：文件日志不可用，继续使用终端日志：%v\n", err)
-		cleanup = func() {}
-	}
-	defer cleanup()
 	defer eng.Close()
+	if logErr := eng.FileLogError(); logErr != nil {
+		fmt.Fprintf(stderr, "警告：文件日志不可用，继续使用终端日志：%v\n", logErr)
+	}
 	// 运行结束 / 出错返回时落一份脱敏诊断，方便 headless 用户贴 issue。
 	// （外部 kill 的挂死不走 defer，仍需在 TUI 里手动 /diag。）
 	defer func() {

@@ -23,6 +23,7 @@ import (
 	"github.com/voocel/ainovel-cli/internal/host/exp"
 	"github.com/voocel/ainovel-cli/internal/host/imp"
 	"github.com/voocel/ainovel-cli/internal/host/sim"
+	runtimelog "github.com/voocel/ainovel-cli/internal/logger"
 	modelreg "github.com/voocel/ainovel-cli/internal/models"
 	"github.com/voocel/ainovel-cli/internal/notify"
 	"github.com/voocel/ainovel-cli/internal/rules"
@@ -51,6 +52,8 @@ type Host struct {
 	gate            *ChapterAdvanceGate // 章节许可与一次性暂停的统一政策组件
 	notifier        *notify.Notifier    // 无人值守告警；未启用为 nil（Send nil 安全）
 	configPath      string              // 配置写盘目标：/config、/model 就近写当前生效的那份（项目级存在则写它，否则全局）
+	logCleanup      func()
+	fileLogErr      error
 
 	events   chan Event
 	streamCh chan string
@@ -70,6 +73,9 @@ type Host struct {
 
 	interMu sync.Mutex // 干预裁定 FIFO 串行(同一时刻至多一次在途咨询)
 
+	outputMu     sync.RWMutex
+	outputClosed bool
+
 	// runCtx 约束宿主侧的 LLM 裁定调用(启动裁定/干预分诊);Close 取消,
 	// 避免退出时仍有裁定在途且无法中断。
 	runCtx    context.Context
@@ -86,10 +92,16 @@ const (
 )
 
 // New 创建 Host。
-func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
+func New(cfg bootstrap.Config, bundle assets.Bundle, options ...NewOption) (*Host, error) {
 	cfg.FillDefaults()
 	if err := cfg.ValidateBase(); err != nil {
 		return nil, err
+	}
+	var opts newOptions
+	for _, option := range options {
+		if option != nil {
+			option(&opts)
+		}
 	}
 
 	bookLease, err := acquireBookLease(cfg.OutputDir)
@@ -97,6 +109,7 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 		return nil, err
 	}
 	keepBookLease := false
+	var logCleanup func()
 	defer func() {
 		if keepBookLease {
 			return
@@ -104,7 +117,19 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 		if err := bookLease.Close(); err != nil {
 			slog.Error("释放小说目录占用失败", "module", "host", "dir", cfg.OutputDir, "err", err)
 		}
+		if logCleanup != nil {
+			logCleanup()
+		}
 	}()
+
+	var fileLogErr error
+	if opts.logFile != "" {
+		logCleanup, fileLogErr = runtimelog.SetupFile(cfg.OutputDir, opts.logFile, opts.logAlsoStderr, opts.logAttrs...)
+		if fileLogErr != nil {
+			logCleanup = nil
+			slog.Warn("文件日志不可用，继续使用当前进程日志", "module", "host", "file", opts.logFile, "err", fileLogErr)
+		}
+	}
 
 	slog.Info("启动", "module", "boot", "provider", cfg.Provider, "model", cfg.ModelName, "output", cfg.OutputDir)
 
@@ -174,6 +199,8 @@ func New(cfg bootstrap.Config, bundle assets.Bundle) (*Host, error) {
 		usage:           usage,
 		usageCancel:     usageCancel,
 		configPath:      bootstrap.EffectiveConfigPath(),
+		logCleanup:      logCleanup,
+		fileLogErr:      fileLogErr,
 		events:          make(chan Event, 100),
 		streamCh:        make(chan string, 256),
 		done:            make(chan struct{}, 4),
@@ -378,7 +405,6 @@ func (h *Host) StartPrepared(rawRequirement string) error {
 		return fmt.Errorf("记录启动裁定: %w", err)
 	}
 
-	slog.Info("开始创作", "module", "host", "planner", decision.Planner)
 	h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM",
 		Summary: fmt.Sprintf("开始创作（规划师: %s——%s）", decision.Planner, decision.Reason), Level: "info"})
 	if !h.startEngine(&flow.Instruction{Agent: decision.Planner, Task: decision.Task, Reason: decision.Reason}) {
@@ -472,8 +498,11 @@ func (h *Host) Reopen(direction string) error {
 	if err := h.store.Progress.ReopenContinue(); err != nil {
 		return err
 	}
-	slog.Info("重开已完结书为创作状态", "module", "host", "direction", direction)
-	h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "已重开本书为创作状态（用户撤销完结裁定）", Level: "info"})
+	reopenEvent := Event{Time: time.Now(), Category: "SYSTEM", Summary: "已重开本书为创作状态（用户撤销完结裁定）", Level: "info"}
+	if d := strings.TrimSpace(direction); d != "" {
+		reopenEvent.Detail = reopenEvent.Summary + "\n续写方向: " + d
+	}
+	h.emitEvent(reopenEvent)
 	if d := strings.TrimSpace(direction); d != "" {
 		if err := h.store.RunMeta.SetPendingSteer(d); err != nil {
 			return fmt.Errorf("已重开，但续写方向登记失败：%v，请直接在输入框重新输入方向", err)
@@ -511,10 +540,8 @@ func (h *Host) Resume() (string, error) {
 		return "", err
 	}
 
-	slog.Info("恢复创作", "module", "host", "label", label)
 	h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "恢复创作: " + label, Level: "info"})
 	for _, w := range h.store.CheckConsistency() {
-		slog.Warn("一致性告警", "module", "host", "detail", w)
 		h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "一致性告警: " + w, Level: "warn"})
 	}
 	// 确保用户规则快照存在；已有则廉价读取。
@@ -890,13 +917,20 @@ func (h *Host) Close() {
 		if err := h.usage.SaveNow(); err != nil {
 			slog.Warn("usage 退出前落盘失败", "module", "usage", "err", err)
 		}
-		close(h.done)
-		close(h.events)
-		close(h.streamCh)
+		h.closeOutputChannels()
 		if err := h.bookLease.Close(); err != nil {
 			slog.Error("释放小说目录占用失败", "module", "host", "dir", h.cfg.OutputDir, "err", err)
 		}
+		if h.logCleanup != nil {
+			h.logCleanup()
+			h.logCleanup = nil
+		}
 	})
+}
+
+// FileLogError 返回构造阶段的文件日志初始化错误；Host 生命周期内不会变化。
+func (h *Host) FileLogError() error {
+	return h.fileLogErr
 }
 
 // runEnded 引擎循环结束(任何原因)时由 engine.onDone 回调:按 store 事实定终态。
@@ -925,7 +959,6 @@ func (h *Host) runEnded() {
 		// 完本收尾:确定性生成(store 已有全部事实,不花 LLM 调用;RFC 末节)。
 		summary := completionSummary(h.store)
 		h.mu.Unlock()
-		slog.Info(summary, "module", "host")
 		h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: summary, Level: "success"})
 		h.notifier.Send(notify.Notification{
 			Kind: notify.KindRunEnd, Level: "info", Title: "ainovel: 创作完成",
@@ -945,7 +978,6 @@ func (h *Host) runEnded() {
 		h.mu.Unlock()
 		if wasRunning {
 			summary := fmt.Sprintf("引擎停止 (已完成 %d 章)", completed)
-			slog.Warn(summary, "module", "host")
 			h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: summary, Level: "warn"})
 			h.notifier.Send(notify.Notification{
 				Kind: notify.KindRunEnd, Level: "warn", Title: "ainovel: 创作停止",
@@ -986,32 +1018,13 @@ func (h *Host) Dir() string           { return h.store.Dir() }
 // ── 事件发射 ──
 
 func (h *Host) emitEvent(ev Event) {
-	// 退出期 Close() 可能已 close(h.events)，此时并发 emit 的通道发送会 panic
-	// （select/default 挡不住关通道发送）。emitEvent 是所有事件的唯一漏斗，在此兜住
-	// 竞态即可覆盖引擎/asyncWG 之外的同步 emit 者（Abort/abortWithEvent、预算哨兵等）。
-	defer func() { recover() }()
-	// 所有事件的唯一 slog 入口。observer 翻译的 agentcore 事件和 Host 自发的
-	// SYSTEM 事件（Start/Abort/Resume…）都在这里落日志，避免 ESC abort 与外部
-	// 终止在 tui.log 上无法区分。
-	if ev.Summary != "" || ev.Detail != "" {
-		level := slog.LevelInfo
-		switch ev.Level {
-		case "warn":
-			level = slog.LevelWarn
-		case "error":
-			level = slog.LevelError
-		}
-		// 日志记完整 Detail（排查用，不截断）；Detail 为空才回退到 Summary。
-		msg := ev.Detail
-		if msg == "" {
-			msg = ev.Summary
-		}
-		attrs := []any{"module", "event", "category", ev.Category, "agent", ev.Agent}
-		if ev.Kind != "" {
-			attrs = append(attrs, "kind", ev.Kind)
-		}
-		slog.Log(context.Background(), level, msg, attrs...)
+	h.outputMu.RLock()
+	defer h.outputMu.RUnlock()
+	if h.outputClosed {
+		return
 	}
+	// 读锁保证关闭前的事件完整写完；关闭后的事件直接拒绝。
+	LogEvent(ev)
 	select {
 	case h.events <- ev:
 	default:
@@ -1027,8 +1040,11 @@ func (h *Host) emitEvent(ev Event) {
 }
 
 func (h *Host) emitDelta(delta string) {
-	// 同 emitEvent：兜住退出期 h.streamCh 已 close 时的并发发送竞态。
-	defer func() { recover() }()
+	h.outputMu.RLock()
+	defer h.outputMu.RUnlock()
+	if h.outputClosed {
+		return
+	}
 	select {
 	case h.streamCh <- delta:
 	default:
@@ -1041,6 +1057,18 @@ func (h *Host) emitDelta(delta string) {
 		default:
 		}
 	}
+}
+
+func (h *Host) closeOutputChannels() {
+	h.outputMu.Lock()
+	defer h.outputMu.Unlock()
+	if h.outputClosed {
+		return
+	}
+	h.outputClosed = true
+	close(h.done)
+	close(h.events)
+	close(h.streamCh)
 }
 
 func (h *Host) emitClear() {
@@ -1813,7 +1841,6 @@ func (h *Host) continueAfterImport(opts imp.Options) bool {
 	if !want {
 		in, err := imp.OpenWorkspace(h.store.Dir()).LoadIntent()
 		if err != nil {
-			slog.Warn("导入自动接力读取 Intent 失败", "module", "host", "err", err)
 			h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Level: "warn",
 				Summary: "导入已完成，但自动接力意图读取失败：" + err.Error()})
 		} else if in != nil {

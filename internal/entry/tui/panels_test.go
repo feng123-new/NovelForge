@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -17,6 +18,20 @@ func TestRenderTopBarShowsVersion(t *testing.T) {
 	}, 120, "", "v1.2.3")
 	if !strings.Contains(out, "ainovel-cli v1.2.3") {
 		t.Fatalf("top bar missing version: %q", out)
+	}
+}
+
+func TestRenderErrorEventKeepsOneLineSummary(t *testing.T) {
+	out := ansi.Strip(renderEventLine(host.Event{
+		Time:     time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC),
+		Category: "ERROR",
+		Summary:  "commit_chapter 参数错误：" + strings.Repeat("秦越在材料中发现线索", 20),
+	}, 60, 0))
+	if strings.Contains(out, "\n") {
+		t.Fatalf("ERROR 事件应保持单行摘要，got %q", out)
+	}
+	if !strings.HasSuffix(out, "...") {
+		t.Fatalf("超宽 ERROR 摘要应在 TUI 截断，got %q", out)
 	}
 }
 

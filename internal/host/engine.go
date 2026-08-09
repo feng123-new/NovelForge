@@ -340,7 +340,7 @@ func (e *engine) retryPlanStart(ctx context.Context, prompt string) *flow.Instru
 		slog.Warn("启动补裁审计落盘失败", "module", "engine", "err", recErr)
 	}
 	if derr != nil {
-		e.pauseWithNotify(notify.KindPlanStart, "启动裁定失败,已暂停(请检查模型/网络配置后继续): "+truncate(derr.Error(), 200))
+		e.pauseWithNotify(notify.KindPlanStart, "启动裁定失败,已暂停(请检查模型/网络配置后继续): "+derr.Error())
 		return nil
 	}
 	if err := e.store.RunMeta.SetPlanStart(domain.PlanStartRecord{
@@ -459,8 +459,7 @@ func (e *engine) trackDeadlock(ctx context.Context, inst **flow.Instruction) (st
 
 // runWorker 直接运行一次子代理:DISPATCH 事件 + 进度中继 + 结果解析。
 func (e *engine) runWorker(ctx context.Context, inst *flow.Instruction) error {
-	slog.Info("engine 派发", "module", "engine", "agent", inst.Agent, "reason", inst.Reason)
-	e.observer.dispatchStart(inst.Agent, inst.Task)
+	e.observer.dispatchStart(inst.Agent, inst.Task, inst.Reason)
 	// Writer 任务预标进行中(与旧 Dispatcher 一致:UI 大纲立即反映"▸ 进行中")。
 	if inst.Agent == "writer" && inst.Chapter > 0 {
 		if err := e.store.Progress.ValidateChapterWork(inst.Chapter); err != nil {

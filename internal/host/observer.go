@@ -131,7 +131,7 @@ func newObserver(s *storepkg.Store, emitEv func(Event), emitD func(string), emit
 //     (TOOL 行/流式正文/thinking/retry/context)。
 
 // dispatchStart 记录一次 Worker 派发开始并发 DISPATCH 行。
-func (o *observer) dispatchStart(agent, task string) {
+func (o *observer) dispatchStart(agent, task, reason string) {
 	summary := dispatchSummary(agent, task)
 	o.updateAgent(agent, func(a *agentState) {
 		a.state = "working"
@@ -144,8 +144,9 @@ func (o *observer) dispatchStart(agent, task string) {
 		ID:       id,
 		Time:     time.Now(),
 		Category: "DISPATCH",
-		Agent:    "engine",
+		Agent:    agent,
 		Summary:  summary,
+		Detail:   dispatchDetail(task, reason),
 		Level:    "info",
 	})
 }

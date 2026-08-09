@@ -93,7 +93,7 @@ func TestObserverDispatchErrorUpdatesSingleEventWithDetail(t *testing.T) {
 	var events []Event
 	o := testObserver(&events)
 
-	o.dispatchStart("architect_long", "规划长篇小说")
+	o.dispatchStart("architect_long", "规划长篇小说", "需要生成分层大纲")
 	runErr := errors.New("stream read error: INTERNAL_ERROR; received from peer [network, openai]")
 	o.dispatchFinish("architect_long", runErr)
 
@@ -101,6 +101,9 @@ func TestObserverDispatchErrorUpdatesSingleEventWithDetail(t *testing.T) {
 		t.Fatalf("start + failed update 应只有 2 个原始事件，got %d: %+v", len(events), events)
 	}
 	start, failed := events[0], events[1]
+	if !strings.Contains(start.Detail, "需要生成分层大纲") || !strings.Contains(start.Detail, "规划长篇小说") {
+		t.Fatalf("DISPATCH 开始日志应保留完整原因与任务: %+v", start)
+	}
 	if failed.ID != start.ID || failed.Category != "DISPATCH" || !failed.Failed || failed.Level != "error" {
 		t.Fatalf("失败应原地更新 DISPATCH: start=%+v failed=%+v", start, failed)
 	}
@@ -158,6 +161,8 @@ func TestObserverSubagentToolDeltaUpdatesSaveFoundationTypeAcrossChunks(t *testi
 func TestObserverToolErrorUpdatesSingleToolEventWithFullDetail(t *testing.T) {
 	var events []Event
 	o := testObserver(&events)
+	fullError := "tool argument validation failed: unexpected end of JSON input\nraw args: " +
+		`{"chapter":1,"summary":"` + strings.Repeat("秦越在材料中发现线索", 30) + "<TAIL>"
 
 	o.handleToolUpdate(agentcore.Event{
 		Type: agentcore.EventToolExecUpdate,
@@ -173,7 +178,7 @@ func TestObserverToolErrorUpdatesSingleToolEventWithFullDetail(t *testing.T) {
 			Kind:    agentcore.ProgressToolError,
 			Agent:   "writer",
 			Tool:    "edit_chapter",
-			Message: "old_string 无法精确匹配草稿",
+			Message: fullError,
 		},
 	})
 
@@ -184,7 +189,11 @@ func TestObserverToolErrorUpdatesSingleToolEventWithFullDetail(t *testing.T) {
 	if failed.ID == "" || failed.ID != start.ID || !failed.Failed || failed.Category != "TOOL" || failed.Level != "error" {
 		t.Fatalf("失败事件应原地更新 TOOL 行: start=%+v failed=%+v", start, failed)
 	}
-	if !strings.Contains(failed.Summary, "old_string") || !strings.Contains(failed.Detail, "无法精确匹配草稿") {
+	if !strings.Contains(failed.Summary, "tool argument validation failed") ||
+		!strings.Contains(failed.Detail, fullError) || !strings.Contains(failed.Detail, "<TAIL>") {
 		t.Fatalf("失败事件应同时保留 UI 摘要和完整日志详情: %+v", failed)
+	}
+	if len(failed.Summary) >= len(failed.Detail) {
+		t.Fatalf("UI Summary 应短于完整 Detail: summary=%d detail=%d", len(failed.Summary), len(failed.Detail))
 	}
 }

@@ -427,7 +427,7 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case eventMsg:
 		ev := host.Event(msg)
-		m.applyEvent(ev)
+		m.applyEventProjection(ev)
 		m.refreshEventViewport()
 		return m, listenEvents(m.runtime), true
 	case bootstrapMsg:
@@ -785,11 +785,18 @@ func (m Model) handleTextareaMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// applyEvent 把一条事件应用到 m.events：
+// applyEvent 记录一条 TUI 本地产生的事件并更新投影。Host 事件已经在产生端
+// 落过日志，事件订阅路径应直接调用 applyEventProjection，避免重复记录。
+func (m *Model) applyEvent(ev host.Event) {
+	host.LogEvent(ev)
+	m.applyEventProjection(ev)
+}
+
+// applyEventProjection 把一条事件应用到 m.events：
 // - 带 ID 且已存在 → 原地更新（合并完成态字段，保留首次的 Time / Summary）
 // - 新事件 → 追加，必要时记录到 eventIndex
 // - 超过 maxEvents 时做滑动截断并重建索引
-func (m *Model) applyEvent(ev host.Event) {
+func (m *Model) applyEventProjection(ev host.Event) {
 	if ev.ID != "" {
 		if idx, ok := m.eventIndex[ev.ID]; ok && idx >= 0 && idx < len(m.events) {
 			existing := &m.events[idx]

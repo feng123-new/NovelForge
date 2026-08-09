@@ -183,6 +183,17 @@ func dispatchSummary(agent, task string) string {
 	return agent + "（" + truncate(firstLine, 30) + "）"
 }
 
+func dispatchDetail(task, reason string) string {
+	var parts []string
+	if strings.TrimSpace(reason) != "" {
+		parts = append(parts, "派发原因: "+reason)
+	}
+	if strings.TrimSpace(task) != "" {
+		parts = append(parts, "完整任务:\n"+task)
+	}
+	return strings.Join(parts, "\n")
+}
+
 func (o *observer) updateToolCallSummary(agent, tool, summary string) {
 	if agent == "" || summary == "" {
 		return
