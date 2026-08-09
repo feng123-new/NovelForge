@@ -86,8 +86,7 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 	case agentcore.ProgressThinking:
 		o.handleThinkingProgress(ev)
 	case agentcore.ProgressRetry:
-		// 只展示上游明确报告的实际等待时间。旧 Worker relay 尚未携带 Delay，
-		// 此时省略倒计时，避免用本地猜测误报真实重试节奏。
+		// 只展示上游明确报告的实际等待时间，避免本地估算与真实退避节奏不一致。
 		// Summary 不嵌静态延时——UI 依 RetryAt 逐秒倒计时；Detail/日志保留发出时的延时快照。
 		delay := retryProgressDelay(ev.Progress)
 		retryEv := Event{

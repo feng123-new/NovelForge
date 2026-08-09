@@ -33,7 +33,19 @@ type Event struct {
 // Running 返回事件是否处于进行中。
 // 仅调用类事件（有 ID 的 TOOL / DISPATCH / DECISION）可能进行中；其它类型总是返回 false。
 func (e Event) Running() bool {
-	return e.ID != "" && e.FinishedAt.IsZero()
+	return e.hasLifecycle() && e.FinishedAt.IsZero()
+}
+
+func (e Event) hasLifecycle() bool {
+	if e.ID == "" {
+		return false
+	}
+	switch e.Category {
+	case "TOOL", "DISPATCH", "DECISION":
+		return true
+	default:
+		return false
+	}
 }
 
 // UISnapshot 是 TUI 渲染所需的聚合状态快照。

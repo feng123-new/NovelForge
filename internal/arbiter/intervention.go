@@ -20,7 +20,8 @@ type InterventionFacts struct {
 	Flow              string           `json:"flow,omitempty"`
 	NovelName         string           `json:"novel_name,omitempty"`
 	CompletedChapters int              `json:"completed_chapters"`
-	TotalChapters     int              `json:"total_chapters,omitempty"`
+	OutlinedChapters  int              `json:"outlined_chapters,omitempty"`
+	DynamicPlanning   bool             `json:"dynamic_planning"`
 	NextChapter       int              `json:"next_chapter,omitempty"`
 	PendingRewrites   []int            `json:"pending_rewrites,omitempty"`
 	ReopenCount       int              `json:"reopen_count,omitempty"` // 用户显式 /reopen 重开完结书的累计次数
@@ -71,7 +72,16 @@ func CollectInterventionFacts(st *storepkg.Store) (InterventionFacts, error) {
 		f.Flow = string(p.Flow)
 		f.NovelName = p.NovelName
 		f.CompletedChapters = len(p.CompletedChapters)
-		f.TotalChapters = p.TotalChapters
+		f.DynamicPlanning = p.Layered
+		if p.Layered {
+			outline, outlineErr := st.Outline.LoadOutline()
+			if outlineErr != nil {
+				return f, fmt.Errorf("读取当前详细大纲: %w", outlineErr)
+			}
+			f.OutlinedChapters = len(outline)
+		} else {
+			f.OutlinedChapters = p.TotalChapters
+		}
 		f.NextChapter = p.NextChapter()
 		f.PendingRewrites = append([]int(nil), p.PendingRewrites...)
 		f.ReopenCount = p.ReopenCount

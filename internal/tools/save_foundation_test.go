@@ -212,8 +212,19 @@ func TestSaveFoundationOutlineClearsLayeredStateWhenDowngrading(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal layered args: %v", err)
 	}
-	if _, err := tool.Execute(context.Background(), layeredArgs); err != nil {
+	rawResult, err := tool.Execute(context.Background(), layeredArgs)
+	if err != nil {
 		t.Fatalf("Execute layered outline: %v", err)
+	}
+	var layeredResult map[string]any
+	if err := json.Unmarshal(rawResult, &layeredResult); err != nil {
+		t.Fatalf("Unmarshal layered result: %v", err)
+	}
+	if layeredResult["dynamic_planning"] != true || layeredResult["outlined_chapters"] != float64(1) {
+		t.Fatalf("layered result 应报告当前已细化章节: %#v", layeredResult)
+	}
+	if _, exists := layeredResult["chapters"]; exists {
+		t.Fatalf("layered result 不得把内部容量估算暴露为 chapters: %#v", layeredResult)
 	}
 
 	outlineArgs, err := json.Marshal(map[string]any{

@@ -144,10 +144,23 @@ func TestReviseOutlinePreservesOtherLayeredArcs(t *testing.T) {
 
 	args := json.RawMessage(`{"from_chapter":2,"replacement":[{"title":"新二","core_event":"转折","hook":"继续","scenes":[]}],"reason":"压缩当前弧"}`)
 	tool := NewReviseOutlineTool(s)
+	var rawResult json.RawMessage
 	for i := 0; i < 2; i++ {
-		if _, err := tool.Execute(context.Background(), args); err != nil {
+		var err error
+		rawResult, err = tool.Execute(context.Background(), args)
+		if err != nil {
 			t.Fatalf("Execute #%d: %v", i+1, err)
 		}
+	}
+	var result map[string]any
+	if err := json.Unmarshal(rawResult, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["dynamic_planning"] != true || result["outlined_chapters"] != float64(4) {
+		t.Fatalf("layered revise result = %#v", result)
+	}
+	if _, exists := result["total_chapters"]; exists {
+		t.Fatalf("layered revise 不得暴露固定总章数: %#v", result)
 	}
 
 	layered, err := s.Outline.LoadLayeredOutline()

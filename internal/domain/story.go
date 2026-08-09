@@ -78,10 +78,10 @@ type ArcExpansion struct {
 	Chapters []OutlineEntry `json:"chapters"`
 }
 
-// TotalChapters 计算分层大纲的当前规划总章数。
-// 已展开弧按真实章节数计，骨架弧按 EstimatedChapters 计。
-// Progress.TotalChapters 用它判断长篇上下文策略；真正可写章节仍来自 FlattenOutline。
-func TotalChapters(volumes []VolumeOutline) int {
+// EstimatedChapterCapacity 计算分层大纲的内部容量估算：已展开弧按真实章节数，
+// 骨架弧按 EstimatedChapters。它只用于上下文策略，不是全书总章数；真正已细化、
+// 可写的章节始终来自 FlattenOutline，禁止把本值暴露给用户或模型。
+func EstimatedChapterCapacity(volumes []VolumeOutline) int {
 	n := 0
 	for _, v := range volumes {
 		for _, a := range v.Arcs {

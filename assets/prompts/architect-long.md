@@ -81,6 +81,7 @@ JSON 数组，每条含：category、rule、boundary。
 - 每章剧情密度（core_event/scenes 多寡）匹配用户的字数意愿，据此决定弧拆几章（见下方"弧级节奏密度"）
 - 章节 title 用名词/动名词短语，**长短自然交错**，不要每章卡同一字数（第一弧的标题节奏会被后续弧沿用，开篇就别整齐划一）
 - estimated_chapters ≥ 8（太短无法展开节奏循环）
+- estimated_chapters 只是骨架弧的节奏估算，展开时允许按实际剧情调整；禁止把各弧估算相加后表述为“全书共 N 章”或固定总章数
 - 角色调度与 characters 一致，弧目标受 world_rules 约束
 
 调用 `save_foundation(type="layered_outline", scale="long", content=<JSON数组>)`。

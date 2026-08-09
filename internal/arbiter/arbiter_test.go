@@ -314,6 +314,48 @@ func TestCollectInterventionFacts(t *testing.T) {
 	}
 }
 
+func TestCollectInterventionFactsDoesNotExposeLayeredEstimateAsTotal(t *testing.T) {
+	st := storepkg.NewStore(t.TempDir())
+	if err := st.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Progress.Init("动态长篇", 66); err != nil {
+		t.Fatal(err)
+	}
+	volumes := []domain.VolumeOutline{{
+		Index: 1, Title: "卷一", Arcs: []domain.ArcOutline{
+			{Index: 1, Title: "当前弧", Chapters: []domain.OutlineEntry{{Title: "一"}, {Title: "二"}}},
+			{Index: 2, Title: "骨架弧", EstimatedChapters: 64},
+		},
+	}}
+	if err := st.Outline.SaveLayeredOutline(volumes); err != nil {
+		t.Fatal(err)
+	}
+	p, err := st.Progress.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Layered = true
+	if err := st.Progress.Save(p); err != nil {
+		t.Fatal(err)
+	}
+
+	facts, err := CollectInterventionFacts(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !facts.DynamicPlanning || facts.OutlinedChapters != 2 {
+		t.Fatalf("动态规划事实错误: %+v", facts)
+	}
+	raw, err := json.Marshal(facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "total_chapters") || strings.Contains(string(raw), `:66`) {
+		t.Fatalf("内部估算不得作为总章数进入 Arbiter: %s", raw)
+	}
+}
+
 func TestExtractJSON(t *testing.T) {
 	cases := map[string]string{
 		`{"a":1}`:                        `{"a":1}`,

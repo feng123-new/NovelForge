@@ -107,7 +107,6 @@ func (t *ContextTool) buildProgressStatus(result map[string]any, warn func(strin
 		"phase":              string(progress.Phase),
 		"flow":               string(progress.Flow),
 		"completed_chapters": len(progress.CompletedChapters),
-		"total_chapters":     progress.TotalChapters,
 		"next_chapter":       progress.NextChapter(),
 		"total_word_count":   progress.TotalWordCount,
 	}
@@ -120,8 +119,17 @@ func (t *ContextTool) buildProgressStatus(result map[string]any, warn func(strin
 	}
 	if progress.Layered {
 		status["layered"] = true
+		status["dynamic_planning"] = true
+		outline, outlineErr := t.store.Outline.LoadOutline()
+		if outlineErr != nil {
+			warn("progress_status.outline", outlineErr)
+		} else {
+			status["outlined_chapters"] = len(outline)
+		}
 		status["current_volume"] = progress.CurrentVolume
 		status["current_arc"] = progress.CurrentArc
+	} else {
+		status["total_chapters"] = progress.TotalChapters
 	}
 	if progress.Phase == domain.PhaseComplete {
 		status["finished"] = true

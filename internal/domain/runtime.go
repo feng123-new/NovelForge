@@ -38,9 +38,11 @@ const (
 
 // Progress 进度追踪，持久化到 meta/progress.json。
 type Progress struct {
-	NovelName         string      `json:"novel_name"`
-	Phase             Phase       `json:"phase"`
-	CurrentChapter    int         `json:"current_chapter"`
+	NovelName      string `json:"novel_name"`
+	Phase          Phase  `json:"phase"`
+	CurrentChapter int    `json:"current_chapter"`
+	// TotalChapters 在非分层模式是详细大纲章数；在分层模式仅是包含骨架估算的
+	// 内部容量值，用于上下文策略，不代表全书固定总章数。
 	TotalChapters     int         `json:"total_chapters"`
 	CompletedChapters []int       `json:"completed_chapters"`
 	TotalWordCount    int         `json:"total_word_count"`
@@ -135,7 +137,6 @@ type MemoryPolicy struct {
 	ChapterPlanEnabled  bool   `json:"chapter_plan_enabled,omitempty"`
 	RelatedLookup       bool   `json:"related_chapter_lookup,omitempty"`
 	CurrentOutlineBound bool   `json:"current_outline_bound,omitempty"`
-	TotalChapters       int    `json:"total_chapters,omitempty"`
 	HandoffPreferred    bool   `json:"handoff_preferred,omitempty"`
 	ReadOnlyThreshold   int    `json:"read_only_threshold,omitempty"`
 }
@@ -172,7 +173,6 @@ func NewChapterMemoryPolicy(progress *Progress, profile ContextProfile, currentO
 		policy.SummaryStrategy = "最近章节摘要"
 	}
 	if progress != nil {
-		policy.TotalChapters = progress.TotalChapters
 		if progress.TotalChapters > 30 {
 			policy.RelatedLookup = true
 		}

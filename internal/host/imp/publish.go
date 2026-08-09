@@ -60,12 +60,12 @@ func publishFoundation(st *store.Store, f *Foundation) error {
 	if err := st.Outline.SaveLayeredOutline(f.Volumes); err != nil {
 		return fmt.Errorf("layered outline：%w", err)
 	}
-	// 大纲阶段的进度是引擎重算路由的依据（总章数/分层/当前卷弧），写入失败会留下不一致的
+	// 大纲阶段的进度是引擎重算路由的依据（章节容量/分层/当前卷弧），写入失败会留下不一致的
 	// 已发布状态，必须暴露而非吞掉（RFC §12.2）。
 	if err := st.Progress.UpdatePhase(domain.PhaseOutline); err != nil {
 		return fmt.Errorf("phase outline：%w", err)
 	}
-	if err := st.Progress.SetTotalChapters(domain.TotalChapters(f.Volumes)); err != nil {
+	if err := st.Progress.SetTotalChapters(domain.EstimatedChapterCapacity(f.Volumes)); err != nil {
 		return fmt.Errorf("total chapters：%w", err)
 	}
 	if err := st.Progress.SetLayered(true); err != nil {

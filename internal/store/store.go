@@ -235,7 +235,7 @@ func (s *Store) ExpandArc(volumeIdx, arcIdx int, expansion domain.ArcExpansion) 
 	if p == nil {
 		p = &domain.Progress{}
 	}
-	p.TotalChapters = domain.TotalChapters(volumes)
+	p.TotalChapters = domain.EstimatedChapterCapacity(volumes)
 	return s.Progress.saveUnlocked(p)
 }
 
@@ -262,7 +262,7 @@ func (s *Store) AppendVolume(vol domain.VolumeOutline) error {
 	if p == nil {
 		p = &domain.Progress{}
 	}
-	p.TotalChapters = domain.TotalChapters(volumes)
+	p.TotalChapters = domain.EstimatedChapterCapacity(volumes)
 	return s.Progress.saveUnlocked(p)
 }
 
@@ -306,7 +306,7 @@ func (s *Store) ReviseOutline(fromChapter int, replacement []domain.OutlineEntry
 		if err != nil {
 			return 0, err
 		}
-		p.TotalChapters = domain.TotalChapters(volumes)
+		p.TotalChapters = domain.EstimatedChapterCapacity(volumes)
 		if err := s.Progress.saveUnlocked(p); err != nil {
 			return 0, fmt.Errorf("save progress: %w: %w", errs.ErrStoreWrite, err)
 		}

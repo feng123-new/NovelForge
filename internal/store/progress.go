@@ -53,7 +53,7 @@ func (s *ProgressStore) Init(novelName string, totalChapters int) error {
 	})
 }
 
-// SetTotalChapters 设定总章节数。
+// SetTotalChapters 更新大纲容量：非分层模式为详细章数，分层模式为内部估算。
 func (s *ProgressStore) SetTotalChapters(n int) error {
 	return s.io.WithWriteLock(func() error {
 		p, err := s.loadUnlocked()

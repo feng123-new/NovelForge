@@ -31,11 +31,14 @@ func logEvent(log *slog.Logger, ev Event) {
 		attrs = append(attrs, "kind", ev.Kind)
 	}
 	if ev.ID != "" {
-		state := "running"
-		if !ev.FinishedAt.IsZero() {
-			state = "completed"
+		attrs = append(attrs, "event_id", ev.ID)
+		if ev.hasLifecycle() {
+			state := "running"
+			if !ev.FinishedAt.IsZero() {
+				state = "completed"
+			}
+			attrs = append(attrs, "state", state)
 		}
-		attrs = append(attrs, "event_id", ev.ID, "state", state)
 	}
 	if ev.Depth > 0 {
 		attrs = append(attrs, "depth", ev.Depth)

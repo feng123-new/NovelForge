@@ -19,6 +19,37 @@ func newTestContextTool(st *store.Store, refs References, style string) *Context
 	return NewContextTool(st, refs, style, NewStyleStatsIndex(st))
 }
 
+func TestBuildProgressStatusHidesLayeredCapacityEstimate(t *testing.T) {
+	st := store.NewStore(t.TempDir())
+	if err := st.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Progress.Save(&domain.Progress{TotalChapters: 66, Layered: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Outline.SaveLayeredOutline([]domain.VolumeOutline{{
+		Index: 1, Arcs: []domain.ArcOutline{
+			{Index: 1, Chapters: []domain.OutlineEntry{{Title: "一"}, {Title: "二"}}},
+			{Index: 2, EstimatedChapters: 64},
+		},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	result := map[string]any{}
+	newTestContextTool(st, References{}, "default").buildProgressStatus(result, func(string, error) {})
+	status, ok := result["progress_status"].(map[string]any)
+	if !ok {
+		t.Fatalf("progress_status = %#v", result["progress_status"])
+	}
+	if status["dynamic_planning"] != true || status["outlined_chapters"] != 2 {
+		t.Fatalf("动态规划进度错误: %#v", status)
+	}
+	if _, exists := status["total_chapters"]; exists {
+		t.Fatalf("分层容量估算不得作为 total_chapters 暴露: %#v", status)
+	}
+}
+
 func TestContextToolInjectsStyleStats(t *testing.T) {
 	dir := t.TempDir()
 	st := store.NewStore(dir)

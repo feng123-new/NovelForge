@@ -109,10 +109,18 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 			return nil, fmt.Errorf("load progress for volume-end facts: %w: %w", errs.ErrStoreRead, err)
 		}
 		if p != nil {
-			volumeEndFacts, err = json.Marshal(map[string]any{
-				"completed_chapters": len(p.CompletedChapters),
-				"total_chapters":     p.TotalChapters,
-			})
+			facts := map[string]any{"completed_chapters": len(p.CompletedChapters)}
+			if p.Layered {
+				outline, outlineErr := t.store.Outline.LoadOutline()
+				if outlineErr != nil {
+					return nil, fmt.Errorf("load outlined chapters for volume-end facts: %w: %w", errs.ErrStoreRead, outlineErr)
+				}
+				facts["dynamic_planning"] = true
+				facts["outlined_chapters"] = len(outline)
+			} else {
+				facts["total_chapters"] = p.TotalChapters
+			}
+			volumeEndFacts, err = json.Marshal(facts)
 			if err != nil {
 				return nil, fmt.Errorf("marshal volume-end facts: %w", err)
 			}
@@ -174,7 +182,7 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		if err := t.store.Outline.SaveLayeredOutline(volumes); err != nil {
 			return nil, fmt.Errorf("save layered_outline: %w: %w", errs.ErrStoreWrite, err)
 		}
-		total := domain.TotalChapters(volumes)
+		total := domain.EstimatedChapterCapacity(volumes)
 		if err := t.store.Progress.AdvancePhase(domain.PhaseOutline); err != nil {
 			return nil, fmt.Errorf("update outline phase: %w: %w", errs.ErrStoreWrite, err)
 		}
@@ -190,7 +198,8 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 			}
 		}
 		result["volumes"] = len(volumes)
-		result["chapters"] = total
+		result["dynamic_planning"] = true
+		result["outlined_chapters"] = len(domain.FlattenOutline(volumes))
 
 	case "characters":
 		var chars []domain.Character
@@ -289,7 +298,16 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		if len(progress.CompletedChapters) == 0 {
 			return nil, fmt.Errorf("一章未写不可完本;规划完成后写作由系统自动推进,无需调用 complete_book: %w", errs.ErrToolPrecondition)
 		}
-		if next := progress.NextChapter(); progress.TotalChapters > 0 && next <= progress.TotalChapters {
+		next := progress.NextChapter()
+		if progress.Layered {
+			outline, outlineErr := t.store.Outline.LoadOutline()
+			if outlineErr != nil {
+				return nil, fmt.Errorf("load outlined chapters: %w: %w", errs.ErrStoreRead, outlineErr)
+			}
+			if next <= len(outline) {
+				return nil, fmt.Errorf("当前详细大纲还有未写章节（下一章 %d/当前已细化 %d），不可完本；想提前收束请改用 append_volume 且卷 JSON 顶层带 \"final\": true 宣告收官卷: %w", next, len(outline), errs.ErrToolPrecondition)
+			}
+		} else if progress.TotalChapters > 0 && next <= progress.TotalChapters {
 			return nil, fmt.Errorf("大纲内还有未写章节（下一章 %d/共 %d），不可完本；想提前收束请改用 append_volume 且卷 JSON 顶层带 \"final\": true 宣告收官卷: %w", next, progress.TotalChapters, errs.ErrToolPrecondition)
 		}
 		// 活跃长线未收束不可完本——OpenThreads 的字段契约即"需收束才能结局"。这不是
