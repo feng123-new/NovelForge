@@ -567,6 +567,12 @@ func (t *ContextTool) buildChapterEpisodicMemory(envelope *chapterContextEnvelop
 }
 
 func (t *ContextTool) buildChapterReferencePack(envelope *chapterContextEnvelope, state contextBuildState, warn func(string, error)) {
+	authorStyle, err := t.store.World.LoadAuthorRevisionStyle()
+	warn("author_revision_style", err)
+	if authorStyle != nil && (len(authorStyle.Prose) > 0 || len(authorStyle.Dialogue) > 0 || len(authorStyle.Taboos) > 0) {
+		envelope.References["author_revision_style"] = authorStyle
+	}
+
 	if state.styleRules != nil {
 		envelope.References["style_rules"] = state.styleRules
 	} else {

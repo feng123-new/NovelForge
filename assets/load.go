@@ -36,6 +36,7 @@ type Prompts struct {
 	ImportRange      string // 长书 Map 阶段连续区间摘要（RangeDigest）
 	SimulationSource string
 	SimulationMerge  string
+	RevisionAnalyze  string
 
 	// Arbiter 裁定提示词(LLM-as-function,无 simulation guidance 包装)。
 	ArbiterPlanStart    string
@@ -184,6 +185,7 @@ func loadPrompts() Prompts {
 		ImportRange:      mustRead(promptsFS, "prompts/import-range.md"),
 		SimulationSource: mustRead(promptsFS, "prompts/simulation-source.md"),
 		SimulationMerge:  mustRead(promptsFS, "prompts/simulation-merge.md"),
+		RevisionAnalyze:  mustRead(promptsFS, "prompts/revision-analyze.md"),
 
 		ArbiterPlanStart:    mustRead(promptsFS, "prompts/arbiter-plan-start.md"),
 		ArbiterIntervention: mustRead(promptsFS, "prompts/arbiter-intervention.md"),

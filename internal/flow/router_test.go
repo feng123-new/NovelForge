@@ -219,6 +219,31 @@ func TestRoute_NormalContinue(t *testing.T) {
 	}
 }
 
+func TestRoute_OutlineFeedbackDispatchesArchitectBeforeWriter(t *testing.T) {
+	p := writingProgress([]int{1, 2, 3}, domain.FlowWriting)
+	p.TotalChapters = 20
+	got := Route(State{
+		Progress: p, LastCompleted: 3, PlanningTier: domain.PlanningTierShort,
+		OutlineFeedbackCount: 2,
+	})
+	if got == nil || got.Agent != "architect_short" || !strings.Contains(got.Reason, "2 条") {
+		t.Fatalf("expected architect to consume feedback, got %+v", got)
+	}
+}
+
+func TestRoute_AggregateRefreshPrecedesOutlineFeedback(t *testing.T) {
+	p := writingProgress([]int{1, 2}, domain.FlowWriting)
+	got := Route(State{
+		Progress: p, OutlineFeedbackCount: 1,
+		AggregateRefresh: &AggregateRefresh{
+			Kind: AggregateArcSummary, Volume: 1, Arc: 1, StartChapter: 1, EndChapter: 2,
+		},
+	})
+	if got == nil || got.Agent != "editor" || !strings.Contains(got.Task, "save_arc_summary") {
+		t.Fatalf("expected editor aggregate refresh, got %+v", got)
+	}
+}
+
 func TestRoute_NonLayeredOutlineExhaustedDispatchesArchitect(t *testing.T) {
 	p := &domain.Progress{
 		Phase:             domain.PhaseWriting,

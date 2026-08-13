@@ -35,6 +35,23 @@ type Instruction struct {
 	Chapter int    // writer 任务涉及的章节号（续写/重写/打磨）；0 表示不涉及（editor/architect 任务）
 }
 
+type AggregateKind string
+
+const (
+	AggregateArcReview     AggregateKind = "arc_review"
+	AggregateArcSummary    AggregateKind = "arc_summary"
+	AggregateVolumeSummary AggregateKind = "volume_summary"
+	AggregateGlobalReview  AggregateKind = "global_review"
+)
+
+type AggregateRefresh struct {
+	Kind         AggregateKind
+	Volume       int
+	Arc          int
+	StartChapter int
+	EndChapter   int
+}
+
 // State 是 Route 的输入：所有事实必须在此显式声明，禁止 Route 内部读 Store。
 type State struct {
 	Progress *domain.Progress
@@ -61,6 +78,12 @@ type State struct {
 	// 非分层书：最近完成章是否已有 scope=global 的全局审阅
 	//（仅在 ShouldReview 触发点有意义；分层书恒 false）。
 	HasGlobalReview bool
+
+	// 尚未由 Architect 消费的大纲偏离或章节修订影响。
+	OutlineFeedbackCount int
+
+	// 外部修订后最早一个需要由 Editor 重新生成的弧/卷工件。
+	AggregateRefresh *AggregateRefresh
 }
 
 // Route 根据事实返回下一步确定性指令；返回 nil 由 Engine 按调用上下文处理。
@@ -135,6 +158,45 @@ func Route(s State) *Instruction {
 	// 5. 用户干预处理中：Arbiter 正在裁定，Engine 不抢占
 	if p.Flow == domain.FlowSteering {
 		return nil
+	}
+	if refresh := s.AggregateRefresh; refresh != nil {
+		switch refresh.Kind {
+		case AggregateArcReview:
+			return &Instruction{
+				Agent: "editor",
+				Task: fmt.Sprintf(
+					"审阅第 %d 卷第 %d 弧（第 %d-%d 章）：调用 novel_context(chapter=%d)，save_review 使用 scope=arc、chapter=%d",
+					refresh.Volume, refresh.Arc, refresh.StartChapter, refresh.EndChapter, refresh.EndChapter, refresh.EndChapter,
+				),
+				Reason: "弧级审阅缺失",
+			}
+		case AggregateArcSummary:
+			return &Instruction{
+				Agent:  "editor",
+				Task:   fmt.Sprintf("生成第 %d 卷第 %d 弧摘要、角色快照与写作规则（save_arc_summary）", refresh.Volume, refresh.Arc),
+				Reason: "弧级摘要缺失",
+			}
+		case AggregateVolumeSummary:
+			return &Instruction{
+				Agent:  "editor",
+				Task:   fmt.Sprintf("生成第 %d 卷卷摘要（save_volume_summary）", refresh.Volume),
+				Reason: "卷摘要缺失",
+			}
+		case AggregateGlobalReview:
+			return &Instruction{
+				Agent:  "editor",
+				Task:   fmt.Sprintf("审阅前 %d 章：调用 novel_context(chapter=%d)，save_review 使用 scope=global、chapter=%d", refresh.EndChapter, refresh.EndChapter, refresh.EndChapter),
+				Reason: "全局审阅缺失",
+			}
+		}
+	}
+
+	if s.OutlineFeedbackCount > 0 {
+		return &Instruction{
+			Agent:  plannerForTier(s.PlanningTier),
+			Task:   "读取 novel_context 中的 writer_feedback，核对已发生剧情与后续计划；需要调整时调用 revise_outline 或相应结构工具，无需调整时调用 resolve_outline_feedback",
+			Reason: fmt.Sprintf("有 %d 条章节变化尚未传播到后续规划", s.OutlineFeedbackCount),
+		}
 	}
 
 	// 6-10. 分层模式的弧末后处理

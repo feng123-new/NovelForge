@@ -86,8 +86,8 @@ func (t *SaveReviewTool) Execute(_ context.Context, args json.RawMessage) (json.
 	if err != nil {
 		return nil, fmt.Errorf("load progress: %w", err)
 	}
-	if r.Scope == "global" && (progress == nil || progress.LatestCompleted() != r.Chapter) {
-		return nil, fmt.Errorf("global review chapter must be the latest completed chapter")
+	if r.Scope == "global" && (progress == nil || !slices.Contains(progress.CompletedChapters, r.Chapter)) {
+		return nil, fmt.Errorf("global review chapter must be completed")
 	}
 
 	// 先原子应用控制状态，再保存审阅工件。若第二步失败，返工意图仍然存在；

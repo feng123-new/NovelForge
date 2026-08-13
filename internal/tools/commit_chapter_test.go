@@ -18,6 +18,15 @@ func newTestCommitChapterTool(st *store.Store) *CommitChapterTool {
 	return NewCommitChapterTool(st, NewStyleStatsIndex(st))
 }
 
+func saveTestChapterRecord(t *testing.T, st *store.Store, chapter int, content string) {
+	t.Helper()
+	if _, err := st.ChapterRecords.Accept(chapter, domain.ChapterOriginGenerated, content, domain.ChapterFacts{
+		Title: fmt.Sprintf("第%d章", chapter), Summary: "既有摘要", KeyEvents: []string{"既有事件"},
+	}, domain.StyleDelta{}); err != nil {
+		t.Fatalf("SaveChapterRecord %d: %v", chapter, err)
+	}
+}
+
 func TestCommitChapterSchemaDescribesFeedbackAsObject(t *testing.T) {
 	tool := newTestCommitChapterTool(store.NewStore(t.TempDir()))
 	if !tool.StrictSchema() {
@@ -209,9 +218,11 @@ func TestCommitChapterRefreshesSharedStyleStatsAfterRewrite(t *testing.T) {
 	}
 	completed := []int{1, 2, 3, 4, 5}
 	for _, chapter := range completed {
-		if err := s.Drafts.SaveFinalChapter(chapter, fmt.Sprintf("# 第%d章\n普通正文。\n故事继续。", chapter)); err != nil {
+		content := fmt.Sprintf("# 第%d章\n普通正文。\n故事继续。", chapter)
+		if err := s.Drafts.SaveFinalChapter(chapter, content); err != nil {
 			t.Fatal(err)
 		}
+		saveTestChapterRecord(t, s, chapter, content)
 		if err := s.Progress.MarkChapterComplete(chapter, 100, "", ""); err != nil {
 			t.Fatal(err)
 		}
@@ -522,6 +533,11 @@ func TestCommitChapterRecoversProgressMarkedWindowWithExactOutput(t *testing.T) 
 	if err := s.Summaries.SaveSummary(domain.ChapterSummary{Chapter: 1, Title: "第一章", Summary: "摘要"}); err != nil {
 		t.Fatalf("SaveSummary: %v", err)
 	}
+	if _, err := s.ChapterRecords.Accept(1, domain.ChapterOriginGenerated, "第一章终稿", domain.ChapterFacts{
+		Title: "第一章", Summary: "摘要", KeyEvents: []string{"事件"},
+	}, domain.StyleDelta{}); err != nil {
+		t.Fatalf("SaveChapterRecord: %v", err)
+	}
 	if err := s.Progress.MarkChapterComplete(1, 100, "mystery", "quest"); err != nil {
 		t.Fatalf("MarkChapterComplete: %v", err)
 	}
@@ -577,13 +593,19 @@ func TestCommitChapterNonLayeredRecompletesAfterRework(t *testing.T) {
 	}
 
 	// 两章写完并完结。第 2 章备齐 drafts/chapters，供返工提交。
+	ch1 := "第一章原始正文。"
 	ch2 := "第二章原始正文，用于模拟已提交终稿。"
+	if err := s.Drafts.SaveFinalChapter(1, ch1); err != nil {
+		t.Fatalf("SaveFinalChapter(1): %v", err)
+	}
 	if err := s.Drafts.SaveDraft(2, ch2); err != nil {
 		t.Fatalf("SaveDraft: %v", err)
 	}
 	if err := s.Drafts.SaveFinalChapter(2, ch2); err != nil {
 		t.Fatalf("SaveFinalChapter: %v", err)
 	}
+	saveTestChapterRecord(t, s, 1, ch1)
+	saveTestChapterRecord(t, s, 2, ch2)
 	if err := s.Progress.MarkChapterComplete(1, 100, "", ""); err != nil {
 		t.Fatalf("MarkChapterComplete(1): %v", err)
 	}
@@ -676,6 +698,7 @@ func TestCommitChapterLayeredReopenRecompletesDespiteOpenThread(t *testing.T) {
 		if err := s.Drafts.SaveFinalChapter(ch, body); err != nil {
 			t.Fatalf("SaveFinalChapter %d: %v", ch, err)
 		}
+		saveTestChapterRecord(t, s, ch, body)
 		if err := s.Progress.MarkChapterComplete(ch, len([]rune(body)), "", ""); err != nil {
 			t.Fatalf("MarkChapterComplete %d: %v", ch, err)
 		}

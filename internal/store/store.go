@@ -16,22 +16,24 @@ import (
 type Store struct {
 	dir string
 
-	Progress    *ProgressStore
-	Outline     *OutlineStore
-	Drafts      *DraftStore
-	Summaries   *SummaryStore
-	RunMeta     *RunMetaStore
-	UserRules   *UserRulesStore
-	Signals     *SignalStore
-	Runtime     *RuntimeStore
-	Characters  *CharacterStore
-	Cast        *CastStore
-	World       *WorldStore
-	Checkpoints *CheckpointStore
-	Sessions    *SessionStore
-	Usage       *UsageStore
-	Simulation  *SimulationStore
-	Decisions   *DecisionStore
+	Progress       *ProgressStore
+	Outline        *OutlineStore
+	Drafts         *DraftStore
+	Summaries      *SummaryStore
+	RunMeta        *RunMetaStore
+	UserRules      *UserRulesStore
+	Signals        *SignalStore
+	Runtime        *RuntimeStore
+	Characters     *CharacterStore
+	Cast           *CastStore
+	World          *WorldStore
+	Checkpoints    *CheckpointStore
+	Sessions       *SessionStore
+	Usage          *UsageStore
+	Simulation     *SimulationStore
+	Decisions      *DecisionStore
+	ChapterRecords *ChapterRecordStore
+	Revisions      *RevisionStore
 
 	crossMu sync.Mutex // 串行化跨域协调；不代表多个文件具备事务原子性
 }
@@ -41,23 +43,25 @@ func NewStore(dir string) *Store {
 	io := newIO(dir)
 	outline := NewOutlineStore(io)
 	return &Store{
-		dir:         dir,
-		Progress:    NewProgressStore(newIO(dir)),
-		Outline:     outline,
-		Drafts:      NewDraftStore(newIO(dir)),
-		Summaries:   NewSummaryStore(newIO(dir), outline),
-		RunMeta:     NewRunMetaStore(newIO(dir)),
-		UserRules:   NewUserRulesStore(newIO(dir)),
-		Signals:     NewSignalStore(newIO(dir)),
-		Runtime:     NewRuntimeStore(newIO(dir)),
-		Characters:  NewCharacterStore(newIO(dir), outline),
-		Cast:        NewCastStore(newIO(dir)),
-		World:       NewWorldStore(newIO(dir)),
-		Checkpoints: NewCheckpointStore(io),
-		Sessions:    NewSessionStore(newIO(dir)),
-		Usage:       NewUsageStore(newIO(dir)),
-		Simulation:  NewSimulationStore(newIO(dir)),
-		Decisions:   NewDecisionStore(newIO(dir)),
+		dir:            dir,
+		Progress:       NewProgressStore(newIO(dir)),
+		Outline:        outline,
+		Drafts:         NewDraftStore(newIO(dir)),
+		Summaries:      NewSummaryStore(newIO(dir), outline),
+		RunMeta:        NewRunMetaStore(newIO(dir)),
+		UserRules:      NewUserRulesStore(newIO(dir)),
+		Signals:        NewSignalStore(newIO(dir)),
+		Runtime:        NewRuntimeStore(newIO(dir)),
+		Characters:     NewCharacterStore(newIO(dir), outline),
+		Cast:           NewCastStore(newIO(dir)),
+		World:          NewWorldStore(newIO(dir)),
+		Checkpoints:    NewCheckpointStore(io),
+		Sessions:       NewSessionStore(newIO(dir)),
+		Usage:          NewUsageStore(newIO(dir)),
+		Simulation:     NewSimulationStore(newIO(dir)),
+		Decisions:      NewDecisionStore(newIO(dir)),
+		ChapterRecords: NewChapterRecordStore(newIO(dir)),
+		Revisions:      NewRevisionStore(newIO(dir)),
 	}
 }
 
@@ -206,7 +210,7 @@ func (s *Store) Init() error {
 		return fmt.Errorf("load checkpoints: %w", err)
 	}
 	return s.Progress.io.EnsureDirs([]string{
-		"chapters", "summaries", "drafts", "reviews", "meta", "meta/runtime", "meta/runtime/tasks", "meta/sessions", "meta/sessions/agents",
+		"chapters", "summaries", "drafts", "reviews", "meta", "meta/chapter_records", "meta/runtime", "meta/runtime/tasks", "meta/sessions", "meta/sessions/agents",
 	})
 }
 

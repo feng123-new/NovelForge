@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -553,6 +554,20 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		m.refreshEventViewport()
 		return m, nil, true
+	case revisionDoneMsg:
+		if msg.err != nil {
+			m.applyEvent(host.Event{Time: time.Now(), Category: "ERROR", Summary: "章节同步失败：" + msg.err.Error(), Level: "error"})
+		} else if msg.checkOnly {
+			summary := "未检测到章节外部修改"
+			if len(msg.chapters) > 0 {
+				summary = fmt.Sprintf("检测到章节正文已被外部修改：%v；执行 /sync 接纳", msg.chapters)
+			}
+			m.applyEvent(host.Event{Time: time.Now(), Category: "SYSTEM", Summary: summary, Level: "info"})
+		} else {
+			m.applyEvent(host.Event{Time: time.Now(), Category: "SYSTEM", Summary: formatRevisionResult(msg.result), Level: "success"})
+		}
+		m.refreshEventViewport()
+		return m, tea.Batch(fetchSnapshot(m.runtime), m.textarea.Focus()), true
 	case modelConfigSavedMsg:
 		if m.modelConfig == nil {
 			return m, nil, true

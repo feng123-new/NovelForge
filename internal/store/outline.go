@@ -247,6 +247,34 @@ func (s *OutlineStore) CheckArcBoundary(chapter int) (*ArcBoundary, error) {
 	return b, nil
 }
 
+// CompletedArcBoundaries 按故事顺序返回已完成的详细弧边界。
+func (s *OutlineStore) CompletedArcBoundaries(lastCompleted int) ([]ArcBoundary, error) {
+	volumes, err := s.LoadLayeredOutline()
+	if err != nil {
+		return nil, err
+	}
+	chapter := 1
+	var result []ArcBoundary
+	for _, volume := range volumes {
+		for arcIndex, arc := range volume.Arcs {
+			if len(arc.Chapters) == 0 {
+				continue
+			}
+			start := chapter
+			end := start + len(arc.Chapters) - 1
+			chapter = end + 1
+			if end > lastCompleted {
+				return result, nil
+			}
+			result = append(result, ArcBoundary{
+				IsArcEnd: true, IsVolumeEnd: arcIndex == len(volume.Arcs)-1,
+				Volume: volume.Index, Arc: arc.Index, StartChapter: start, EndChapter: end,
+			})
+		}
+	}
+	return result, nil
+}
+
 // expandArcUnlocked 内部方法，在 Store.ExpandArc 跨域协调中调用。
 func (s *OutlineStore) expandArcUnlocked(volumeIdx, arcIdx int, expansion domain.ArcExpansion) ([]domain.VolumeOutline, error) {
 	if strings.TrimSpace(expansion.Title) == "" {
@@ -532,13 +560,17 @@ func renderOutline(entries []domain.OutlineEntry) string {
 
 // ChapterFeedback 一条带章节号的大纲反馈。
 type ChapterFeedback struct {
-	Chapter    int    `json:"chapter"`
-	Deviation  string `json:"deviation,omitempty"`
-	Suggestion string `json:"suggestion,omitempty"`
-	At         string `json:"at"`
+	Chapter          int      `json:"chapter"`
+	StoryChanged     bool     `json:"story_changed,omitempty"`
+	ChangeSummary    string   `json:"change_summary,omitempty"`
+	Deviation        string   `json:"deviation,omitempty"`
+	Suggestion       string   `json:"suggestion,omitempty"`
+	DownstreamIssues []string `json:"downstream_issues,omitempty"`
+	At               string   `json:"at"`
 }
 
 const outlineFeedbackFile = "meta/outline_feedback.jsonl"
+const outlineFeedbackResolutionFile = "meta/outline_feedback_resolution.json"
 
 // AppendOutlineFeedback 追加一条 writer 反馈。相同章节与内容视为同一事实，
 // 使 commit 在 ProgressMarked 前崩溃重放时不会重复累加附属反馈。
@@ -553,7 +585,9 @@ func (s *OutlineStore) AppendOutlineFeedback(fb ChapterFeedback) error {
 			return err
 		}
 		for _, current := range currentFeedback {
-			if current.Chapter == fb.Chapter && current.Deviation == fb.Deviation && current.Suggestion == fb.Suggestion {
+			if current.Chapter == fb.Chapter && current.StoryChanged == fb.StoryChanged &&
+				current.ChangeSummary == fb.ChangeSummary && current.Deviation == fb.Deviation &&
+				current.Suggestion == fb.Suggestion && reflect.DeepEqual(current.DownstreamIssues, fb.DownstreamIssues) {
 				return nil
 			}
 		}
@@ -581,6 +615,14 @@ func (s *OutlineStore) LoadPendingOutlineFeedback() ([]ChapterFeedback, error) {
 		return nil, err
 	}
 	return parseOutlineFeedback(data)
+}
+
+func (s *OutlineStore) SaveOutlineFeedbackResolution(reason string, count int) error {
+	return s.io.WriteJSON(outlineFeedbackResolutionFile, struct {
+		Reason   string `json:"reason"`
+		Resolved int    `json:"resolved"`
+		At       string `json:"at"`
+	}{Reason: reason, Resolved: count, At: time.Now().Format(time.RFC3339)})
 }
 
 func parseOutlineFeedback(data []byte) ([]ChapterFeedback, error) {

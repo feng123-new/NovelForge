@@ -271,6 +271,29 @@ func commandRegistryInstance() commandRegistry {
 			},
 		},
 		{
+			Name:        "sync",
+			Group:       "writing",
+			Usage:       "/sync [--check]",
+			Description: "检查或接纳手动修改的已完成章节",
+			AutoExecute: true,
+			NeedsIdle:   true,
+			Run: func(m Model, args []string) (tea.Model, tea.Cmd) {
+				cmd, checkOnly, err := startRevisionSync(m.runtime, args)
+				if err != nil {
+					m.applyEvent(host.Event{Time: time.Now(), Category: "ERROR", Summary: "章节同步启动失败：" + err.Error(), Level: "error"})
+					m.refreshEventViewport()
+					return m, nil
+				}
+				summary := "正在分析并接纳章节修订..."
+				if checkOnly {
+					summary = "正在检查章节外部修改..."
+				}
+				m.applyEvent(host.Event{Time: time.Now(), Category: "SYSTEM", Summary: summary, Level: "info"})
+				m.refreshEventViewport()
+				return m, cmd
+			},
+		},
+		{
 			Name:        "export",
 			Group:       "writing",
 			Usage:       "/export [path] [from=N] [to=M] [--overwrite]",

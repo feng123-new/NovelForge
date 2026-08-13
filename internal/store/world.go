@@ -308,6 +308,13 @@ func (s *WorldStore) LoadStateChanges() ([]domain.StateChange, error) {
 	return s.stateChanges.allUnlocked(s.io)
 }
 
+// SaveStateChanges 全量替换状态变化事实，供章节修订后重建投影。
+func (s *WorldStore) SaveStateChanges(changes []domain.StateChange) error {
+	return s.io.WithWriteLock(func() error {
+		return s.stateChanges.replaceUnlocked(s.io, changes)
+	})
+}
+
 // ── 世界规则 ──
 
 // SaveWorldRules 全量写入 world_rules.json + world_rules.md（原子写入）。
@@ -349,6 +356,21 @@ func (s *WorldStore) LoadStyleRules() (*domain.WritingStyleRules, error) {
 		return nil, err
 	}
 	return &rules, nil
+}
+
+func (s *WorldStore) SaveAuthorRevisionStyle(style domain.AuthorRevisionStyle) error {
+	return s.io.WriteJSON("meta/author_revision_style.json", style)
+}
+
+func (s *WorldStore) LoadAuthorRevisionStyle() (*domain.AuthorRevisionStyle, error) {
+	var style domain.AuthorRevisionStyle
+	if err := s.io.ReadJSON("meta/author_revision_style.json", &style); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &style, nil
 }
 
 // ── 审阅 ──

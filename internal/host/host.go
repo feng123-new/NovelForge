@@ -26,6 +26,7 @@ import (
 	runtimelog "github.com/voocel/ainovel-cli/internal/logger"
 	modelreg "github.com/voocel/ainovel-cli/internal/models"
 	"github.com/voocel/ainovel-cli/internal/notify"
+	"github.com/voocel/ainovel-cli/internal/revision"
 	"github.com/voocel/ainovel-cli/internal/rules"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
 	"github.com/voocel/ainovel-cli/internal/tools"
@@ -62,7 +63,7 @@ type Host struct {
 	mu         sync.Mutex
 	lifecycle  lifecycle
 	cocreating bool   // 阶段共创占用：paused 窗口内堵住 import/simulate/continue 的并发介入
-	exclusive  string // 后台独占作业占用（导入/仿写）：非空表示某作业在跑，堵住并发独占入口
+	exclusive  string // 后台独占作业占用（导入/仿写/修订）：非空表示某作业在跑，堵住并发独占入口
 	// exclusiveCancel 是当前独占作业的取消函数：预算硬停/手动暂停须能停掉正在烧钱的
 	// 导入，而不仅是 Engine——abortWithEvent 在 Engine 未运行时取消它（预算哨兵的
 	// abort 回调与手动 Abort 共用同一停机机制）。releaseExclusive 一并清空。
@@ -494,6 +495,9 @@ func (h *Host) Reopen(direction string) error {
 		return fmt.Errorf("%s进行中，请先完成后再重开", ex)
 	}
 	h.mu.Unlock()
+	if err := h.requireCleanChapters(); err != nil {
+		return err
+	}
 
 	if err := h.store.Progress.ReopenContinue(); err != nil {
 		return err
@@ -535,6 +539,9 @@ func (h *Host) Resume() (string, error) {
 	}
 	if label == "" {
 		return "", nil // 新建模式，无恢复
+	}
+	if err := h.requireCleanChapters(); err != nil {
+		return label, err
 	}
 	if err := h.budget.Refuse(); err != nil {
 		return "", err
@@ -742,6 +749,9 @@ func (h *Host) Continue(text string) error {
 		return fmt.Errorf("%s进行中，请先完成后再继续创作", ex)
 	}
 	h.mu.Unlock()
+	if err := h.requireCleanChapters(); err != nil {
+		return err
+	}
 	if err := h.budget.Refuse(); err != nil {
 		return err
 	}
@@ -795,6 +805,9 @@ func (h *Host) AdvanceOneChapter() error {
 	}
 	if ex != "" {
 		return fmt.Errorf("%s进行中，请先完成后再执行 /next", ex)
+	}
+	if err := h.requireCleanChapters(); err != nil {
+		return err
 	}
 	meta, err := h.store.RunMeta.Load()
 	if err != nil {
@@ -1570,6 +1583,72 @@ func (h *Host) refreshWriterRestore() {
 	}
 }
 
+func (h *Host) CheckChapterRevisions() ([]int, error) {
+	pending, err := h.store.Revisions.LoadPending()
+	if err != nil {
+		return nil, fmt.Errorf("读取修订恢复记录: %w", err)
+	}
+	if pending != nil {
+		chapters := make([]int, 0, len(pending.Items))
+		for _, item := range pending.Items {
+			chapters = append(chapters, item.Chapter)
+		}
+		return chapters, nil
+	}
+	changes, err := revision.Scan(h.store)
+	if err != nil {
+		return nil, err
+	}
+	return revision.ChangedChapters(changes), nil
+}
+
+func (h *Host) SyncChapterRevisions(ctx context.Context) (*revision.Result, error) {
+	if err := h.acquireExclusive("同步章节修订"); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	h.mu.Lock()
+	h.exclusiveCancel = cancel
+	h.mu.Unlock()
+	defer h.releaseExclusive()
+
+	pending, err := h.store.Revisions.LoadPending()
+	if err != nil {
+		return nil, err
+	}
+	if pending == nil {
+		changes, err := revision.Scan(h.store)
+		if err != nil {
+			return nil, err
+		}
+		if len(changes) == 0 {
+			return &revision.Result{}, nil
+		}
+		if err := h.budget.Refuse(); err != nil {
+			return nil, err
+		}
+	}
+	model := h.models.ForRoleWithFailover("editor", func(ev bootstrap.FailoverEvent) {
+		slog.Warn("章节修订 provider 切换", "module", "revision", "role", ev.Role,
+			"reason", ev.Reason, "from", fmt.Sprintf("%s/%s", ev.FromProvider, ev.FromModel),
+			"to", fmt.Sprintf("%s/%s", ev.ToProvider, ev.ToModel), "err", ev.Err)
+	})
+	model = newUsageTrackedModel(model, "editor", h.usage.Record)
+	service := revision.NewService(h.store, model, h.bundle.Prompts.RevisionAnalyze, h.styleStats)
+	return service.Sync(ctx)
+}
+
+func (h *Host) requireCleanChapters() error {
+	chapters, err := h.CheckChapterRevisions()
+	if err != nil {
+		return fmt.Errorf("检查章节外部修订: %w", err)
+	}
+	if len(chapters) > 0 {
+		return fmt.Errorf("检测到章节正文已被外部修改：%v；请先执行 /sync", chapters)
+	}
+	return nil
+}
+
 func truncate(s string, maxRunes int) string {
 	runes := []rune(s)
 	if len(runes) <= maxRunes {
@@ -1715,7 +1794,7 @@ func (h *Host) ImportSimulationProfile(ctx context.Context, path string) (<-chan
 	return superviseExclusive(h, ch), nil
 }
 
-// acquireExclusive 原子占用后台独占作业槽（import/simulate）：Engine 运行中、阶段共创窗口内、
+// acquireExclusive 原子占用后台独占作业槽（import/simulate/revision）：Engine 运行中、阶段共创窗口内、
 // 或已有独占作业在跑时拒绝。成功即登记占用，作业结束须调 releaseExclusive 释放——否则两个导入
 // 或导入+仿写会并发抢改同一状态。补上此前只查 ==running/cocreating、不登记作业本身的缺口。
 func (h *Host) acquireExclusive(action string) error {
