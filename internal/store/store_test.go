@@ -4,7 +4,25 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/voocel/ainovel-cli/internal/domain"
 )
+
+func TestSummaryTitleCacheTracksSave(t *testing.T) {
+	st := NewStore(t.TempDir())
+	if err := st.Summaries.SaveSummary(domain.ChapterSummary{Chapter: 1, Title: "旧标题"}); err != nil {
+		t.Fatal(err)
+	}
+	if title, err := st.Summaries.LoadSummaryTitle(1); err != nil || title != "旧标题" {
+		t.Fatalf("首次读取标题: title=%q err=%v", title, err)
+	}
+	if err := st.Summaries.SaveSummary(domain.ChapterSummary{Chapter: 1, Title: "新标题"}); err != nil {
+		t.Fatal(err)
+	}
+	if title, err := st.Summaries.LoadSummaryTitle(1); err != nil || title != "新标题" {
+		t.Fatalf("保存后缓存未更新: title=%q err=%v", title, err)
+	}
+}
 
 func TestFoundationMissingReturnsReadError(t *testing.T) {
 	dir := t.TempDir()

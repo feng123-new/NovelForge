@@ -84,3 +84,20 @@ func TestApplyStartupPromptEventTruncatesSummaryButKeepsDetail(t *testing.T) {
 		t.Fatalf("summary should be truncated with ellipsis, got %q", ev.Summary)
 	}
 }
+
+func TestStreamFlushTimerRunsOnlyForPendingData(t *testing.T) {
+	m := NewModel(nil, "")
+	next, cmd, handled := m.handleRuntimeMsg(streamDeltaMsg("正文"))
+	if !handled || cmd == nil {
+		t.Fatal("流式增量应启动一次刷新")
+	}
+	got := next.(Model)
+	if !got.streamDirty || !got.flushPending {
+		t.Fatal("流式增量应标记待刷新")
+	}
+	next, cmd, handled = got.handleRuntimeMsg(streamFlushTickMsg{})
+	got = next.(Model)
+	if !handled || cmd != nil || got.streamDirty || got.flushPending {
+		t.Fatal("刷新完成后 timer 应停止")
+	}
+}

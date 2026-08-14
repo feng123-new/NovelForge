@@ -1258,11 +1258,11 @@ func (h *Host) fillDetails(snap *UISnapshot, progress *domain.Progress) {
 		for _, e := range outline {
 			title := e.Title
 			if _, ok := completed[e.Chapter]; ok {
-				summary, err := h.store.Summaries.LoadSummary(e.Chapter)
+				committedTitle, err := h.store.Summaries.LoadSummaryTitle(e.Chapter)
 				if err != nil {
 					slog.Warn("章节标题投影失败", "module", "host.snapshot", "chapter", e.Chapter, "err", err)
-				} else if summary != nil && strings.TrimSpace(summary.Title) != "" {
-					title = summary.Title
+				} else if strings.TrimSpace(committedTitle) != "" {
+					title = committedTitle
 				}
 			}
 			snap.Outline = append(snap.Outline, OutlineSnapshot{

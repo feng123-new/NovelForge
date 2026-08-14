@@ -28,6 +28,18 @@ func TestRenderDetailContentShowsSynopsis(t *testing.T) {
 	}
 }
 
+func TestSameDetailSnapshotDetectsOutlineStateChanges(t *testing.T) {
+	base := host.UISnapshot{Outline: []host.OutlineSnapshot{{Chapter: 1, Title: "第一章"}}}
+	if !sameDetailSnapshot(base, base) {
+		t.Fatal("相同详情不应触发重建")
+	}
+	changed := base
+	changed.InProgressChapter = 1
+	if sameDetailSnapshot(base, changed) {
+		t.Fatal("章节状态变化必须触发详情重建")
+	}
+}
+
 func TestRenderErrorEventKeepsOneLineSummary(t *testing.T) {
 	out := ansi.Strip(renderEventLine(host.Event{
 		Time:     time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC),

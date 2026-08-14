@@ -80,7 +80,8 @@ type Model struct {
 	height         int
 	autoScroll     bool
 	streamScroll   bool      // 流式面板自动跟随
-	streamDirty    bool      // streamRounds 有未刷新的 delta；由 streamFlushTick 60fps 合并
+	streamDirty    bool      // streamRounds 有尚未刷新的 delta
+	flushPending   bool      // 已调度一次流式刷新，避免每个 delta 重复启动 timer
 	lastKeyAt      time.Time // 上次非 Enter 按键时间；KeyEnter 节流防粘贴 \n 流误触发提交
 	inputHistory   []string  // 已提交的输入历史（去重：相邻不重复）
 	historyIdx     int       // 当前浏览索引；== len(inputHistory) 表示"未浏览，正在编辑草稿"
@@ -97,7 +98,8 @@ type Model struct {
 	err            error
 	spinnerIdx     int
 	toolSpinnerIdx int  // 事件流进行中行的独立帧索引（150ms tick，不影响顶栏/星星）
-	cursorIdx      int  // 流式光标帧索引（独立 tick）
+	toolTicking    bool // 已启动工具动画 timer；无运行事件时自动停止
+	cursorIdx      int  // 流式光标帧索引（随主动画推进）
 	streamRound    int  // 流式输出轮次计数
 	quitPending    bool // 双次 Ctrl+C 退出确认
 	abortPending   bool // 等待 Done 回来的手动暂停
@@ -166,9 +168,6 @@ func (m Model) Init() tea.Cmd {
 		tickSnapshot(m.runtime),
 		bootstrapRuntime(m.runtime),
 		tickSpinner(),
-		tickToolSpinner(),
-		tickCursor(),
-		tickStreamFlush(),
 	)
 }
 

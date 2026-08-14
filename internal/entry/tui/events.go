@@ -6,7 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/voocel/ainovel-cli/internal/diag"
-	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/entry/startup"
 	"github.com/voocel/ainovel-cli/internal/host"
 	"github.com/voocel/ainovel-cli/internal/store"
@@ -19,7 +18,6 @@ type (
 	doneMsg        struct{ complete bool } // complete=true 全书完成，false 出错停止
 	abortResultMsg struct{ stopped bool }
 	bootstrapMsg   struct {
-		replay    []domain.RuntimeQueueItem
 		resumed   bool
 		completed bool // 目录里是本已完结的书：落完成态工作台而非欢迎页
 		err       error
@@ -51,10 +49,9 @@ type (
 	continueResultMsg  struct{ err error }
 	spinnerTickMsg     time.Time
 	toolSpinnerTickMsg time.Time // 事件流工具 spinner 独立 tick（更快、独立于顶栏/星星）
-	cursorTickMsg      time.Time // 流式光标独立 tick
 	streamDeltaMsg     string    // 流式 token 增量
 	streamClearMsg     struct{}  // 清空流式缓冲（新消息开始）
-	streamFlushTickMsg struct{}  // 60fps 节流刷新流式面板（合并 token 级 delta）
+	streamFlushTickMsg struct{}  // 流式刷新节流（仅有待刷数据时调度）
 	quitResetMsg       struct{}  // 双次 Ctrl+C 超时重置
 )
 
@@ -95,25 +92,19 @@ func fetchSnapshot(rt *host.Host) tea.Cmd {
 
 func bootstrapRuntime(rt *host.Host) tea.Cmd {
 	return func() tea.Msg {
-		replay, err := rt.ReplayQueue(0)
-		if err != nil {
-			return bootstrapMsg{err: err}
-		}
 		label, err := rt.Resume()
 		if err != nil {
-			return bootstrapMsg{replay: replay, err: err}
+			return bootstrapMsg{err: err}
 		}
 		if label == "" {
 			// 完结书不可续跑（恢复视为无标签），但也不能落欢迎页装作书不存在——
 			// 直接落到完成态工作台：面板照常展示本书，/reopen、/export、返工输入都在原位。
 			if rt.Snapshot().Phase == "complete" {
-				return bootstrapMsg{replay: replay, completed: true}
+				return bootstrapMsg{completed: true}
 			}
-			if len(replay) == 0 {
-				return nil
-			}
+			return nil
 		}
-		return bootstrapMsg{replay: replay, resumed: label != ""}
+		return bootstrapMsg{resumed: true}
 	}
 }
 
@@ -266,15 +257,8 @@ func tickToolSpinner() tea.Cmd {
 	})
 }
 
-func tickCursor() tea.Cmd {
-	return tea.Tick(120*time.Millisecond, func(t time.Time) tea.Msg {
-		return cursorTickMsg(t)
-	})
-}
-
-// tickStreamFlush 驱动流式面板节流刷新。streamDelta 不再每个 token 立即重渲，
-// 而是 mark dirty；本 tick 每 16ms（~60fps）检查并合并刷新一次，把 LLM 高速流式
-// 期的"每秒数十次全量重渲"压回 60 次上限。
+// tickStreamFlush 合并一个 16ms 窗口内的流式增量。它由首个待刷 delta 启动，
+// 刷完即停止，空闲时不会持续唤醒 TUI。
 func tickStreamFlush() tea.Cmd {
 	return tea.Tick(16*time.Millisecond, func(t time.Time) tea.Msg {
 		return streamFlushTickMsg{}
