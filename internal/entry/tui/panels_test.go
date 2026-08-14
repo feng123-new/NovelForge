@@ -14,10 +14,17 @@ func TestRenderTopBarShowsVersion(t *testing.T) {
 	out := renderTopBar(host.UISnapshot{
 		Provider:  "openrouter",
 		ModelName: "test-model",
-		NovelName: "测试小说",
+		BookTitle: "测试小说",
 	}, 120, "", "v1.2.3")
 	if !strings.Contains(out, "ainovel-cli v1.2.3") {
 		t.Fatalf("top bar missing version: %q", out)
+	}
+}
+
+func TestRenderDetailContentShowsSynopsis(t *testing.T) {
+	out := ansi.Strip(renderDetailContent(host.UISnapshot{Synopsis: "少年在永夜中寻找黎明。"}, 40))
+	if !strings.Contains(out, "简介") || !strings.Contains(out, "少年在永夜中寻找黎明。") {
+		t.Fatalf("detail panel missing synopsis: %q", out)
 	}
 }
 

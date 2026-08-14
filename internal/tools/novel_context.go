@@ -483,6 +483,9 @@ func (t *ContextTool) foundationStatus() (map[string]any, error) {
 // ContextSummary 返回当前状态的简要摘要（供日志使用）。
 func (t *ContextTool) ContextSummary() string {
 	var parts []string
+	if book, _ := t.store.Book.Load(); book != nil {
+		parts = append(parts, "book:ok")
+	}
 	if p, _ := t.store.Outline.LoadPremise(); p != "" {
 		parts = append(parts, "premise:ok")
 	}

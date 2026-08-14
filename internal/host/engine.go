@@ -787,17 +787,9 @@ func (e *engine) pauseWithNotify(kind, body string) {
 	e.abort()
 }
 
-// completionSummary 完本的确定性收尾报告(store 已有全部事实,不花 LLM 调用;RFC 末节)。
-func completionSummary(st *storepkg.Store) string {
-	progress, err := st.Progress.Load()
-	if err != nil || progress == nil {
-		return "创作完成"
-	}
+// completionSummary 完本的确定性收尾报告，不花 LLM 调用。
+func completionSummary(progress domain.Progress, book domain.BookMetadata) string {
 	var b strings.Builder
-	name := progress.NovelName
-	if name == "" {
-		name = "本书"
-	}
-	fmt.Fprintf(&b, "《%s》创作完成: 共 %d 章 %d 字", name, len(progress.CompletedChapters), progress.TotalWordCount)
+	fmt.Fprintf(&b, "《%s》创作完成: 共 %d 章 %d 字", book.Title, len(progress.CompletedChapters), progress.TotalWordCount)
 	return b.String()
 }

@@ -369,7 +369,7 @@ func (h *Host) StartPrepared(rawRequirement string) error {
 	if err := h.store.Checkpoints.Reset(); err != nil {
 		return fmt.Errorf("reset checkpoints: %w", err)
 	}
-	if err := h.store.Progress.Init("", 0); err != nil {
+	if err := h.store.Progress.Init(0); err != nil {
 		return fmt.Errorf("init progress: %w", err)
 	}
 	// 输入事实先于裁定落盘:裁定失败(模型故障等)后 StartPrompt 仍在,
@@ -426,10 +426,14 @@ func (h *Host) refuseNewBookOverExisting() error {
 	if progress == nil || len(progress.CompletedChapters) == 0 {
 		return nil
 	}
-	name := strings.TrimSpace(progress.NovelName)
-	if name == "" {
-		name = "未定书名"
+	book, err := h.store.Book.Load()
+	if err != nil {
+		return err
 	}
+	if book == nil {
+		return fmt.Errorf("输出目录已有章节，但作品信息不存在")
+	}
+	name := book.Title
 	return fmt.Errorf("输出目录已有《%s》的 %d 章创作进度，新建会重置其进度与检查点：续写请走恢复入口（重启应用自动恢复），新书请更换输出目录",
 		name, len(progress.CompletedChapters))
 }
@@ -967,15 +971,38 @@ func (h *Host) runEnded() {
 		}
 		return
 	}
+	book, err := h.store.Book.Load()
+	if err != nil {
+		h.lifecycle = lifecycleIdle
+		h.mu.Unlock()
+		h.emitEvent(Event{Time: time.Now(), Category: "ERROR", Level: "error",
+			Summary: "引擎结束时读取作品信息失败: " + err.Error()})
+		select {
+		case h.done <- struct{}{}:
+		default:
+		}
+		return
+	}
 	if progress != nil && progress.Phase == domain.PhaseComplete {
+		if book == nil {
+			h.lifecycle = lifecycleIdle
+			h.mu.Unlock()
+			h.emitEvent(Event{Time: time.Now(), Category: "ERROR", Level: "error",
+				Summary: "引擎结束时作品信息不存在"})
+			select {
+			case h.done <- struct{}{}:
+			default:
+			}
+			return
+		}
 		h.lifecycle = lifecycleCompleted
 		// 完本收尾:确定性生成(store 已有全部事实,不花 LLM 调用;RFC 末节)。
-		summary := completionSummary(h.store)
+		summary := completionSummary(*progress, *book)
 		h.mu.Unlock()
 		h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: summary, Level: "success"})
 		h.notifier.Send(notify.Notification{
 			Kind: notify.KindRunEnd, Level: "info", Title: "ainovel: 创作完成",
-			Body: h.runEndBody(progress.NovelName, summary),
+			Body: h.runEndBody("", summary),
 		})
 	} else {
 		wasRunning := h.lifecycle == lifecycleRunning
@@ -983,10 +1010,12 @@ func (h *Host) runEnded() {
 			h.lifecycle = lifecycleIdle
 		}
 		completed := 0
-		name := ""
+		title := ""
 		if progress != nil {
 			completed = len(progress.CompletedChapters)
-			name = progress.NovelName
+		}
+		if book != nil {
+			title = book.Title
 		}
 		h.mu.Unlock()
 		if wasRunning {
@@ -994,7 +1023,7 @@ func (h *Host) runEnded() {
 			h.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: summary, Level: "warn"})
 			h.notifier.Send(notify.Notification{
 				Kind: notify.KindRunEnd, Level: "warn", Title: "ainovel: 创作停止",
-				Body: h.runEndBody(name, summary),
+				Body: h.runEndBody(title, summary),
 			})
 		}
 	}
@@ -1006,8 +1035,8 @@ func (h *Host) runEnded() {
 }
 
 // runEndBody 组装 run_end 通知正文：书名 + 进度摘要 + 累计花费。
-func (h *Host) runEndBody(novelName, summary string) string {
-	if name := strings.TrimSpace(novelName); name != "" {
+func (h *Host) runEndBody(title, summary string) string {
+	if name := strings.TrimSpace(title); name != "" {
 		summary = "《" + name + "》" + summary
 	}
 	cost, _, _, _, _ := h.usage.Totals()
@@ -1162,9 +1191,12 @@ func (h *Host) Snapshot() UISnapshot {
 		MissingAssistantUsage:  h.usage.MissingAssistantUsage(),
 	}
 
+	if book, _ := h.store.Book.Load(); book != nil {
+		snap.BookTitle = book.Title
+		snap.Synopsis = truncate(book.Synopsis, 200)
+	}
 	progress, _ := h.store.Progress.Load()
 	if progress != nil {
-		snap.NovelName = strings.TrimSpace(progress.NovelName)
 		snap.Phase = string(progress.Phase)
 		snap.Flow = string(progress.Flow)
 		snap.CurrentChapter = progress.CurrentChapter
@@ -1177,11 +1209,6 @@ func (h *Host) Snapshot() UISnapshot {
 		snap.Layered = progress.Layered
 		if progress.CurrentVolume > 0 {
 			snap.CurrentVolumeArc = fmt.Sprintf("第%d卷·第%d弧", progress.CurrentVolume, progress.CurrentArc)
-		}
-	}
-	if snap.NovelName == "" {
-		if premise, _ := h.store.Outline.LoadPremise(); premise != "" {
-			snap.NovelName = domain.ExtractNovelNameFromPremise(premise)
 		}
 	}
 	if meta, _ := h.store.RunMeta.Load(); meta != nil {

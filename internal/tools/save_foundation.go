@@ -133,15 +133,8 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 
 	switch a.Type {
 	case "premise":
-		name := domain.ExtractNovelNameFromPremise(content)
 		if err := t.store.Outline.SavePremise(content); err != nil {
 			return nil, fmt.Errorf("save premise: %w: %w", errs.ErrStoreWrite, err)
-		}
-		if name != "" {
-			if err := t.store.Progress.SetNovelName(name); err != nil {
-				return nil, fmt.Errorf("save novel name: %w: %w", errs.ErrStoreWrite, err)
-			}
-			result["novel_name"] = name
 		}
 		if err := t.store.Progress.AdvancePhase(domain.PhasePremise); err != nil {
 			return nil, fmt.Errorf("update premise phase: %w: %w", errs.ErrStoreWrite, err)

@@ -106,11 +106,21 @@ UI、诊断、事件日志都是从事件流 / 只读工件投影出来的被动
 
 ## 4. 数据模型
 
-### 4.1 Progress（`internal/domain/runtime.go`）
+### 4.1 BookMetadata 与 Progress
+
+`BookMetadata` 是书名和面向读者简介的唯一事实源，持久化到 `meta/book.json`；`book.md` 只是可读投影。Premise 不重复保存书名，Progress 也不承载作品信息。
+
+```go
+type BookMetadata struct {
+    Title    string
+    Synopsis string
+}
+```
+
+Progress（`internal/domain/runtime.go`）只记录运行状态：
 
 ```go
 type Progress struct {
-    NovelName         string
     Phase             Phase           // init / premise / outline / writing / complete
     CurrentChapter    int
     TotalChapters     int
@@ -184,6 +194,7 @@ Artifact 在 `store/outline.go` `drafts.go` `summaries.go` `characters.go` `worl
 
 | 工具 | Artifact | Step |
 |---|---|---|
+| `save_book` | meta/book.json + book.md | book |
 | `plan_chapter` | drafts/chXX.plan.json | plan |
 | `draft_chapter` | drafts/chXX.draft.md | draft |
 | `edit_chapter` | drafts/chXX.draft.md | edit |

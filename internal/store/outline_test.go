@@ -15,7 +15,7 @@ func setupLayered(t *testing.T, volumes []domain.VolumeOutline) *Store {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 0); err != nil {
+	if err := s.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 	if err := s.Outline.SaveLayeredOutline(volumes); err != nil {

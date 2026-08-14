@@ -11,9 +11,9 @@ import (
 // renderTopBar 渲染顶部状态栏。
 // 左侧：provider/model，中间：书名，右侧：状态胶囊。
 func renderTopBar(snap host.UISnapshot, width int, spinnerFrame, version string) string {
-	novelName := snap.NovelName
-	if novelName == "" {
-		novelName = "未定书名"
+	bookTitle := snap.BookTitle
+	if bookTitle == "" {
+		bookTitle = "未定书名"
 	}
 
 	var infoParts []string
@@ -62,7 +62,7 @@ func renderTopBar(snap host.UISnapshot, width int, spinnerFrame, version string)
 	}
 
 	innerW := max(12, width-2)
-	titleText := truncate(novelName, max(8, innerW/3))
+	titleText := truncate(bookTitle, max(8, innerW/3))
 	centerW := max(16, lipgloss.Width(titleText)+6)
 	if centerW > innerW-24 {
 		centerW = max(8, innerW-24)

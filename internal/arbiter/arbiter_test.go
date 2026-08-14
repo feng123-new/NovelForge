@@ -285,8 +285,11 @@ func TestCollectInterventionFacts(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := st.Progress.Init("测试书", 30); err != nil {
+	if err := st.Progress.Init(30); err != nil {
 		t.Fatalf("progress: %v", err)
+	}
+	if err := st.Book.Save(domain.BookMetadata{Title: "测试书", Synopsis: "测试简介"}); err != nil {
+		t.Fatalf("book: %v", err)
 	}
 	if err := st.RunMeta.Init("default", "openrouter", "m"); err != nil {
 		t.Fatalf("run meta: %v", err)
@@ -305,7 +308,7 @@ func TestCollectInterventionFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CollectInterventionFacts: %v", err)
 	}
-	if f.NovelName != "测试书" {
+	if f.Title != "测试书" {
 		t.Fatalf("facts 应含书名, got %+v", f)
 	}
 	if len(f.RecentDecisions) != 1 || f.RecentDecisions[0].Input != "上次干预" {
@@ -343,7 +346,7 @@ func TestCollectInterventionFactsDoesNotExposeLayeredEstimateAsTotal(t *testing.
 	if err := st.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Progress.Init("动态长篇", 66); err != nil {
+	if err := st.Progress.Init(66); err != nil {
 		t.Fatal(err)
 	}
 	volumes := []domain.VolumeOutline{{

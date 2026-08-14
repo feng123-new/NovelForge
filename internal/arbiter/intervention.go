@@ -18,7 +18,7 @@ import (
 type InterventionFacts struct {
 	Phase                    string           `json:"phase,omitempty"`
 	Flow                     string           `json:"flow,omitempty"`
-	NovelName                string           `json:"novel_name,omitempty"`
+	Title                    string           `json:"title,omitempty"`
 	CompletedChapters        int              `json:"completed_chapters"`
 	OutlinedChapters         int              `json:"outlined_chapters,omitempty"`
 	DynamicPlanning          bool             `json:"dynamic_planning"`
@@ -64,6 +64,13 @@ func CollectInterventionFacts(st *storepkg.Store) (InterventionFacts, error) {
 		return f, fmt.Errorf("读取基础设定状态: %w", err)
 	}
 	f.FoundationMissing = missing
+	book, err := st.Book.Load()
+	if err != nil {
+		return f, fmt.Errorf("读取作品信息: %w", err)
+	}
+	if book != nil {
+		f.Title = book.Title
+	}
 	p, err := st.Progress.Load()
 	if err != nil {
 		return f, fmt.Errorf("读取进度: %w", err)
@@ -71,7 +78,6 @@ func CollectInterventionFacts(st *storepkg.Store) (InterventionFacts, error) {
 	if p != nil {
 		f.Phase = string(p.Phase)
 		f.Flow = string(p.Flow)
-		f.NovelName = p.NovelName
 		f.CompletedChapters = len(p.CompletedChapters)
 		f.DynamicPlanning = p.Layered
 		if p.Layered {

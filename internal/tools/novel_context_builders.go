@@ -185,6 +185,11 @@ func (t *ContextTool) buildSimulationProfile(result map[string]any, sectionKey s
 }
 
 func (t *ContextTool) buildBaseContext(result map[string]any, warn func(string, error)) {
+	if book, err := t.store.Book.Load(); err == nil && book != nil {
+		result["book"] = book
+	} else {
+		warn("book", err)
+	}
 	if premise, err := t.store.Outline.LoadPremise(); err == nil && premise != "" {
 		result["premise"] = premise
 		if sections := parsePremiseSections(premise); len(sections) > 0 {
@@ -717,6 +722,11 @@ func (t *ContextTool) completionSignals(layered []domain.VolumeOutline, compass 
 }
 
 func (t *ContextTool) buildArchitectFoundation(envelope *architectContextEnvelope, warn func(string, error)) {
+	if book, err := t.store.Book.Load(); err == nil && book != nil {
+		envelope.Foundation["book"] = book
+	} else {
+		warn("book", err)
+	}
 	if premise, err := t.store.Outline.LoadPremise(); err == nil && premise != "" {
 		if sections := parsePremiseSections(premise); len(sections) > 0 {
 			envelope.Foundation["premise_sections"] = sections

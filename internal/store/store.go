@@ -17,6 +17,7 @@ type Store struct {
 	dir string
 
 	Progress       *ProgressStore
+	Book           *BookStore
 	Outline        *OutlineStore
 	Drafts         *DraftStore
 	Summaries      *SummaryStore
@@ -45,6 +46,7 @@ func NewStore(dir string) *Store {
 	return &Store{
 		dir:            dir,
 		Progress:       NewProgressStore(newIO(dir)),
+		Book:           NewBookStore(newIO(dir)),
 		Outline:        outline,
 		Drafts:         NewDraftStore(newIO(dir)),
 		Summaries:      NewSummaryStore(newIO(dir), outline),
@@ -116,11 +118,18 @@ func (s *Store) CheckConsistency() []string {
 	return warnings
 }
 
-// FoundationMissing 返回基础设定中尚缺的项，按用于 Prompt/Reminder 的稳定顺序排列。
+// FoundationMissing 返回初始规划中尚缺的作品信息与基础设定，顺序稳定。
 // 长篇模式（已有 layered_outline）额外要求 compass。读取失败必须原样返回，不能把
 // 损坏或无权限读取的工件误判成“尚未创建”，否则调用方可能覆盖真实数据。
 func (s *Store) FoundationMissing() ([]string, error) {
 	var missing []string
+	book, err := s.Book.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load book metadata: %w", err)
+	}
+	if book == nil {
+		missing = append(missing, "book")
+	}
 	premise, err := s.Outline.LoadPremise()
 	if err != nil {
 		return nil, fmt.Errorf("load premise: %w", err)
@@ -181,7 +190,7 @@ func (s *Store) FoundationMissing() ([]string, error) {
 // novel_context 读到的这个值原样交回审查工具，确保结论针对的是实际落盘版本，
 // 而不是会话中尚未保存或已经过期的内容。
 func (s *Store) FoundationFingerprint() (string, error) {
-	files := []string{"premise.md", "outline.json", "characters.json", "world_rules.json"}
+	files := []string{"meta/book.json", "premise.md", "outline.json", "characters.json", "world_rules.json"}
 	layered, err := s.Outline.LoadLayeredOutline()
 	if err != nil {
 		return "", fmt.Errorf("load layered outline: %w", err)

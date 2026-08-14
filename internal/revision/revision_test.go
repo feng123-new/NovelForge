@@ -357,7 +357,7 @@ func newRevisionTestStore(t *testing.T, total int) *store.Store {
 	if err := st.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Progress.Init("test", total); err != nil {
+	if err := st.Progress.Init(total); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {

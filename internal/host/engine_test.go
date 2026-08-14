@@ -41,7 +41,7 @@ func TestFailureFactsKeepPartialStateAndWarnings(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Progress.Init("test", 3); err != nil {
+	if err := st.Progress.Init(3); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(filepath.Join(dir, "premise.md"), 0o755); err != nil {
@@ -297,7 +297,7 @@ func TestEngine_ReviewPermitWritesExactlyOneNewChapter(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Progress.Init("逐章验收试书", 3); err != nil {
+	if err := st.Progress.Init(3); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -348,7 +348,7 @@ func TestEngine_StalePairedDispatchDoesNotBypassHold(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Progress.Init("过期派单试书", 3); err != nil {
+	if err := st.Progress.Init(3); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -382,7 +382,7 @@ func TestEngine_WritesBookToCompletion(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := st.Progress.Init("引擎试书", 2); err != nil {
+	if err := st.Progress.Init(2); err != nil {
 		t.Fatalf("progress: %v", err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -450,7 +450,7 @@ func TestEngine_WorkerFailureConsultsArbiterAndAborts(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := st.Progress.Init("失败试书", 2); err != nil {
+	if err := st.Progress.Init(2); err != nil {
 		t.Fatalf("progress: %v", err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -513,7 +513,7 @@ func TestEngine_TransientProviderFailuresDoNotBecomeDeadlock(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := st.Progress.Init("网络故障试书", 1); err != nil {
+	if err := st.Progress.Init(1); err != nil {
 		t.Fatalf("progress: %v", err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -590,7 +590,7 @@ func TestEngine_RetriesUnfinishedPlanStart(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := st.Progress.Init("", 0); err != nil {
+	if err := st.Progress.Init(0); err != nil {
 		t.Fatalf("progress: %v", err)
 	}
 	// 模拟 StartPrepared 失败现场:输入事实在,裁定事实缺位。
@@ -662,7 +662,7 @@ func TestEngine_PlanStartRetryFailurePauses(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := st.Progress.Init("", 0); err != nil {
+	if err := st.Progress.Init(0); err != nil {
 		t.Fatalf("progress: %v", err)
 	}
 	if err := st.RunMeta.SetStartPrompt("凡人修仙"); err != nil {
@@ -717,7 +717,7 @@ func TestEngine_DeadlockConsultsArbiter(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := st.Progress.Init("僵局试书", 3); err != nil {
+	if err := st.Progress.Init(3); err != nil {
 		t.Fatalf("progress: %v", err)
 	}
 	// 规划期 + tier 已知 + 缺项恒在 → Route 每轮产出同一补齐指令
@@ -766,7 +766,7 @@ func TestEngine_IntermediateCheckpointsDoNotMaskDeadlock(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := st.Progress.Init("#84 回归", 1); err != nil {
+	if err := st.Progress.Init(1); err != nil {
 		t.Fatalf("progress: %v", err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -851,7 +851,7 @@ func TestEngine_PauseWithEditorDispatchWaitsForRewriteQueue(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := st.Progress.Init("返工试书", 3); err != nil {
+	if err := st.Progress.Init(3); err != nil {
 		t.Fatalf("progress: %v", err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -962,7 +962,7 @@ func TestEngine_BoundaryHoldDoesNotDispatchAnotherWorker(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := st.Progress.Init("暂停试书", 3); err != nil {
+	if err := st.Progress.Init(3); err != nil {
 		t.Fatalf("progress: %v", err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -1017,7 +1017,7 @@ func TestEngine_TargetChapterHoldStopsAtRequestedChapter(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Progress.Init("目标章节试书", 3); err != nil {
+	if err := st.Progress.Init(3); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -1071,7 +1071,7 @@ func TestEngine_ExitRaceRestoresPendingDispatch(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := st.Progress.Init("竞态试书", 2); err != nil {
+	if err := st.Progress.Init(2); err != nil {
 		t.Fatalf("progress: %v", err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {

@@ -38,9 +38,8 @@ const (
 
 // Progress 进度追踪，持久化到 meta/progress.json。
 type Progress struct {
-	NovelName      string `json:"novel_name"`
-	Phase          Phase  `json:"phase"`
-	CurrentChapter int    `json:"current_chapter"`
+	Phase          Phase `json:"phase"`
+	CurrentChapter int   `json:"current_chapter"`
 	// TotalChapters 在非分层模式是详细大纲章数；在分层模式仅是包含骨架估算的
 	// 内部容量值，用于上下文策略，不代表全书固定总章数。
 	TotalChapters     int         `json:"total_chapters"`
@@ -88,28 +87,6 @@ func (p *Progress) LatestCompleted() int {
 		}
 	}
 	return max
-}
-
-// ExtractNovelNameFromPremise 从 premise 第一行 `# 书名`（可带《》包裹）提取书名。
-// 模型偶尔会照抄提示词里的占位符而非生成真名，这些值视同未提取返回空，
-// 交由上层兜底（UI 显示"未定书名"），避免界面直接显示"书名"二字。
-func ExtractNovelNameFromPremise(premise string) string {
-	for raw := range strings.SplitSeq(strings.ReplaceAll(premise, "\r\n", "\n"), "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			continue
-		}
-		if !strings.HasPrefix(line, "# ") {
-			return ""
-		}
-		name := strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "# ")), "《》\"")
-		switch name {
-		case "书名", "实际书名", "示例书名":
-			return "" // 提示词占位符，非真实书名
-		}
-		return name
-	}
-	return ""
 }
 
 // ContextProfile 上下文加载策略，根据总章节数自适应。

@@ -9,7 +9,7 @@ import (
 func TestSetFlow(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.Init(10)
 
 	if err := store.Progress.SetFlow(domain.FlowRewriting); err != nil {
 		t.Fatalf("SetFlow: %v", err)
@@ -21,25 +21,10 @@ func TestSetFlow(t *testing.T) {
 	}
 }
 
-func TestSetNovelName(t *testing.T) {
-	dir := t.TempDir()
-	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
-
-	if err := store.Progress.SetNovelName("长夜燃灯"); err != nil {
-		t.Fatalf("SetNovelName: %v", err)
-	}
-
-	p, _ := store.Progress.Load()
-	if p.NovelName != "长夜燃灯" {
-		t.Fatalf("expected novel name updated, got %q", p.NovelName)
-	}
-}
-
 func TestSetFlowRejectsInvalidTransition(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.Init(10)
 
 	if err := store.Progress.SetFlow(domain.FlowRewriting); err != nil {
 		t.Fatalf("SetFlow rewriting: %v", err)
@@ -52,7 +37,7 @@ func TestSetFlowRejectsInvalidTransition(t *testing.T) {
 func TestUpdatePhaseRejectsRegression(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.Init(10)
 
 	if err := store.Progress.UpdatePhase(domain.PhaseOutline); err != nil {
 		t.Fatalf("UpdatePhase outline: %v", err)
@@ -65,7 +50,7 @@ func TestUpdatePhaseRejectsRegression(t *testing.T) {
 func TestAdvancePhaseKeepsLaterPhase(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.Init(10)
 
 	if err := store.Progress.UpdatePhase(domain.PhaseOutline); err != nil {
 		t.Fatalf("UpdatePhase outline: %v", err)
@@ -85,7 +70,7 @@ func TestAdvancePhaseKeepsLaterPhase(t *testing.T) {
 func TestStartChapter(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.Init(10)
 
 	if err := store.Progress.StartChapter(1); err == nil {
 		t.Fatal("expected StartChapter outside writing phase to fail")
@@ -115,7 +100,7 @@ func TestStartChapter(t *testing.T) {
 func TestIsChapterCompleted(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.Init(10)
 	_ = store.Progress.UpdatePhase(domain.PhaseWriting)
 
 	if completed, err := store.Progress.IsChapterCompleted(1); err != nil || completed {
@@ -136,7 +121,7 @@ func TestIsChapterCompleted(t *testing.T) {
 func TestSetPendingRewrites(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.Init(10)
 	_ = store.Progress.MarkChapterComplete(3, 3000, "", "")
 	_ = store.Progress.MarkChapterComplete(5, 3000, "", "")
 	_ = store.Progress.MarkChapterComplete(7, 3000, "", "")
@@ -158,7 +143,7 @@ func TestSetPendingRewrites(t *testing.T) {
 func TestSetPendingRewritesRejectsUnfinishedChapters(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.Init(10)
 	_ = store.Progress.MarkChapterComplete(3, 3000, "", "")
 
 	if err := store.Progress.SetPendingRewrites([]int{3, 5}, "测试"); err == nil {
@@ -174,7 +159,7 @@ func TestSetPendingRewritesRejectsUnfinishedChapters(t *testing.T) {
 func TestValidateChapterWorkRejectsCorruptPendingRewriteQueue(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 80)
+	_ = store.Progress.Init(80)
 	for ch := 1; ch <= 58; ch++ {
 		_ = store.Progress.MarkChapterComplete(ch, 3000, "", "")
 	}
@@ -194,7 +179,7 @@ func TestValidateChapterWorkRejectsCorruptPendingRewriteQueue(t *testing.T) {
 func TestCompleteRewrite(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.Init(10)
 	_ = store.Progress.MarkChapterComplete(3, 3000, "", "")
 	_ = store.Progress.MarkChapterComplete(5, 3000, "", "")
 	_ = store.Progress.MarkChapterComplete(7, 3000, "", "")
@@ -236,7 +221,7 @@ func TestCompleteRewrite(t *testing.T) {
 
 func TestApplyReviewOutcomePreservesExistingRewriteQueue(t *testing.T) {
 	s := NewStore(t.TempDir())
-	_ = s.Progress.Init("test", 3)
+	_ = s.Progress.Init(3)
 	for _, ch := range []int{1, 2} {
 		_ = s.Progress.MarkChapterComplete(ch, 3000, "", "")
 	}
@@ -255,7 +240,7 @@ func TestApplyReviewOutcomePreservesExistingRewriteQueue(t *testing.T) {
 func TestCompleteRewrite_NotInQueue(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.Init(10)
 	_ = store.Progress.MarkChapterComplete(3, 3000, "", "")
 	_ = store.Progress.MarkChapterComplete(5, 3000, "", "")
 	_ = store.Progress.SetPendingRewrites([]int{3, 5}, "测试")
@@ -273,7 +258,7 @@ func TestCompleteRewrite_NotInQueue(t *testing.T) {
 func TestClearPendingRewrites(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_ = store.Progress.Init("test", 10)
+	_ = store.Progress.Init(10)
 	_ = store.Progress.MarkChapterComplete(1, 3000, "", "")
 	_ = store.Progress.MarkChapterComplete(2, 3000, "", "")
 	_ = store.Progress.MarkChapterComplete(3, 3000, "", "")

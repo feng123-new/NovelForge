@@ -59,7 +59,7 @@ func TestCommitChapterRejectsUnknownForeshadowReferenceBeforePending(t *testing.
 	if err := s.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Progress.Init("test", 1); err != nil {
+	if err := s.Progress.Init(1); err != nil {
 		t.Fatal(err)
 	}
 	args, _ := json.Marshal(map[string]any{
@@ -79,7 +79,7 @@ func TestCommitChapterRejectsInvalidNestedFields(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Progress.Init("test", 1); err != nil {
+	if err := s.Progress.Init(1); err != nil {
 		t.Fatal(err)
 	}
 	args, _ := json.Marshal(map[string]any{
@@ -97,7 +97,7 @@ func TestCommitChapterRejectsNonPendingRewrite(t *testing.T) {
 	if err := store.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := store.Progress.Init("test", 10); err != nil {
+	if err := store.Progress.Init(10); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 	if err := store.Progress.MarkChapterComplete(2, 3000, "", ""); err != nil {
@@ -152,7 +152,7 @@ func TestCommitChapterAllowsPendingRewrite(t *testing.T) {
 	if err := store.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := store.Progress.Init("test", 10); err != nil {
+	if err := store.Progress.Init(10); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 	if err := store.Progress.MarkChapterComplete(2, 3000, "", ""); err != nil {
@@ -210,7 +210,7 @@ func TestCommitChapterRefreshesSharedStyleStatsAfterRewrite(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Progress.Init("test", 10); err != nil {
+	if err := s.Progress.Init(10); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -278,7 +278,7 @@ func TestCommitChapterRewriteRecoveryUsesFrozenDraft(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 10); err != nil {
+	if err := s.Progress.Init(10); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 	if err := s.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -341,7 +341,7 @@ func TestCommitChapterUpdatesCastLedger(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 10); err != nil {
+	if err := s.Progress.Init(10); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 	if err := s.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -412,7 +412,7 @@ func TestCommitChapterReplayAfterPartialCommitDoesNotDuplicateWorldState(t *test
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 10); err != nil {
+	if err := s.Progress.Init(10); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 	if err := s.Drafts.SaveDraft(1, "第一章正文，林墨遇到黑影并突破。"); err != nil {
@@ -518,7 +518,7 @@ func TestCommitChapterRecoversProgressMarkedWindowWithExactOutput(t *testing.T) 
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 2); err != nil {
+	if err := s.Progress.Init(2); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 	if err := s.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -588,7 +588,7 @@ func TestCommitChapterNonLayeredRecompletesAfterRework(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 2); err != nil {
+	if err := s.Progress.Init(2); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
@@ -665,7 +665,7 @@ func TestCommitChapterLayeredReopenRecompletesDespiteOpenThread(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 0); err != nil {
+	if err := s.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
@@ -749,7 +749,7 @@ func TestCommitChapterRejectsPolishWithoutDraftChange(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 10); err != nil {
+	if err := s.Progress.Init(10); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
@@ -804,7 +804,7 @@ func TestCommitChapterAllowsTitleOnlyRewrite(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Progress.Init("test", 10); err != nil {
+	if err := s.Progress.Init(10); err != nil {
 		t.Fatal(err)
 	}
 	body := "正文无需修改，只有标题需要打磨。"
@@ -869,7 +869,7 @@ func TestCommitChapterLayeredRejectsOutOfRangeChapter(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 0); err != nil {
+	if err := s.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
@@ -931,7 +931,7 @@ func TestCommitChapterLayeredAutoCompletesWhenDone(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 0); err != nil {
+	if err := s.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
@@ -1010,7 +1010,7 @@ func TestCommitChapterFinaleVolumeCompletesDespiteOpenThreads(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 0); err != nil {
+	if err := s.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
@@ -1127,7 +1127,7 @@ func TestCommitChapterFinaleSkeletonArcBlocksCompletion(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 0); err != nil {
+	if err := s.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
@@ -1199,7 +1199,7 @@ func TestCommitChapterLayeredNoAutoCompleteWithOpenThreads(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 0); err != nil {
+	if err := s.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 

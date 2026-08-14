@@ -196,7 +196,10 @@ func TestBuildStoryStateSummary_Populated(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Progress.Init("影之诗", 100); err != nil {
+	if err := st.Progress.Init(100); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Book.Save(domain.BookMetadata{Title: "影之诗", Synopsis: "少年追索失落的影子。"}); err != nil {
 		t.Fatal(err)
 	}
 	p, _ := st.Progress.Load()
@@ -226,7 +229,7 @@ func TestBuildStoryStateSummaryUsesDynamicPlanningWording(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Progress.Init("动态长篇", 66); err != nil {
+	if err := st.Progress.Init(66); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Outline.SaveLayeredOutline([]domain.VolumeOutline{{

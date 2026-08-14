@@ -23,10 +23,13 @@ func buildStoryStateSummary(s *store.Store) string {
 		}
 	}
 
+	if book, err := s.Book.Load(); book != nil {
+		fmt.Fprintf(&b, "- 书名：《%s》\n", book.Title)
+	} else {
+		warn("book", err)
+	}
+
 	if progress, err := s.Progress.Load(); progress != nil {
-		if name := strings.TrimSpace(progress.NovelName); name != "" {
-			fmt.Fprintf(&b, "- 书名：《%s》\n", name)
-		}
 		fmt.Fprintf(&b, "- 进度：已完成 %d 章", len(progress.CompletedChapters))
 		if progress.Layered {
 			outline, outlineErr := s.Outline.LoadOutline()

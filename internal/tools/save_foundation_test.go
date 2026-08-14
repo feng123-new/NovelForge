@@ -63,14 +63,17 @@ func TestSaveFoundationPersistsPlanningTier(t *testing.T) {
 	}
 }
 
-func TestSaveFoundationPremiseSetsNovelName(t *testing.T) {
+func TestSaveFoundationPremiseDoesNotOwnBookMetadata(t *testing.T) {
 	dir := t.TempDir()
 	store := store.NewStore(dir)
 	if err := store.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := store.Progress.Init("novel", 0); err != nil {
+	if err := store.Progress.Init(0); err != nil {
 		t.Fatalf("Init progress: %v", err)
+	}
+	if err := store.Book.Save(domain.BookMetadata{Title: "长夜燃灯", Synopsis: "旧城熄灯后，少年追索失踪真相。"}); err != nil {
+		t.Fatalf("Save book: %v", err)
 	}
 
 	tool := NewSaveFoundationTool(store)
@@ -89,15 +92,12 @@ func TestSaveFoundationPremiseSetsNovelName(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	progress, err := store.Progress.Load()
+	book, err := store.Book.Load()
 	if err != nil {
-		t.Fatalf("LoadProgress: %v", err)
+		t.Fatalf("Load book: %v", err)
 	}
-	if progress == nil {
-		t.Fatal("expected progress")
-	}
-	if progress.NovelName != "长夜燃灯" {
-		t.Fatalf("expected novel name set, got %q", progress.NovelName)
+	if book == nil || book.Title != "长夜燃灯" {
+		t.Fatalf("premise 不得改写作品信息: %+v", book)
 	}
 }
 
@@ -107,7 +107,7 @@ func TestSaveFoundationCanRevisePremiseAfterOutline(t *testing.T) {
 	if err := st.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := st.Progress.Init("旧书名", 0); err != nil {
+	if err := st.Progress.Init(0); err != nil {
 		t.Fatalf("Init progress: %v", err)
 	}
 	if err := st.Progress.UpdatePhase(domain.PhaseOutline); err != nil {
@@ -127,9 +127,6 @@ func TestSaveFoundationCanRevisePremiseAfterOutline(t *testing.T) {
 	}
 	if p.Phase != domain.PhaseOutline {
 		t.Fatalf("phase = %s, want outline", p.Phase)
-	}
-	if p.NovelName != "新书名" {
-		t.Fatalf("novel name = %q, want 新书名", p.NovelName)
 	}
 	if cp := st.Checkpoints.LatestByStep(domain.GlobalScope(), "premise"); cp == nil {
 		t.Fatal("修订后的 premise 应生成 checkpoint")
@@ -164,7 +161,7 @@ func TestSaveFoundationRejectsFullOutlineAfterComplete(t *testing.T) {
 			if err := s.Init(); err != nil {
 				t.Fatal(err)
 			}
-			if err := s.Progress.Init("test", 1); err != nil {
+			if err := s.Progress.Init(1); err != nil {
 				t.Fatal(err)
 			}
 			if err := s.Outline.SaveOutline([]domain.OutlineEntry{{Chapter: 1, Title: "原始标题"}}); err != nil {
@@ -198,7 +195,7 @@ func TestSaveFoundationOutlineClearsLayeredStateWhenDowngrading(t *testing.T) {
 	if err := store.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := store.Progress.Init("test", 0); err != nil {
+	if err := store.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
@@ -279,7 +276,7 @@ func TestSaveFoundationAppendVolume(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 0); err != nil {
+	if err := s.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
@@ -348,7 +345,7 @@ func TestSaveFoundationExpandArcCalibratesTarget(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 5); err != nil {
+	if err := s.Progress.Init(5); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 	if err := s.Outline.SaveLayeredOutline([]domain.VolumeOutline{{
@@ -398,7 +395,7 @@ func TestSaveFoundationAppendVolumeValidation(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 0); err != nil {
+	if err := s.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
@@ -444,7 +441,7 @@ func TestSaveFoundationAppendVolumeRejectsAfterComplete(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 0); err != nil {
+	if err := s.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 	if err := s.Progress.MarkComplete(); err != nil {
@@ -508,7 +505,6 @@ func TestSaveFoundationUpdateCompassOverridesLastUpdated(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	if err := s.Progress.Save(&domain.Progress{
-		NovelName:         "光斑",
 		Phase:             domain.PhaseWriting,
 		CompletedChapters: []int{1, 2, 3, 5, 4}, // 乱序，验证取 max 而非 len
 	}); err != nil {
@@ -603,7 +599,7 @@ func completeBookSetup(t *testing.T) *store.Store {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 2); err != nil {
+	if err := s.Progress.Init(2); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 	_ = s.Progress.UpdatePhase(domain.PhaseWriting)
@@ -739,7 +735,7 @@ func TestSaveFoundationCompleteBookRejectsBeforeWriting(t *testing.T) {
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := s.Progress.Init("test", 0); err != nil {
+	if err := s.Progress.Init(0); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
 	_ = s.Progress.UpdatePhase(domain.PhasePremise)

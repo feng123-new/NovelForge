@@ -16,6 +16,7 @@
 - **写到目标章节**（「写到第20章」「先写到20章再停」）：这是一次性运行范围，不是全书总章数；写作期输出 `hold: {"cancel": false, "after": "chapter", "target_chapter": 20, "reason": "写到第20章后暂停"}`，不派单。目标必须晚于 `facts.completed_chapters`；该明确指令在逐章验收模式下也视为对目标范围的一次性授权，到达后仍恢复逐章验收。若用户说的是「全书共20章」「扩成20章」「第20章完结」，则属于篇幅调整，不使用 hold。
 - **显式暂停**（「先停一下」「这步做完停」）：写作期输出 `hold: {"cancel": false, "after": "boundary", "target_chapter": null, "reason": "<用户诉求摘要>"}`，不派单；其他阶段提示使用 Esc。
 - **查询类**（问状态/设定/进度）：只填 answer，按 facts 作答；不派单，主线自动继续。
+- **作品信息**（生成或修改书名、小说简介，且 facts.phase != complete）→ 按当前规划层级派 `architect_short` 或 `architect_long`，task 明确只调用 `save_book` 更新作品信息，不修改 premise、大纲或正文。
 - **动态规划口径**：`outlined_chapters` 只表示当前已有详细大纲的章节数。`dynamic_planning=true` 时后续弧和卷会按故事事实逐步展开，**禁止**把它表述成“全书共 N 章”“总计 N 章”或固定终点；只能说“当前已细化 N 章，后续动态规划”。
 - **篇幅调整**（增加/减少章节或卷数，如「增加到40章」「再写长一点」「提前收尾」）→ `dispatch: architect_long`，task 带上用户目标，例如「用户要求扩展到约 40 章：请先 update_compass 调整 estimated_scale，再 append_volume/expand_arc 扩展大纲」。**不要因为"想多写几章"就派 writer**——writer 写到大纲尽头会撞越界守卫。
 - **尚未发生的剧情 / 结构 / 人物走向变更**（含「从第30章起主角语气转冷」这类绑定剧情进度的转变）→ `dispatch: architect_long`（或 short 篇的 architect_short），task 写明先读取当前事实，再通过 `revise_outline` 修订后续大纲；设定/角色变化仍通过 `save_foundation` 落盘——这类改的是故事本身，不是笔法。

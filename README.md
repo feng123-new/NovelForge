@@ -54,7 +54,7 @@
 | 角色 | 职责 | 工具 |
 |--------|------|------|
 | **Arbiter** | 语义裁定：启动选规划师、用户干预分诊、失败/僵局出路 | 无（单次 LLM 调用，输出结构化决策） |
-| **Architect** | 生成前提、大纲、角色档案、世界规则 | `novel_context` `save_foundation` |
+| **Architect** | 生成书名、小说简介、前提、大纲、角色档案、世界规则 | `novel_context` `save_book` `save_foundation` |
 | **Writer** | 自主完成一章的构思、写作、自审和提交 | `novel_context` `read_chapter` `plan_chapter` `draft_chapter` `check_consistency` `commit_chapter` |
 | **Editor** | 阅读原文，从结构和审美两个层面审阅 | `novel_context` `read_chapter` `save_review` `save_arc_summary` `save_volume_summary` |
 
@@ -396,12 +396,12 @@ output/novel/meta/simulation_profile.json
 
 ## 导出
 
-在 TUI 中输入 `/export` 可把已完成的章节合并导出，默认 TXT，写到 `{novelDir}/{NovelName}.txt`。导出是只读操作，写作中途也可以随时拿"现阶段成品"，不影响引擎运行。
+在 TUI 中输入 `/export` 可把已完成的章节合并导出，默认 TXT，写到 `{小说目录}/{书名}.txt`。导出是只读操作，写作中途也可以随时拿"现阶段成品"，不影响引擎运行。
 
 格式由**输出路径后缀**决定（`.txt` / `.epub`）：
 
 ```text
-/export                            # 默认 TXT，{novelDir}/{NovelName}.txt
+/export                            # 默认 TXT，{小说目录}/{书名}.txt
 /export ~/光斑.txt                  # 后缀 .txt → TXT
 /export ~/光斑.epub                 # 后缀 .epub → EPUB（Apple Books / 微信读书 / Kindle 转换器可读）
 /export from=10 to=30 --overwrite  # 章节区间 + 覆盖
@@ -409,7 +409,7 @@ output/novel/meta/simulation_profile.json
 ```
 
 - **TXT** — `《书名》` → 卷分隔 → 章节正文（长篇分层模式自动加卷分隔）。两类内部数据**不进导出**：premise（创作蓝图，含目标读者 / 写作禁区等后台信息，写给作者与引擎看的）、弧分隔（读者视角下弧是过细的内部结构）。导出器统一生成"第 N 章 标题"，正文里 writer 自带的重复标题（`# 第N章…` 或 `# 章节名`）会被剥掉。
-- **EPUB** — EPUB 3 标准容器，含封面页、目录、按章拆分的 XHTML，标识符基于内容稳定派生（重导出同一本书阅读器识别为更新版本）。不带封面图。
+- **EPUB** — EPUB 3 标准容器，含书名、小说简介元数据、封面页、目录和按章拆分的 XHTML，标识符基于内容稳定派生（重导出同一本书阅读器识别为更新版本）。不带封面图。
 
 范围内未完成的章节会跳过并显示在结果里，不算错误。
 
@@ -572,6 +572,7 @@ style/
 
 ```
 output/{novel_name}/
+├── book.md             # 书名与小说简介（可读投影）
 ├── chapters/           # 终稿（Markdown）
 │   ├── 01.md
 │   └── ...
@@ -580,21 +581,20 @@ output/{novel_name}/
 ├── reviews/            # 评审报告
 ├── timeline.jsonl      # 时间线事实（追加日志）
 ├── timeline.md         # 时间线可读投影
+├── premise.md          # 故事前提
+├── outline.json        # 扁平章节大纲（仅含已展开的章节）
+├── layered_outline.json # 分层大纲（长篇模式）
+├── characters.json     # 角色档案
+├── world_rules.json    # 世界规则
 ├── meta/
-│   ├── premise.md      # 故事前提
-│   ├── outline.json    # 扁平章节大纲（仅含已展开的章节）
-│   ├── layered_outline.json # 分层大纲（当前卷 + 预览卷，长篇模式）
+│   ├── book.json       # 作品信息唯一事实源
 │   ├── compass.json   # 终局方向指南针（长篇模式）
-│   ├── characters.json # 角色档案
-│   ├── world_rules.json# 世界规则
 │   ├── progress.json   # 进度状态
 │   ├── foreshadow.json # 伏笔台账
 │   ├── state_changes.jsonl # 角色状态变化追加日志
 │   ├── style_rules.json# 写作风格规则（弧边界时提炼）
 │   ├── snapshots/      # 角色状态快照（长篇）
-│   ├── checkpoints.jsonl # Step 级 checkpoint（每个工具成功后追加）
-│   ├── characters.md   # 角色档案（可读版）
-│   └── world_rules.md  # 世界规则（可读版）
+│   └── checkpoints.jsonl # Step 级 checkpoint（每个工具成功后追加）
 ```
 
 ## 断点恢复

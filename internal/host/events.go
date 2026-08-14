@@ -51,7 +51,7 @@ func (e Event) hasLifecycle() bool {
 // UISnapshot 是 TUI 渲染所需的聚合状态快照。
 type UISnapshot struct {
 	Provider             string
-	NovelName            string
+	BookTitle            string
 	ModelName            string
 	ModelContextWindow   int // 当前默认模型的上下文窗口（随 /model 切换实时解析）
 	ThinkingLevel        string
@@ -114,6 +114,7 @@ type UISnapshot struct {
 	CachePerModel []AgentCacheStat
 
 	// 基础设定
+	Synopsis         string
 	Premise          string
 	Outline          []OutlineSnapshot
 	Characters       []string

@@ -316,6 +316,13 @@ func TestRoute_PlanningFillDispatchesSamePlanner(t *testing.T) {
 		}
 	}
 
+	bookMissing := base
+	bookMissing.PlanningTier = domain.PlanningTierLong
+	bookMissing.FoundationMissing = []string{"book"}
+	if got := Route(bookMissing); got == nil || !contains(got.Task, "save_book") {
+		t.Fatalf("book 缺失时应指示 save_book,got %+v", got)
+	}
+
 	// 首次规划未落盘任何设定(tier 空)→ 选型是语义判断,交 LLM
 	unknown := base
 	if got := Route(unknown); got != nil {
