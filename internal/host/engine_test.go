@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1008,6 +1009,57 @@ func TestEngine_BoundaryHoldDoesNotDispatchAnotherWorker(t *testing.T) {
 	meta, _ := st.RunMeta.Load()
 	if meta != nil && meta.AdvanceHold != nil {
 		t.Fatalf("一次性暂停应已消费, got %+v", meta.AdvanceHold)
+	}
+}
+
+func TestEngine_TargetChapterHoldStopsAtRequestedChapter(t *testing.T) {
+	st := storepkg.NewStore(t.TempDir())
+	if err := st.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Progress.Init("目标章节试书", 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Outline.SaveOutline([]domain.OutlineEntry{
+		{Chapter: 1, Title: "一", CoreEvent: "a"},
+		{Chapter: 2, Title: "二", CoreEvent: "b"},
+		{Chapter: 3, Title: "三", CoreEvent: "c"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	writer := subagent.Config{
+		Name: "writer", Description: "test writer", Model: scriptedWriterModel(), SystemPrompt: "test",
+		Tools: []agentcore.Tool{
+			tools.NewPlanChapterTool(st), tools.NewDraftChapterTool(st),
+			tools.NewCheckConsistencyTool(st), tools.NewCommitChapterTool(st, tools.NewStyleStatsIndex(st)),
+		},
+		MaxTurns: 10, StopAfterTools: []string{"commit_chapter"},
+	}
+	e, _, done := newTestEngine(t, st, subagent.NewRunner(writer), nil)
+	if err := st.RunMeta.SetAdvanceHold(domain.AdvanceHold{
+		After: domain.AdvanceHoldAtChapter, TargetChapter: 2, Reason: "写到第2章",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !e.start(nil) {
+		t.Fatal("engine start")
+	}
+	waitEngineDone(t, done)
+
+	progress, err := st.Progress.Load()
+	if err != nil || progress == nil {
+		t.Fatalf("load progress: %v", err)
+	}
+	if !slices.Equal(progress.CompletedChapters, []int{1, 2}) {
+		t.Fatalf("应准确停在第2章, completed=%v", progress.CompletedChapters)
+	}
+	meta, _ := st.RunMeta.Load()
+	if meta.AdvanceHold != nil {
+		t.Fatalf("目标章节 hold 应已消费: %+v", meta.AdvanceHold)
 	}
 }
 

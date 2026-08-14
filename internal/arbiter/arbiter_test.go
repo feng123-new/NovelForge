@@ -223,6 +223,10 @@ func TestInterventionDecision_ValidateAgainst(t *testing.T) {
 		{"规划期允许 architect", InterventionDecision{Dispatch: &DispatchOp{Agent: "architect_long", Task: "补齐大纲"}, Reason: "r"}, InterventionFacts{Phase: string(domain.PhaseOutline)}, false},
 		{"一次性暂停缺条件", InterventionDecision{Hold: &AdvanceHoldOp{Reason: "停"}, Reason: "r"}, writing, true},
 		{"一次性暂停缺摘要", InterventionDecision{Hold: &AdvanceHoldOp{After: domain.AdvanceHoldAtBoundary}, Reason: "r"}, writing, true},
+		{"目标章节暂停", InterventionDecision{Hold: &AdvanceHoldOp{After: domain.AdvanceHoldAtChapter, TargetChapter: 15, Reason: "写到第15章"}, Reason: "r"}, writing, false},
+		{"目标章节未填写", InterventionDecision{Hold: &AdvanceHoldOp{After: domain.AdvanceHoldAtChapter, Reason: "写到目标章"}, Reason: "r"}, writing, true},
+		{"目标章节已经完成", InterventionDecision{Hold: &AdvanceHoldOp{After: domain.AdvanceHoldAtChapter, TargetChapter: 10, Reason: "写到第10章"}, Reason: "r"}, writing, true},
+		{"非目标暂停携带章节", InterventionDecision{Hold: &AdvanceHoldOp{After: domain.AdvanceHoldAtBoundary, TargetChapter: 15, Reason: "停"}, Reason: "r"}, writing, true},
 		{"取消一次性暂停", InterventionDecision{Hold: &AdvanceHoldOp{Cancel: true}, Answer: "继续", Reason: "r"}, writing, false},
 		{"完本期设置一次性暂停", InterventionDecision{Hold: &AdvanceHoldOp{After: domain.AdvanceHoldAtBoundary, Reason: "停"}, Reason: "r"}, complete, true},
 	}
@@ -233,6 +237,26 @@ func TestInterventionDecision_ValidateAgainst(t *testing.T) {
 				t.Fatalf("wantErr=%v got %v", tc.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestDecideInterventionAcceptsTargetChapterHold(t *testing.T) {
+	m := &scriptedModel{outputs: []string{`{
+		"answer":"将连续写到第15章后暂停",
+		"rules":null,
+		"hold":{"cancel":false,"after":"chapter","target_chapter":15,"reason":"写到第15章后暂停"},
+		"reopen":null,
+		"dispatch":null,
+		"reason":"用户指定了一次性运行终点"
+	}`}}
+	d, err := DecideIntervention(t.Context(), m, "sys", InterventionFacts{
+		Phase: string(domain.PhaseWriting), CompletedChapters: 10, NextChapter: 11,
+	}, "写到第15章")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Hold == nil || d.Hold.After != domain.AdvanceHoldAtChapter || d.Hold.TargetChapter != 15 {
+		t.Fatalf("目标章节 hold 解码错误: %+v", d.Hold)
 	}
 }
 
@@ -270,7 +294,7 @@ func TestCollectInterventionFacts(t *testing.T) {
 	if err := st.RunMeta.SetAdvanceMode(domain.ChapterAdvanceReview); err != nil {
 		t.Fatalf("advance mode: %v", err)
 	}
-	if err := st.RunMeta.SetAdvanceHold(domain.AdvanceHold{After: domain.AdvanceHoldAtBoundary, Reason: "验收"}); err != nil {
+	if err := st.RunMeta.SetAdvanceHold(domain.AdvanceHold{After: domain.AdvanceHoldAtChapter, TargetChapter: 20, Reason: "写到第20章"}); err != nil {
 		t.Fatalf("advance hold: %v", err)
 	}
 	if _, err := st.Decisions.Append(storepkg.DecisionRecord{Kind: "intervention", Decider: "arbiter", Input: "上次干预", Reason: "已入队"}); err != nil {
@@ -287,7 +311,7 @@ func TestCollectInterventionFacts(t *testing.T) {
 	if len(f.RecentDecisions) != 1 || f.RecentDecisions[0].Input != "上次干预" {
 		t.Fatalf("干预记忆缺失: %+v", f.RecentDecisions)
 	}
-	if f.AdvanceMode != string(domain.ChapterAdvanceReview) || !f.HasAdvanceHold || f.AdvanceHoldAfter != string(domain.AdvanceHoldAtBoundary) {
+	if f.AdvanceMode != string(domain.ChapterAdvanceReview) || !f.HasAdvanceHold || f.AdvanceHoldAfter != string(domain.AdvanceHoldAtChapter) || f.AdvanceHoldTargetChapter != 20 {
 		t.Fatalf("推进控制事实缺失: %+v", f)
 	}
 	if len(f.FoundationMissing) == 0 {

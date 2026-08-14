@@ -723,7 +723,7 @@ func (e *engine) applyControlOp(ctx context.Context, op controlOp) error {
 			}
 			e.emitEvent(Event{Time: time.Now(), Category: "SYSTEM", Summary: "已取消一次性暂停", Level: "info"})
 		} else {
-			hold := domain.AdvanceHold{After: op.hold.After, Reason: op.hold.Reason}
+			hold := domain.AdvanceHold{After: op.hold.After, TargetChapter: op.hold.TargetChapter, Reason: op.hold.Reason}
 			if err := e.store.RunMeta.SetAdvanceHold(hold); err != nil {
 				e.emitEvent(Event{Time: time.Now(), Category: "ERROR", Summary: "设置一次性暂停失败: " + err.Error(), Level: "error"})
 				return err // hold 未落盘时关联 dispatch 不得执行

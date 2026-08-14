@@ -253,17 +253,37 @@ type AdvanceHoldAfter string
 const (
 	AdvanceHoldAtBoundary           AdvanceHoldAfter = "boundary"
 	AdvanceHoldAfterRewritesDrained AdvanceHoldAfter = "rewrites_drained"
+	AdvanceHoldAtChapter            AdvanceHoldAfter = "chapter"
 )
 
 // Valid 报告暂停条件是否受当前版本支持。
 func (a AdvanceHoldAfter) Valid() bool {
-	return a == AdvanceHoldAtBoundary || a == AdvanceHoldAfterRewritesDrained
+	return a == AdvanceHoldAtBoundary || a == AdvanceHoldAfterRewritesDrained || a == AdvanceHoldAtChapter
 }
 
 // AdvanceHold 是当前干预签署的一次性暂停意图，由 Host 边界消费。
 type AdvanceHold struct {
-	After  AdvanceHoldAfter `json:"after"`
-	Reason string           `json:"reason"`
+	After         AdvanceHoldAfter `json:"after"`
+	TargetChapter int              `json:"target_chapter,omitempty"`
+	Reason        string           `json:"reason"`
+}
+
+// Validate 校验一次性暂停意图自身的结构约束。
+func (h AdvanceHold) Validate() error {
+	if !h.After.Valid() {
+		return fmt.Errorf("不支持的一次性暂停条件 %q", h.After)
+	}
+	if h.After == AdvanceHoldAtChapter {
+		if h.TargetChapter <= 0 {
+			return fmt.Errorf("目标章节必须大于 0")
+		}
+	} else if h.TargetChapter != 0 {
+		return fmt.Errorf("暂停条件 %q 不能设置目标章节", h.After)
+	}
+	if strings.TrimSpace(h.Reason) == "" {
+		return fmt.Errorf("一次性暂停原因不能为空")
+	}
+	return nil
 }
 
 // PlanStartRecord 启动裁定的持久化事实(裁定先落事实,再起执行;恢复不重新裁定)。

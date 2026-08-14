@@ -374,7 +374,7 @@ User: "一句话需求"
 | 意图 | 来源 | 语义 |
 |---|---|---|
 | `AdvanceMode=review` + 精确 permit | `/review on`、`/next` | 持久政策：每个正向新章必须单独放行 |
-| `AdvanceHold` | Arbiter intervention | 一次性意图：当前边界或返工排空后暂停 |
+| `AdvanceHold` | Arbiter intervention | 一次性意图：当前边界、返工排空或目标章节稳定提交后暂停 |
 
 许可绑定章节号。只有目标章进入 CompletedChapters、PendingCommit 清空且 commit checkpoint 存在才消费，因此提交 saga 任一窗口崩溃都不会把同一许可用于下一章。详细不变量见 [Chapter Advance Gate](chapter-advance-gate.md)。
 

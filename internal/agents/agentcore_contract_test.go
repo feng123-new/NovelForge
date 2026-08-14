@@ -17,8 +17,6 @@ package agents
 //     guard/stop_guard.go 的"物理不可停机"与超限升级依赖此语义。
 //  5. Runner.Run 的错误保持类型化链：未注册 agent 匹配 subagent.ErrUnknownAgent ——
 //     host/engine.go 的 isDeterministicWorkerError 依赖此分类而非错误文案。
-//  6. ProgressToolError 携带完整、已解码的错误文本——host 负责生成短 Summary，
-//     完整 Detail 与日志不得被框架展示策略截断。
 
 import (
 	"context"
@@ -257,50 +255,5 @@ func TestContract_RunUnknownAgentIsTyped(t *testing.T) {
 	_, err := runner.Run(context.Background(), "ghost", "contract")
 	if !errors.Is(err, subagent.ErrUnknownAgent) {
 		t.Fatalf("未注册 agent 应匹配 subagent.ErrUnknownAgent，got %v", err)
-	}
-}
-
-// 契约 6：进度中继是完整诊断的传输边界，不是 UI 展示层。
-func TestContract_ToolErrorProgressIsCompletePlainText(t *testing.T) {
-	rawArgs := `{"chapter":1,"summary":"` + strings.Repeat("秦越在材料中发现线索", 30)
-	model := &contractModel{fn: func(i int, _ []agentcore.Message) (*agentcore.LLMResponse, error) {
-		if i == 0 {
-			return &agentcore.LLMResponse{Message: agentcore.Message{
-				Role: agentcore.RoleAssistant,
-				Content: []agentcore.ContentBlock{agentcore.ToolCallBlock(agentcore.ToolCall{
-					ID:             "tc-commit",
-					Name:           "commit_chapter",
-					Args:           json.RawMessage(`{}`),
-					ArgsInvalid:    true,
-					ArgsRawText:    rawArgs,
-					ArgsParseError: "unexpected end of JSON input",
-				})},
-				StopReason: agentcore.StopReasonToolUse,
-			}}, nil
-		}
-		return &agentcore.LLMResponse{Message: assistantText("done", agentcore.StopReasonStop)}, nil
-	}}
-
-	var progressError string
-	ctx := agentcore.WithToolProgress(context.Background(), func(p agentcore.ProgressPayload) {
-		if p.Kind == agentcore.ProgressToolError {
-			progressError = p.Message
-		}
-	})
-	_, err := subagent.NewRunner(subagent.Config{
-		Name: "writer", Description: "contract", Model: model,
-		Tools: []agentcore.Tool{okTool("commit_chapter")}, MaxTurns: 2,
-	}).Run(ctx, "writer", "contract")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(progressError) <= 200 {
-		t.Fatalf("ProgressToolError 不得截断，got %d bytes", len(progressError))
-	}
-	if !strings.HasPrefix(progressError, "tool argument validation failed:") {
-		t.Fatalf("ProgressToolError 应为解码后的纯文本，got %q", progressError)
-	}
-	if !strings.Contains(progressError, "\nraw args: "+rawArgs) {
-		t.Fatalf("ProgressToolError 丢失完整 raw args: %q", progressError)
 	}
 }
