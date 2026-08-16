@@ -18,6 +18,7 @@ type (
 	doneMsg        struct{ complete bool } // complete=true 全书完成，false 出错停止
 	abortResultMsg struct{ stopped bool }
 	bootstrapMsg   struct {
+		existing  bool // 已有作品；无论恢复是否成功都应进入工作台
 		resumed   bool
 		completed bool // 目录里是本已完结的书：落完成态工作台而非欢迎页
 		err       error
@@ -92,19 +93,24 @@ func fetchSnapshot(rt *host.Host) tea.Cmd {
 
 func bootstrapRuntime(rt *host.Host) tea.Cmd {
 	return func() tea.Msg {
+		snapshot := rt.Snapshot()
+		msg := bootstrapMsg{
+			existing:  snapshot.Phase != "" || snapshot.BookTitle != "",
+			completed: snapshot.Phase == "complete",
+		}
 		label, err := rt.Resume()
 		if err != nil {
-			return bootstrapMsg{err: err}
+			msg.err = err
+			return msg
 		}
 		if label == "" {
-			// 完结书不可续跑（恢复视为无标签），但也不能落欢迎页装作书不存在——
-			// 直接落到完成态工作台：面板照常展示本书，/reopen、/export、返工输入都在原位。
-			if rt.Snapshot().Phase == "complete" {
-				return bootstrapMsg{completed: true}
+			if msg.existing {
+				return msg
 			}
 			return nil
 		}
-		return bootstrapMsg{resumed: true}
+		msg.resumed = true
+		return msg
 	}
 }
 
@@ -114,8 +120,12 @@ func bootstrapRuntime(rt *host.Host) tea.Cmd {
 // 方向）由 Resume 先经 Arbiter 裁定消化，再续跑引擎。
 func resumeBook(rt *host.Host) tea.Cmd {
 	return func() tea.Msg {
+		snapshot := rt.Snapshot()
 		label, err := rt.Resume()
-		return bootstrapMsg{resumed: label != "", err: err}
+		return bootstrapMsg{
+			existing: snapshot.Phase != "" || snapshot.BookTitle != "", completed: snapshot.Phase == "complete",
+			resumed: label != "", err: err,
+		}
 	}
 }
 

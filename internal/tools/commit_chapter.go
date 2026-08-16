@@ -387,7 +387,7 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 		result.Flow = string(latestProgress.Flow)
 	}
 
-	// 8.5 反馈池是后续规划的持久事实，Router 会在继续写作前交给 Architect 消费。
+	// 8.5 反馈池是后续规划的持久事实，由 Architect 在下一次结构操作时消费。
 	if a.Feedback != nil && (strings.TrimSpace(a.Feedback.Deviation) != "" || strings.TrimSpace(a.Feedback.Suggestion) != "") {
 		if err := t.store.Outline.AppendOutlineFeedback(store.ChapterFeedback{
 			Chapter: a.Chapter, Deviation: a.Feedback.Deviation, Suggestion: a.Feedback.Suggestion,

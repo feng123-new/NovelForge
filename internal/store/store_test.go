@@ -24,6 +24,22 @@ func TestSummaryTitleCacheTracksSave(t *testing.T) {
 	}
 }
 
+func TestProjectFormatDefaultsToLegacyAndPersistsUpgrade(t *testing.T) {
+	st := NewStore(t.TempDir())
+	if err := st.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if version, err := st.LoadProjectFormatVersion(); err != nil || version != LegacyProjectFormatVersion {
+		t.Fatalf("无版本文件应识别为旧格式: version=%d err=%v", version, err)
+	}
+	if err := st.SaveProjectFormatVersion(CurrentProjectFormatVersion); err != nil {
+		t.Fatal(err)
+	}
+	if version, err := st.LoadProjectFormatVersion(); err != nil || version != CurrentProjectFormatVersion {
+		t.Fatalf("格式版本未持久化: version=%d err=%v", version, err)
+	}
+}
+
 func TestFoundationMissingReturnsReadError(t *testing.T) {
 	dir := t.TempDir()
 	st := NewStore(dir)

@@ -40,7 +40,7 @@ const (
 //  3. 重写/打磨队列非空 → writer 按队列头（绝对优先，压过一切弧末事务）
 //  4. Flow=Reviewing / Steering → LLM 裁定（nil）
 //  5. 缺失的聚合工件 → Editor 补建
-//  6. 待处理大纲反馈 → Architect 消费
+//  6. 外部修订对后续规划有影响 → Architect 消费
 //  7. 分层模式弧末 → 评审 → 弧摘要 → (卷末)卷摘要 → 展开下一弧 → 追加新卷
 //  8. 其余 → writer 续写下一章
 func expectedInstruction(s State) expectKind {
@@ -63,7 +63,7 @@ func expectedInstruction(s State) expectKind {
 	if s.AggregateRefresh != nil {
 		return expectArcSummary
 	}
-	if s.OutlineFeedbackCount > 0 {
+	if s.ImmediateFeedbackCount > 0 {
 		return expectOutlineFeedback
 	}
 	if p.Layered && s.ArcBoundary != nil && s.ArcBoundary.IsArcEnd {
@@ -245,17 +245,17 @@ func TestRoute_ExhaustiveAgainstSpec(t *testing.T) {
 													last = completed[n-1]
 												}
 												s := State{
-													Progress:             p,
-													LastCompleted:        last,
-													ArcBoundary:          bc.boundary,
-													HasArcReview:         bc.hasArcReview,
-													HasArcSummary:        bc.hasArcSummary,
-													HasVolumeSummary:     bc.hasVolumeSummary,
-													FoundationMissing:    append([]string(nil), missing...),
-													PlanningTier:         tier,
-													HasGlobalReview:      hasGlobal,
-													OutlineFeedbackCount: feedbackCount,
-													AggregateRefresh:     aggregate,
+													Progress:               p,
+													LastCompleted:          last,
+													ArcBoundary:            bc.boundary,
+													HasArcReview:           bc.hasArcReview,
+													HasArcSummary:          bc.hasArcSummary,
+													HasVolumeSummary:       bc.hasVolumeSummary,
+													FoundationMissing:      append([]string(nil), missing...),
+													PlanningTier:           tier,
+													HasGlobalReview:        hasGlobal,
+													ImmediateFeedbackCount: feedbackCount,
+													AggregateRefresh:       aggregate,
 												}
 
 												before := snapshotState(s)

@@ -7,8 +7,43 @@ import (
 	"testing"
 	"time"
 
+	"github.com/voocel/ainovel-cli/internal/domain"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
 )
+
+func TestUpgradeProjectMigratesLegacyBook(t *testing.T) {
+	dir := t.TempDir()
+	st := storepkg.NewStore(dir)
+	if err := st.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	premise := "# 《寿元账》\n\n## 核心冲突\n\n凡人以寿元换取灵性，在求生与守住人性之间挣扎。\n\n## 主角目标\n\n活下去。"
+	if err := st.Outline.SavePremise(premise); err != nil {
+		t.Fatalf("SavePremise: %v", err)
+	}
+	progress := []byte(`{"novel_name":"寿元账"}`)
+	if err := os.WriteFile(filepath.Join(dir, "meta", "progress.json"), progress, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := upgradeProject(st); err != nil {
+		t.Fatalf("upgradeProject: %v", err)
+	}
+	book, err := st.Book.Load()
+	if err != nil {
+		t.Fatalf("Load book: %v", err)
+	}
+	if book == nil || book.Title != "寿元账" || book.Synopsis != "凡人以寿元换取灵性，在求生与守住人性之间挣扎。" {
+		t.Fatalf("unexpected migrated book: %+v", book)
+	}
+	if checkpoint := st.Checkpoints.LatestByStep(domain.GlobalScope(), "book"); checkpoint == nil {
+		t.Fatal("book checkpoint was not recorded")
+	}
+	version, err := st.LoadProjectFormatVersion()
+	if err != nil || version != storepkg.CurrentProjectFormatVersion {
+		t.Fatalf("format version = %d, err = %v", version, err)
+	}
+}
 
 func TestInterventionStopsWhenPersistenceFails(t *testing.T) {
 	dir := t.TempDir()

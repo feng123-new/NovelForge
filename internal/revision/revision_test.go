@@ -2,6 +2,7 @@ package revision
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,6 +52,88 @@ func TestScanRejectsEmptyCompletedChapter(t *testing.T) {
 	}
 	if _, err := Scan(st); err == nil {
 		t.Fatal("空终稿必须显式拒绝")
+	}
+}
+
+func TestMigrateLegacyBaselineKeepsExternalChangeDirty(t *testing.T) {
+	st := newRevisionTestStore(t, 1)
+	facts := domain.ChapterFacts{
+		Title: "第一章", Summary: "林墨离开村庄", Characters: []string{"林墨"}, KeyEvents: []string{"离村"},
+		TimelineEvents: []domain.TimelineEvent{{Time: "清晨", Event: "林墨离村", Characters: []string{"林墨"}}},
+		HookType:       "mystery", DominantStrand: "quest",
+	}
+	if err := st.Drafts.SaveDraft(1, "系统提交的正文"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Drafts.SaveFinalChapter(1, "用户后来修改的正文"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Summaries.SaveSummary(domain.ChapterSummary{
+		Chapter: 1, Title: facts.Title, Summary: facts.Summary, Characters: facts.Characters, KeyEvents: facts.KeyEvents,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Progress.StartChapter(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Progress.MarkChapterComplete(1, 8, facts.HookType, facts.DominantStrand); err != nil {
+		t.Fatal(err)
+	}
+	writeLegacyCommitSession(t, st.Dir(), 1, facts)
+
+	if err := MigrateLegacyBaseline(st); err != nil {
+		t.Fatal(err)
+	}
+	record, err := st.ChapterRecords.Load(1)
+	if err != nil || record == nil {
+		t.Fatalf("迁移后接纳记录缺失: record=%+v err=%v", record, err)
+	}
+	if record.Content != "系统提交的正文" {
+		t.Fatalf("迁移错误接纳了当前工作区正文: %q", record.Content)
+	}
+	changes, err := Scan(st)
+	if err != nil || len(changes) != 1 || changes[0].Chapter != 1 {
+		t.Fatalf("迁移前的外部修改应保持待同步: changes=%+v err=%v", changes, err)
+	}
+	if err := MigrateLegacyBaseline(st); err != nil {
+		t.Fatalf("重复迁移应幂等: %v", err)
+	}
+}
+
+func TestMigrateLegacyBaselineFromImportArtifact(t *testing.T) {
+	st := newRevisionTestStore(t, 1)
+	facts := domain.ChapterFacts{
+		Title: "第一章", Summary: "旧书导入", Characters: []string{"林墨"}, KeyEvents: []string{"进入旧城"},
+		HookType: "mystery", DominantStrand: "quest",
+	}
+	if err := st.Drafts.SaveDraft(1, "导入正文"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Drafts.SaveFinalChapter(1, "导入正文"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Summaries.SaveSummary(domain.ChapterSummary{
+		Chapter: 1, Title: facts.Title, Summary: facts.Summary, Characters: facts.Characters, KeyEvents: facts.KeyEvents,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Progress.StartChapter(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Progress.MarkChapterComplete(1, 4, facts.HookType, facts.DominantStrand); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Checkpoints.AppendArtifact(domain.ChapterScope(1), "commit", "chapters/01.md"); err != nil {
+		t.Fatal(err)
+	}
+	writeLegacyImportArtifact(t, st.Dir(), 1, facts)
+
+	if err := MigrateLegacyBaseline(st); err != nil {
+		t.Fatal(err)
+	}
+	record, err := st.ChapterRecords.Load(1)
+	if err != nil || record == nil || record.Facts.Summary != facts.Summary || record.Content != "导入正文" {
+		t.Fatalf("导入书迁移结果错误: record=%+v err=%v", record, err)
 	}
 }
 
@@ -391,5 +474,61 @@ func testRecord(chapter int, content string, facts domain.ChapterFacts, style do
 	return domain.ChapterRecord{
 		Version: domain.ChapterRecordVersion, Chapter: chapter, Revision: 1, Origin: domain.ChapterOriginUser,
 		Content: content, ContentSHA256: domain.ChapterContentSHA256(content), Facts: facts, StyleDelta: style, AcceptedAt: acceptedAt,
+	}
+}
+
+func writeLegacyCommitSession(t *testing.T, dir string, chapter int, facts domain.ChapterFacts) {
+	t.Helper()
+	args, err := json.Marshal(legacyCommitArgs{Chapter: chapter, ChapterFacts: facts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	messages := []agentcore.Message{
+		{
+			Role: agentcore.RoleAssistant, Timestamp: now.Add(-time.Second),
+			Content: []agentcore.ContentBlock{agentcore.ToolCallBlock(agentcore.ToolCall{
+				ID: "commit-1", Name: "commit_chapter", Args: args,
+			})},
+		},
+		{
+			Role: agentcore.RoleTool, Timestamp: now,
+			Content:  []agentcore.ContentBlock{agentcore.TextBlock(`{"committed":true}`)},
+			Metadata: map[string]any{"tool_call_id": "commit-1", "tool_name": "commit_chapter", "is_error": false},
+		},
+	}
+	var data []byte
+	for _, message := range messages {
+		line, err := json.Marshal(message)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = append(data, line...)
+		data = append(data, '\n')
+	}
+	path := filepath.Join(dir, "meta", "sessions", "agents", fmt.Sprintf("writer-ch%02d.jsonl", chapter))
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeLegacyImportArtifact(t *testing.T, dir string, chapter int, facts domain.ChapterFacts) {
+	t.Helper()
+	artifact := struct {
+		Payload struct {
+			Facts legacyCommitArgs `json:"facts"`
+		} `json:"payload"`
+	}{}
+	artifact.Payload.Facts = legacyCommitArgs{Chapter: chapter, ChapterFacts: facts}
+	data, err := json.Marshal(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "meta", "import", "analyses", fmt.Sprintf("%06d.json", chapter))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

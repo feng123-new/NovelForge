@@ -569,6 +569,12 @@ type ChapterFeedback struct {
 	At               string   `json:"at"`
 }
 
+// RequiresImmediateReview 区分外部修订影响与普通写作反馈。普通反馈留到下一次
+// 自然结构操作统一吸收；外部修订可能使即将续写的大纲失效，必须先交 Architect。
+func (f ChapterFeedback) RequiresImmediateReview() bool {
+	return f.StoryChanged || strings.TrimSpace(f.ChangeSummary) != "" || len(f.DownstreamIssues) > 0
+}
+
 const outlineFeedbackFile = "meta/outline_feedback.jsonl"
 const outlineFeedbackResolutionFile = "meta/outline_feedback_resolution.json"
 

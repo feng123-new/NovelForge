@@ -39,7 +39,11 @@ func LoadState(store *storepkg.Store) (State, error) {
 	if err != nil {
 		return s, fmt.Errorf("load outline feedback: %w", err)
 	}
-	s.OutlineFeedbackCount = len(feedback)
+	for _, item := range feedback {
+		if item.RequiresImmediateReview() {
+			s.ImmediateFeedbackCount++
+		}
+	}
 
 	if n := len(progress.CompletedChapters); n > 0 {
 		s.LastCompleted = progress.CompletedChapters[n-1]

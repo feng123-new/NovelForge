@@ -363,6 +363,9 @@ func (h *Host) StartPrepared(rawRequirement string) error {
 	if err := h.refuseNewBookOverExisting(); err != nil {
 		return err
 	}
+	if err := upgradeProject(h.store); err != nil {
+		return err
+	}
 	if err := h.budget.Refuse(); err != nil {
 		return err
 	}
@@ -536,6 +539,9 @@ func (h *Host) Resume() (string, error) {
 		return "", fmt.Errorf("%s进行中，请先完成后再恢复创作", ex)
 	}
 	h.mu.Unlock()
+	if err := upgradeProject(h.store); err != nil {
+		return "", err
+	}
 
 	label, err := resumeLabel(h.store)
 	if err != nil {

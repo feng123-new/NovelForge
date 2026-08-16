@@ -39,6 +39,16 @@ type Store struct {
 	crossMu sync.Mutex // 串行化跨域协调；不代表多个文件具备事务原子性
 }
 
+const (
+	LegacyProjectFormatVersion  = 1
+	CurrentProjectFormatVersion = 2
+	projectFormatPath           = "meta/format.json"
+)
+
+type projectFormat struct {
+	Version int `json:"version"`
+}
+
 // NewStore 创建状态管理器，dir 为小说输出根目录。
 func NewStore(dir string) *Store {
 	io := newIO(dir)
@@ -69,6 +79,30 @@ func NewStore(dir string) *Store {
 
 // Dir 返回输出根目录。
 func (s *Store) Dir() string { return s.dir }
+
+// LoadProjectFormatVersion 返回作品目录的数据格式版本。旧作品没有版本文件，
+// 视为 v1，由启动迁移统一升级，业务代码无需保留旧格式分支。
+func (s *Store) LoadProjectFormatVersion() (int, error) {
+	var format projectFormat
+	if err := s.Progress.io.ReadJSON(projectFormatPath, &format); err != nil {
+		if os.IsNotExist(err) {
+			return LegacyProjectFormatVersion, nil
+		}
+		return 0, err
+	}
+	if format.Version <= 0 {
+		return 0, fmt.Errorf("项目格式版本无效: %d", format.Version)
+	}
+	return format.Version, nil
+}
+
+// SaveProjectFormatVersion 在一次迁移全部完成后原子更新项目格式版本。
+func (s *Store) SaveProjectFormatVersion(version int) error {
+	if version <= 0 {
+		return fmt.Errorf("项目格式版本必须大于 0: %d", version)
+	}
+	return s.Progress.io.WriteJSON(projectFormatPath, projectFormat{Version: version})
+}
 
 // CheckConsistency 对事实层做一次浅层校验，用于启动/恢复时生成 warning。
 // 纯只读：不修正数据，仅返回可读的问题描述。调用方决定如何展示（log / UI）。

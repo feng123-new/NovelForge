@@ -438,15 +438,15 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		return m, cmd, true
 	case bootstrapMsg:
-		if msg.err != nil {
-			m.err = msg.err
-			return m, fetchSnapshot(m.runtime), true
-		}
-		// modeNew：启动恢复/导入完成落台；modeDone：/reopen 重开后回到创作台。
-		if msg.resumed && (m.mode == modeNew || m.mode == modeDone) {
+		// 是否已有作品决定界面落点，恢复成功只决定引擎是否运行。数据升级、
+		// 预算或修订门禁失败时仍留在工作台展示原书，不能退回欢迎页。
+		if (msg.existing || msg.resumed) && m.mode == modeNew && !msg.completed {
 			enableMouse := m.enterRunning()
 			m.resizeTextarea()
 			m.textarea.Placeholder = defaultSteerPlaceholder()
+			if msg.err != nil {
+				m.err = msg.err
+			}
 			return m, tea.Batch(fetchSnapshot(m.runtime), enableMouse), true
 		}
 		// 完结书：落完成态工作台（enterRunning 开鼠标后改 modeDone），不落欢迎页——
@@ -456,7 +456,20 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.mode = modeDone
 			m.resizeTextarea()
 			m.textarea.Placeholder = donePlaceholder
+			if msg.err != nil {
+				m.err = msg.err
+			}
 			return m, tea.Batch(fetchSnapshot(m.runtime), enableMouse, m.textarea.Focus()), true
+		}
+		// /reopen 等会话内恢复从完成态重新进入创作台。
+		if msg.resumed && m.mode == modeDone {
+			enableMouse := m.enterRunning()
+			m.resizeTextarea()
+			m.textarea.Placeholder = defaultSteerPlaceholder()
+			return m, tea.Batch(fetchSnapshot(m.runtime), enableMouse), true
+		}
+		if msg.err != nil {
+			m.err = msg.err
 		}
 		return m, fetchSnapshot(m.runtime), true
 	case snapshotMsg:
