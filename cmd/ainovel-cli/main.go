@@ -10,6 +10,7 @@ import (
 	"github.com/voocel/ainovel-cli/assets"
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
 	"github.com/voocel/ainovel-cli/internal/entry/headless"
+	"github.com/voocel/ainovel-cli/internal/entry/startup"
 	"github.com/voocel/ainovel-cli/internal/entry/tui"
 	"github.com/voocel/ainovel-cli/internal/eval"
 	"github.com/voocel/ainovel-cli/internal/rules"
@@ -230,15 +231,12 @@ func loadPromptFrom(opts cliOptions, stdin io.Reader) (string, error) {
 		return strings.TrimSpace(opts.Prompt), nil
 	}
 
-	var data []byte
-	var err error
 	if opts.PromptFile == "-" {
-		data, err = io.ReadAll(stdin)
-	} else {
-		data, err = os.ReadFile(opts.PromptFile)
+		data, err := io.ReadAll(stdin)
+		if err != nil {
+			return "", fmt.Errorf("读取 prompt 失败: %w", err)
+		}
+		return strings.TrimSpace(string(data)), nil
 	}
-	if err != nil {
-		return "", fmt.Errorf("读取 prompt 失败: %w", err)
-	}
-	return strings.TrimSpace(string(data)), nil
+	return startup.LoadPromptFile(opts.PromptFile)
 }

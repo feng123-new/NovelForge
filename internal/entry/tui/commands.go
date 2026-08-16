@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/voocel/ainovel-cli/internal/domain"
+	"github.com/voocel/ainovel-cli/internal/entry/startup"
 	"github.com/voocel/ainovel-cli/internal/host"
 )
 
@@ -159,6 +161,28 @@ func commandRegistryInstance() commandRegistry {
 					return m, nil
 				}
 				return m, tea.Batch(fetchSnapshot(m.runtime), listenDone(m.runtime), m.textarea.Focus())
+			},
+		},
+		{
+			Name:        "start",
+			Group:       "writing",
+			Usage:       "/start <path>",
+			Description: "从设定或大纲文件创建新书",
+			Run: func(m Model, args []string) (tea.Model, tea.Cmd) {
+				if m.mode != modeNew {
+					m.applyEvent(host.Event{
+						Time: time.Now(), Category: "ERROR", Summary: "/start 仅可在欢迎页创建新书", Level: "error",
+					})
+					m.refreshEventViewport()
+					return m, nil
+				}
+				plan, err := prepareFileStart(args)
+				if err != nil {
+					m.err = err
+					return m, nil
+				}
+				cmd := m.enterStarting(plan.RawPrompt)
+				return m, tea.Batch(startRuntime(m.runtime, plan), cmd)
 			},
 		},
 		{
@@ -320,6 +344,24 @@ func commandRegistryInstance() commandRegistry {
 
 func commandSpecs() []slashCommandSpec {
 	return commandRegistryInstance().Visible()
+}
+
+func prepareFileStart(args []string) (startup.Plan, error) {
+	path := strings.TrimSpace(strings.Join(args, " "))
+	if len(path) >= 2 && ((path[0] == '"' && path[len(path)-1] == '"') ||
+		(path[0] == '\'' && path[len(path)-1] == '\'')) {
+		path = path[1 : len(path)-1]
+	}
+	if path == "" {
+		return startup.Plan{}, fmt.Errorf("用法：/start <设定或大纲文件路径>")
+	}
+	prompt, err := startup.LoadPromptFile(path)
+	if err != nil {
+		return startup.Plan{}, err
+	}
+	return startup.PrepareQuick(startup.Request{
+		Mode: startup.ModeQuick, UserPrompt: prompt, Interactive: true,
+	})
 }
 
 func (m Model) handleSlashCommand(cmd slashCommand) (tea.Model, tea.Cmd) {

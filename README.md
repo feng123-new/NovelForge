@@ -266,6 +266,14 @@ docker compose run --rm ainovel --headless --prompt "写一本悬疑短篇"
 
 两种模式最终都会收敛为同一份创作指令，再进入同一套创作引擎。
 
+已有较长的世界设定或故事大纲时，可在欢迎页直接从文件创建新书：
+
+```text
+/start ./outline.md
+```
+
+`/start` 会把文件全文作为初始创作要求，交给 Architect 整理为内部设定和动态大纲，不会将文件内容当成已完成章节。导入已有小说并续写仍使用 `/import`。
+
 ### 管理多本小说
 
 每本小说绑定到启动目录，产物落在 `{cwd}/output/novel/`。换目录启动 = 换一本，`cd` 回去启动 = 自动从最近 checkpoint 恢复。配置 `~/.ainovel/config.json` 全局共享，无需复制。

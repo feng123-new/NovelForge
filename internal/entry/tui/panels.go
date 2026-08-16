@@ -227,7 +227,7 @@ func renderWelcome(width, height int, errMsg string, mode startupMode, importHin
 			Render("! " + importHint))
 	} else {
 		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).
-			Render("已有小说存稿想接着写？输入 /import <文件路径> 导入后续写"))
+			Render("已有设定/大纲？/start <文件路径> 创建新书 · 已有小说存稿？/import <文件路径> 导入续写"))
 	}
 	b.WriteString("\n\n")
 	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Italic(true).

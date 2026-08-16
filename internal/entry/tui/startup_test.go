@@ -2,9 +2,41 @@ package tui
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestStartCommandLoadsPromptFile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "outline files")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "story outline.md")
+	want := "世界设定\n\n第一卷大纲"
+	if err := os.WriteFile(path, []byte("  "+want+"  "), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewModel(nil, "")
+	cmd, ok := parseSlashCommand("/start " + path)
+	if !ok {
+		t.Fatal("/start should parse as slash command")
+	}
+	plan, err := prepareFileStart(cmd.args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RawPrompt != want {
+		t.Fatalf("prompt = %q, want full file content", plan.RawPrompt)
+	}
+	next, startCmd := m.handleSlashCommand(cmd)
+	got := next.(Model)
+	if startCmd == nil || !got.starting || got.mode != modeRunning {
+		t.Fatalf("start state = mode %v, starting %v, cmd %v", got.mode, got.starting, startCmd)
+	}
+}
 
 func TestEnterStartingSwitchesToWorkbenchImmediately(t *testing.T) {
 	m := NewModel(nil, "")
