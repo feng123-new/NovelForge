@@ -1228,10 +1228,8 @@ func (h *Host) Snapshot() UISnapshot {
 	}
 
 	snap.Agents = h.observer.agentSnapshots()
-	h.fillContextStatus(&snap)
 	snap.StatusLabel = deriveStatusLabel(snap)
 
-	// 恢复标签
 	// 恢复标签
 	if label, err := resumeLabel(h.store); err == nil && label != "" {
 		snap.RecoveryLabel = label
@@ -1241,12 +1239,6 @@ func (h *Host) Snapshot() UISnapshot {
 
 	return snap
 }
-
-// fillContextStatus 填充上下文健康度信息。
-// 主循环无常驻 LLM 上下文；Worker 的上下文健康度经进度中继
-// (ProgressContext)进入 observer 的 per-agent 快照,由 Agents 面板展示。
-// 汇总字段留空,面板按 per-agent 数据渲染。
-func (h *Host) fillContextStatus(_ *UISnapshot) {}
 
 // fillDetails 填充详情区:设定、角色、最近 commit/review/摘要。
 func (h *Host) fillDetails(snap *UISnapshot, progress *domain.Progress) {

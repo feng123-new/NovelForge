@@ -304,18 +304,13 @@ func (m Model) handleEnterKey() (tea.Model, tea.Cmd) {
 	case modeNew:
 		m.err = nil
 		if m.startupMode == startupModeQuick {
-			plan, err := startup.PrepareQuick(startup.Request{
-				Mode:        startup.ModeQuick,
-				UserPrompt:  text,
-				OutputDir:   m.runtime.Dir(),
-				Interactive: true,
-			})
+			prompt, err := startup.PrepareQuick(text)
 			if err != nil {
 				m.err = err
 				return m, nil
 			}
-			cmd := m.enterStarting(plan.RawPrompt)
-			return m, tea.Batch(startRuntime(m.runtime, plan), cmd)
+			cmd := m.enterStarting(prompt)
+			return m, tea.Batch(startRuntime(m.runtime, prompt), cmd)
 		}
 		m.cocreate = newCoCreateState(text)
 		return m, m.sendCoCreate()

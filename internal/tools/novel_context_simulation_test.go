@@ -77,8 +77,8 @@ func TestContextToolInjectsCompactSimulationProfile(t *testing.T) {
 
 func assertCompactSimulationProfile(t *testing.T, payload map[string]any, section string) {
 	t.Helper()
-	if got := payload["simulation_profile"]; got != true {
-		t.Fatalf("expected top-level simulation_profile marker, got %#v", got)
+	if _, ok := payload["simulation_profile"]; ok {
+		t.Fatal("unexpected top-level simulation_profile")
 	}
 	sectionMap, ok := payload[section].(map[string]any)
 	if !ok {

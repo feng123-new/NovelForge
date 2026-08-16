@@ -166,7 +166,7 @@ func (s *SummaryStore) LoadAllVolumeSummaries() ([]domain.VolumeSummary, error) 
 }
 
 // FindCharacterAppearances 批量查找多个角色的最后出场章节号。
-func (s *SummaryStore) FindCharacterAppearances(names []string, endChapter, recentWindow int) map[string]int {
+func (s *SummaryStore) FindCharacterAppearances(names []string, endChapter, recentWindow int) (map[string]int, error) {
 	result := make(map[string]int, len(names))
 	remaining := make(map[string]struct{}, len(names))
 	for _, n := range names {
@@ -177,7 +177,10 @@ func (s *SummaryStore) FindCharacterAppearances(names []string, endChapter, rece
 			break
 		}
 		sum, err := s.LoadSummary(ch)
-		if err != nil || sum == nil {
+		if err != nil {
+			return nil, err
+		}
+		if sum == nil {
 			continue
 		}
 		for _, c := range sum.Characters {
@@ -187,7 +190,7 @@ func (s *SummaryStore) FindCharacterAppearances(names []string, endChapter, rece
 			}
 		}
 	}
-	return result
+	return result, nil
 }
 
 func (s *SummaryStore) volumeCount() int {

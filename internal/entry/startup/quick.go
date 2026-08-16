@@ -15,15 +15,11 @@ func LoadPromptFile(path string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// PrepareQuick 将直接输入整理为可进入 Engine 的快速启动计划。
-func PrepareQuick(req Request) (Plan, error) {
-	prompt := strings.TrimSpace(req.UserPrompt)
+// PrepareQuick 整理快速启动提示词。
+func PrepareQuick(rawPrompt string) (string, error) {
+	prompt := strings.TrimSpace(rawPrompt)
 	if prompt == "" {
-		return Plan{}, fmt.Errorf("prompt is required")
+		return "", fmt.Errorf("prompt is required")
 	}
-	return Plan{
-		Mode:        ModeQuick,
-		DisplayName: "快速开始",
-		RawPrompt:   prompt,
-	}, nil
+	return prompt, nil
 }

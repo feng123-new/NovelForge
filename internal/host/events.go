@@ -2,8 +2,6 @@ package host
 
 import (
 	"time"
-
-	"github.com/voocel/ainovel-cli/internal/domain"
 )
 
 // Event 是 TUI 消费的结构化事件。
@@ -75,17 +73,6 @@ type UISnapshot struct {
 	RecoveryLabel        string
 	IsRunning            bool
 	Agents               []AgentSnapshot
-
-	// 上下文
-	ContextTokens         int
-	ContextWindow         int
-	ContextPercent        float64
-	ContextScope          string
-	ContextStrategy       string
-	ContextActiveMessages int
-	ContextSummaryCount   int
-	ContextCompactedCount int
-	ContextKeptCount      int
 
 	// 累计用量（整个会话，跨所有 agent 与模型切换）
 	TotalInputTokens      int
@@ -205,14 +192,4 @@ type CoCreateReply struct {
 	Ready       bool
 	Suggestions []string
 	Raw         string
-}
-
-// ReplayDeltaText 从运行时队列项中提取可回放的流式文本。
-func ReplayDeltaText(item domain.RuntimeQueueItem) string {
-	if payload, ok := item.Payload.(map[string]any); ok {
-		if text, ok := payload["delta"].(string); ok {
-			return text
-		}
-	}
-	return ""
 }

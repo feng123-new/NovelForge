@@ -176,13 +176,13 @@ func commandRegistryInstance() commandRegistry {
 					m.refreshEventViewport()
 					return m, nil
 				}
-				plan, err := prepareFileStart(args)
+				prompt, err := prepareFileStart(args)
 				if err != nil {
 					m.err = err
 					return m, nil
 				}
-				cmd := m.enterStarting(plan.RawPrompt)
-				return m, tea.Batch(startRuntime(m.runtime, plan), cmd)
+				cmd := m.enterStarting(prompt)
+				return m, tea.Batch(startRuntime(m.runtime, prompt), cmd)
 			},
 		},
 		{
@@ -346,22 +346,20 @@ func commandSpecs() []slashCommandSpec {
 	return commandRegistryInstance().Visible()
 }
 
-func prepareFileStart(args []string) (startup.Plan, error) {
+func prepareFileStart(args []string) (string, error) {
 	path := strings.TrimSpace(strings.Join(args, " "))
 	if len(path) >= 2 && ((path[0] == '"' && path[len(path)-1] == '"') ||
 		(path[0] == '\'' && path[len(path)-1] == '\'')) {
 		path = path[1 : len(path)-1]
 	}
 	if path == "" {
-		return startup.Plan{}, fmt.Errorf("用法：/start <设定或大纲文件路径>")
+		return "", fmt.Errorf("用法：/start <设定或大纲文件路径>")
 	}
 	prompt, err := startup.LoadPromptFile(path)
 	if err != nil {
-		return startup.Plan{}, err
+		return "", err
 	}
-	return startup.PrepareQuick(startup.Request{
-		Mode: startup.ModeQuick, UserPrompt: prompt, Interactive: true,
-	})
+	return startup.PrepareQuick(prompt)
 }
 
 func (m Model) handleSlashCommand(cmd slashCommand) (tea.Model, tea.Cmd) {

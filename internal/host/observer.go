@@ -223,7 +223,6 @@ func (o *observer) persistEvent(ev Event) {
 	}
 	if _, err := o.store.Runtime.AppendQueue(domain.RuntimeQueueItem{
 		Time:     ev.Time,
-		Kind:     domain.RuntimeQueueUIEvent,
 		Priority: priority,
 		Category: ev.Category,
 		Summary:  ev.Summary,

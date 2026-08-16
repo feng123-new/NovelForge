@@ -24,12 +24,12 @@ func TestStartCommandLoadsPromptFile(t *testing.T) {
 	if !ok {
 		t.Fatal("/start should parse as slash command")
 	}
-	plan, err := prepareFileStart(cmd.args)
+	prompt, err := prepareFileStart(cmd.args)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.RawPrompt != want {
-		t.Fatalf("prompt = %q, want full file content", plan.RawPrompt)
+	if prompt != want {
+		t.Fatalf("prompt = %q, want full file content", prompt)
 	}
 	next, startCmd := m.handleSlashCommand(cmd)
 	got := next.(Model)

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -40,6 +41,34 @@ type ContextTool struct {
 	refs       References
 	style      string
 	styleStats *StyleStatsIndex
+}
+
+type contextReads struct {
+	warnings []string
+	seen     map[string]struct{}
+	err      error
+}
+
+func (r *contextReads) warn(scope string, err error) {
+	if err == nil || os.IsNotExist(err) {
+		return
+	}
+	msg := fmt.Sprintf("%s 读取失败: %v", scope, err)
+	if r.seen == nil {
+		r.seen = make(map[string]struct{})
+	}
+	if _, ok := r.seen[msg]; ok {
+		return
+	}
+	r.seen[msg] = struct{}{}
+	r.warnings = append(r.warnings, msg)
+}
+
+func (r *contextReads) require(scope string, err error) {
+	if r.err != nil || err == nil || os.IsNotExist(err) || errors.Is(err, store.ErrOutlineChapterNotFound) {
+		return
+	}
+	r.err = fmt.Errorf("%s 读取失败: %w", scope, err)
 }
 
 // NewContextTool 创建上下文工具。styleStats 必须与 commit_chapter 共享，
@@ -84,56 +113,46 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 	}
 
 	result := make(map[string]any)
-	var warnings []string
-	seenWarnings := make(map[string]struct{})
-	warn := func(scope string, err error) {
-		if err == nil || os.IsNotExist(err) {
-			return
-		}
-		msg := fmt.Sprintf("%s 读取失败: %v", scope, err)
-		if _, ok := seenWarnings[msg]; ok {
-			return
-		}
-		seenWarnings[msg] = struct{}{}
-		warnings = append(warnings, msg)
-	}
+	reads := &contextReads{}
 
 	if a.Chapter > 0 {
 		// Writer 路径：加载全量基础数据 + 章节上下文
-		t.buildBaseContext(result, warn)
+		t.buildBaseContext(result, reads)
 		seed := newChapterContextEnvelope()
-		state := t.prepareChapterContext(a.Chapter, &seed, warn)
+		state := t.prepareChapterContext(a.Chapter, &seed, reads)
 		seed.apply(result)
-		t.buildChapterContext(result, state, warn)
+		t.buildChapterContext(result, state, reads)
 		// 该章的机械违规事实(commit 时按 user_rules 检查并落盘):
 		// editor 评审据此映射进七维(editor.md §机械检查映射);writer 返工时自查。
 		if violations := t.store.World.LoadRuleViolations(a.Chapter); len(violations) > 0 {
 			result["rule_violations"] = violations
 		}
-		// 数据语义标注（治复读交代）：episodic 是已写入正文的备忘，不是待写素材。
-		// 只挂容器内，不进顶层镜像。
+		// episodic 是已写入正文的备忘，不是待写素材。
 		if epi, ok := result["episodic_memory"].(map[string]any); ok && len(epi) > 0 {
 			epi["_usage"] = "本容器为已写入正文的事实备忘（供一致性与衔接对照）；在新章正文中原样复述这些内容属于重复缺陷"
 		}
 	} else {
 		// Architect 路径：只返回状态 + 结构化数据，不加载全量原文
-		t.buildProgressStatus(result, warn)
-		t.buildArchitectContext(result, warn)
+		t.buildProgressStatus(result, reads)
+		t.buildArchitectContext(result, reads)
 	}
 
 	// 注入 working_memory.user_rules（canonical 路径）。架构师路径原本没有 working_memory，
 	// 由 buildUserRules 按需新建只装 user_rules 的容器。快照缺失时退到内置默认，
 	// 始终输出稳定结构，避免 LLM 看到 user_rules=null 走异常分支。
 	if a.Chapter > 0 {
-		t.buildSimulationProfile(result, "working_memory", warn)
+		t.buildSimulationProfile(result, "working_memory", reads)
 	} else {
-		t.buildSimulationProfile(result, "planning_memory", warn)
+		t.buildSimulationProfile(result, "planning_memory", reads)
 	}
 
-	t.buildUserRules(result, warn)
+	t.buildUserRules(result, reads)
 
-	if len(warnings) > 0 {
-		result["_warnings"] = warnings
+	if reads.err != nil {
+		return nil, reads.err
+	}
+	if len(reads.warnings) > 0 {
+		result["_warnings"] = reads.warnings
 	}
 
 	// 优先级预算：总大小超过阈值时自动裁剪低优先级数据
@@ -150,89 +169,82 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 // buildLoadingSummary 从已组装的 result 中统计各项数据量，生成一行可读摘要。
 func buildLoadingSummary(result map[string]any, chapter int) string {
 	var parts []string
+	working, _ := result["working_memory"].(map[string]any)
+	episodic, _ := result["episodic_memory"].(map[string]any)
+	planning, _ := result["planning_memory"].(map[string]any)
+	foundation, _ := result["foundation_memory"].(map[string]any)
+	referencePack, _ := result["reference_pack"].(map[string]any)
 
 	if chapter > 0 {
 		parts = append(parts, fmt.Sprintf("ch=%d", chapter))
+		if tier, ok := episodic["planning_tier"].(domain.PlanningTier); ok && tier != "" {
+			parts = append(parts, fmt.Sprintf("tier=%s", tier))
+		}
 	} else {
 		parts = append(parts, "architect")
-	}
-	if tier, ok := result["planning_tier"].(domain.PlanningTier); ok && tier != "" {
-		parts = append(parts, fmt.Sprintf("tier=%s", tier))
+		if tier, ok := planning["planning_tier"].(domain.PlanningTier); ok && tier != "" {
+			parts = append(parts, fmt.Sprintf("tier=%s", tier))
+		}
 	}
 
-	// 卷弧位置
-	if pos, ok := result["position"].(map[string]any); ok {
+	if pos, ok := episodic["position"].(map[string]any); ok {
 		parts = append(parts, fmt.Sprintf("V%dA%d", pos["volume"], pos["arc"]))
 	}
 
 	var items []string
-	countSlice := func(key string) int {
-		if v, ok := result[key]; ok {
-			if s, ok := v.([]domain.Character); ok {
-				return len(s)
-			}
-			// 通用 slice 反射
-			return sliceLen(v)
-		}
-		return 0
-	}
 
-	// 角色
-	if n := countSlice("character_snapshots"); n > 0 {
+	if n := firstSliceLen(episodic["character_snapshots"], foundation["character_snapshots"]); n > 0 {
 		items = append(items, fmt.Sprintf("角色:%d(快照)", n))
-	} else if n := countSlice("characters"); n > 0 {
+	} else if n := firstSliceLen(episodic["characters"], foundation["characters"]); n > 0 {
 		items = append(items, fmt.Sprintf("角色:%d", n))
 	}
 
-	if working, ok := result["working_memory"].(map[string]any); ok && len(working) > 0 {
+	if len(working) > 0 {
 		items = append(items, fmt.Sprintf("工作记忆:%d", len(working)))
 	}
-	if episodic, ok := result["episodic_memory"].(map[string]any); ok && len(episodic) > 0 {
+	if len(episodic) > 0 {
 		items = append(items, fmt.Sprintf("情节记忆:%d", len(episodic)))
 	}
-	if planning, ok := result["planning_memory"].(map[string]any); ok && len(planning) > 0 {
+	if len(planning) > 0 {
 		items = append(items, fmt.Sprintf("规划记忆:%d", len(planning)))
 	}
-	if foundation, ok := result["foundation_memory"].(map[string]any); ok && len(foundation) > 0 {
+	if len(foundation) > 0 {
 		items = append(items, fmt.Sprintf("基础记忆:%d", len(foundation)))
 	}
 
-	// 分层摘要
-	if n := countSlice("volume_summaries"); n > 0 {
+	if n := firstSliceLen(working["volume_summaries"], planning["volume_summaries"]); n > 0 {
 		items = append(items, fmt.Sprintf("卷摘要:%d", n))
 	}
-	if n := countSlice("arc_summaries"); n > 0 {
+	if n := firstSliceLen(working["arc_summaries"], planning["arc_summaries"]); n > 0 {
 		items = append(items, fmt.Sprintf("弧摘要:%d", n))
 	}
-	if n := countSlice("recent_summaries"); n > 0 {
+	if n := sliceLen(working["recent_summaries"]); n > 0 {
 		items = append(items, fmt.Sprintf("章摘要:%d", n))
 	}
 
-	// 分层大纲
-	if n := countSlice("layered_outline"); n > 0 {
+	if n := sliceLen(planning["layered_outline"]); n > 0 {
 		items = append(items, fmt.Sprintf("分层大纲:%d卷", n))
 	}
 
-	// 状态数据
-	if n := countSlice("timeline"); n > 0 {
+	if n := sliceLen(working["timeline"]); n > 0 {
 		items = append(items, fmt.Sprintf("时间线:%d", n))
 	}
-	if n := countSlice("foreshadow_ledger"); n > 0 {
+	if n := firstSliceLen(episodic["foreshadow_ledger"], foundation["foreshadow_ledger"]); n > 0 {
 		items = append(items, fmt.Sprintf("伏笔:%d", n))
 	}
-	if n := countSlice("relationship_state"); n > 0 {
+	if n := sliceLen(episodic["relationship_state"]); n > 0 {
 		items = append(items, fmt.Sprintf("关系:%d", n))
 	}
-	if n := countSlice("recent_state_changes"); n > 0 {
+	if n := sliceLen(episodic["recent_state_changes"]); n > 0 {
 		items = append(items, fmt.Sprintf("状态变化:%d", n))
 	}
-	if _, ok := result["previous_tail"]; ok {
+	if _, ok := working["previous_tail"]; ok {
 		items = append(items, "前章尾部:ok")
 	}
-	if _, ok := result["style_rules"]; ok {
+	if _, ok := referencePack["style_rules"]; ok {
 		items = append(items, "风格规则:ok")
 	}
-	if n := sliceLen(result["related_chapters"]); n > 0 {
+	if n := sliceLen(episodic["related_chapters"]); n > 0 {
 		items = append(items, fmt.Sprintf("相关章:%d", n))
 	}
 	if selected, ok := result["selected_memory"].(map[string]any); ok && len(selected) > 0 {
@@ -244,17 +256,18 @@ func buildLoadingSummary(result map[string]any, chapter int) string {
 		}
 	}
 
-	// 参考资料
-	if refs, ok := result["references"].(map[string]string); ok && len(refs) > 0 {
+	if refs, ok := referencePack["references"].(map[string]string); ok && len(refs) > 0 {
 		items = append(items, fmt.Sprintf("参考:%d项", len(refs)))
 	}
-	if pack, ok := result["reference_pack"].(map[string]any); ok && len(pack) > 0 {
-		items = append(items, fmt.Sprintf("参考包:%d", len(pack)))
+	if len(referencePack) > 0 {
+		items = append(items, fmt.Sprintf("参考包:%d", len(referencePack)))
 	}
 	if _, ok := result["memory_policy"]; ok {
 		items = append(items, "记忆策略:ok")
 	}
-	if _, ok := result["simulation_profile"]; ok {
+	if _, ok := working["simulation_profile"]; ok {
+		items = append(items, "仿写画像:ok")
+	} else if _, ok := planning["simulation_profile"]; ok {
 		items = append(items, "仿写画像:ok")
 	}
 	if warnings, ok := result["_warnings"].([]string); ok && len(warnings) > 0 {
@@ -302,12 +315,21 @@ func sliceLen(v any) int {
 	}
 }
 
+func firstSliceLen(values ...any) int {
+	for _, value := range values {
+		if n := sliceLen(value); n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
 // loadFilteredCharacters 按 Tier 和场景出场过滤角色。
 // core/important 始终返回；secondary/decorative 只在当前章节大纲提及时返回。
-func (t *ContextTool) loadFilteredCharacters(result map[string]any, chapter int, warn func(string, error)) {
+func (t *ContextTool) loadFilteredCharacters(result map[string]any, chapter int, reads *contextReads) {
 	chars, err := t.store.Characters.Load()
 	if err != nil {
-		warn("characters", err)
+		reads.require("characters", err)
 		return
 	}
 	if len(chars) == 0 {
@@ -317,7 +339,11 @@ func (t *ContextTool) loadFilteredCharacters(result map[string]any, chapter int,
 	// 获取当前章节大纲的场景描述，用于匹配次要角色
 	entry, err := t.store.Outline.GetChapterOutline(chapter)
 	if err != nil {
-		warn("current_chapter_outline", err)
+		reads.require("current_chapter_outline", err)
+		result["characters"] = chars
+		return
+	}
+	if entry == nil {
 		result["characters"] = chars
 		return
 	}
@@ -351,16 +377,10 @@ func matchCharacter(text string, c domain.Character) bool {
 }
 
 // loadLayeredSummaries 分层摘要加载：卷摘要 + 当前卷弧摘要 + 弧内章摘要。
-func (t *ContextTool) loadLayeredSummaries(result map[string]any, chapter, summaryWindow int, warn func(string, error)) {
+func (t *ContextTool) loadLayeredSummaries(result map[string]any, chapter, summaryWindow int, reads *contextReads) {
 	vol, arc, err := t.store.Outline.LocateChapter(chapter)
 	if err != nil {
-		warn("layered_outline_position", err)
-		// 回退到扁平模式
-		if summaries, err := t.store.Summaries.LoadRecentSummaries(chapter, summaryWindow); err == nil && len(summaries) > 0 {
-			result["recent_summaries"] = summaries
-		} else {
-			warn("recent_summaries", err)
-		}
+		reads.require("layered_outline_position", err)
 		return
 	}
 
@@ -368,7 +388,7 @@ func (t *ContextTool) loadLayeredSummaries(result map[string]any, chapter, summa
 	if volSummaries, err := t.store.Summaries.LoadAllVolumeSummaries(); err == nil && len(volSummaries) > 0 {
 		result["volume_summaries"] = volSummaries
 	} else {
-		warn("volume_summaries", err)
+		reads.require("volume_summaries", err)
 	}
 
 	// 2. 当前卷内已完成弧的弧摘要（不含当前弧）
@@ -383,29 +403,29 @@ func (t *ContextTool) loadLayeredSummaries(result map[string]any, chapter, summa
 			result["arc_summaries"] = prior
 		}
 	} else {
-		warn("arc_summaries", err)
+		reads.require("arc_summaries", err)
 	}
 
 	// 3. 当前弧内最近 N 章的章摘要
 	if summaries, err := t.store.Summaries.LoadRecentSummaries(chapter, summaryWindow); err == nil && len(summaries) > 0 {
 		result["recent_summaries"] = summaries
 	} else {
-		warn("recent_summaries", err)
+		reads.require("recent_summaries", err)
 	}
 }
 
 // loadLayeredCharacters Layered 模式下的角色加载：优先用最近快照，回退到原始设定 + Tier 过滤。
-func (t *ContextTool) loadLayeredCharacters(result map[string]any, chapter int, warn func(string, error)) {
+func (t *ContextTool) loadLayeredCharacters(result map[string]any, chapter int, reads *contextReads) {
 	snapshots, err := t.store.Characters.LoadLatestSnapshots()
 	if err == nil && len(snapshots) > 0 {
 		result["character_snapshots"] = snapshots
 		// 同时保留原始设定中的 core/important 角色（快照可能不含新登场角色）
-		t.loadFilteredCharacters(result, chapter, warn)
+		t.loadFilteredCharacters(result, chapter, reads)
 		return
 	}
-	warn("character_snapshots", err)
+	reads.require("character_snapshots", err)
 	// 无快照时回退到原始设定
-	t.loadFilteredCharacters(result, chapter, warn)
+	t.loadFilteredCharacters(result, chapter, reads)
 }
 
 // writerReferences 返回写作参考资料。章节 1 返回全量，后续章节裁剪掉不再需要的模板。
@@ -480,27 +500,6 @@ func (t *ContextTool) foundationStatus() (map[string]any, error) {
 	return status, nil
 }
 
-// ContextSummary 返回当前状态的简要摘要（供日志使用）。
-func (t *ContextTool) ContextSummary() string {
-	var parts []string
-	if book, _ := t.store.Book.Load(); book != nil {
-		parts = append(parts, "book:ok")
-	}
-	if p, _ := t.store.Outline.LoadPremise(); p != "" {
-		parts = append(parts, "premise:ok")
-	}
-	if o, _ := t.store.Outline.LoadOutline(); o != nil {
-		parts = append(parts, fmt.Sprintf("outline:%d chapters", len(o)))
-	}
-	if c, _ := t.store.Characters.Load(); c != nil {
-		parts = append(parts, fmt.Sprintf("characters:%d", len(c)))
-	}
-	if len(parts) == 0 {
-		return "empty"
-	}
-	return strings.Join(parts, ", ")
-}
-
 // trimByBudget 按优先级裁剪 result，使 JSON 总大小不超过 budget 字节。
 // 优先级（从低到高）：references < voice_samples < style_anchors < previous_tail < timeline
 //
@@ -531,10 +530,9 @@ func trimByBudget(result map[string]any, budget int) {
 
 	var trimmed []string
 	for _, key := range trimOrder {
-		if _, ok := result[key]; !ok {
+		if !deleteContextKey(result, key) {
 			continue
 		}
-		deleteContextKey(result, key)
 		trimmed = append(trimmed, key)
 		data, err = json.Marshal(result)
 		if err != nil || len(data) <= budget {
@@ -546,21 +544,26 @@ func trimByBudget(result map[string]any, budget int) {
 	}
 }
 
-func deleteContextKey(result map[string]any, key string) {
-	delete(result, key)
+func deleteContextKey(result map[string]any, key string) bool {
+	deleted := false
 	for _, containerKey := range []string{
 		"working_memory",
 		"episodic_memory",
 		"planning_memory",
 		"foundation_memory",
 		"reference_pack",
+		"selected_memory",
 	} {
 		section, ok := result[containerKey].(map[string]any)
 		if !ok {
 			continue
 		}
-		delete(section, key)
+		if _, ok := section[key]; ok {
+			delete(section, key)
+			deleted = true
+		}
 	}
+	return deleted
 }
 
 // buildRelatedChapters 根据结构化数据反查与当前章相关的历史章节。
@@ -572,6 +575,7 @@ func (t *ContextTool) buildRelatedChapters(
 	foreshadow []domain.ForeshadowEntry,
 	relationships []domain.RelationshipEntry,
 	stateChanges []domain.StateChange,
+	reads *contextReads,
 ) []domain.RelatedChapter {
 	const recentWindow = 10
 	const maxResults = 5
@@ -610,10 +614,16 @@ func (t *ContextTool) buildRelatedChapters(
 	}
 
 	// 2. 角色出场反查：批量单次遍历，IO 从 O(角色数×章节数) 降为 O(章节数)
-	chars, _ := t.store.Characters.Load()
+	chars, err := t.store.Characters.Load()
+	if err != nil {
+		reads.warn("related_chapters.characters", err)
+	}
 	outlineChars := matchOutlineCharacters(outlineText, chars)
 	if len(outlineChars) > 0 {
-		appearances := t.store.Summaries.FindCharacterAppearances(outlineChars, chapter, recentWindow)
+		appearances, err := t.store.Summaries.FindCharacterAppearances(outlineChars, chapter, recentWindow)
+		if err != nil {
+			reads.warn("related_chapters.summaries", err)
+		}
 		for _, name := range outlineChars {
 			if len(results) >= maxResults {
 				break
@@ -772,7 +782,7 @@ func agingForeshadow(all []domain.ForeshadowEntry, chapter int, picked map[strin
 	return aging
 }
 
-func (t *ContextTool) selectReviewLessons(chapter int, warn func(string, error)) []domain.RecallItem {
+func (t *ContextTool) selectReviewLessons(chapter int, reads *contextReads) []domain.RecallItem {
 	if chapter <= 1 {
 		return nil
 	}
@@ -825,7 +835,7 @@ func (t *ContextTool) selectReviewLessons(chapter int, warn func(string, error))
 	for ch := chapter - 1; ch >= max(chapter-3, 1); ch-- {
 		review, err := t.store.World.LoadReview(ch)
 		if err != nil {
-			warn("review", err)
+			reads.warn("review", err)
 			continue
 		}
 		if appendReview(review) {
@@ -835,7 +845,7 @@ func (t *ContextTool) selectReviewLessons(chapter int, warn func(string, error))
 
 	globalReview, err := t.store.World.LoadLastReview(chapter - 1)
 	if err != nil {
-		warn("global_review", err)
+		reads.warn("global_review", err)
 	} else if appendReview(globalReview) {
 		return items
 	}

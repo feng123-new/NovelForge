@@ -37,7 +37,7 @@ func TestBuildProgressStatusHidesLayeredCapacityEstimate(t *testing.T) {
 	}
 
 	result := map[string]any{}
-	newTestContextTool(st, References{}, "default").buildProgressStatus(result, func(string, error) {})
+	newTestContextTool(st, References{}, "default").buildProgressStatus(result, &contextReads{})
 	status, ok := result["progress_status"].(map[string]any)
 	if !ok {
 		t.Fatalf("progress_status = %#v", result["progress_status"])
@@ -104,13 +104,13 @@ func TestContextToolInjectsStyleStats(t *testing.T) {
 	}
 }
 
-func TestContextToolWarnsWhenUserRulesSnapshotIsCorrupt(t *testing.T) {
+func TestContextToolWarnsWhenOptionalDataIsCorrupt(t *testing.T) {
 	dir := t.TempDir()
 	st := store.NewStore(dir)
 	if err := st.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "meta", "user_rules.json"), []byte("{"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "meta", "simulation_profile.json"), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := newTestContextTool(st, References{}, "default").Execute(context.Background(), json.RawMessage(`{}`))
@@ -122,12 +122,8 @@ func TestContextToolWarnsWhenUserRulesSnapshotIsCorrupt(t *testing.T) {
 		t.Fatal(err)
 	}
 	warnings, _ := got["_warnings"].([]any)
-	if len(warnings) == 0 || !strings.Contains(warnings[0].(string), "user_rules") {
-		t.Fatalf("损坏快照必须显式告警: %+v", got["_warnings"])
-	}
-	working, _ := got["working_memory"].(map[string]any)
-	if working["user_rules"] == nil {
-		t.Fatal("告警后仍应提供系统默认规则供模型继续决策")
+	if len(warnings) == 0 || !strings.Contains(warnings[0].(string), "simulation_profile") {
+		t.Fatalf("可选资料损坏必须显式告警: %+v", got["_warnings"])
 	}
 }
 
@@ -139,16 +135,13 @@ func keysOf(m map[string]json.RawMessage) []string {
 	return keys
 }
 
-func TestContextToolReportsWarningsForCorruptedState(t *testing.T) {
+func TestContextToolRejectsCorruptCoreState(t *testing.T) {
 	dir := t.TempDir()
 	store := store.NewStore(dir)
 	if err := store.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "outline.json"), []byte("{invalid"), 0o644); err != nil {
-		t.Fatalf("write outline.json: %v", err)
-	}
 	if err := os.WriteFile(filepath.Join(dir, "meta", "progress.json"), []byte("{invalid"), 0o644); err != nil {
 		t.Fatalf("write progress.json: %v", err)
 	}
@@ -159,39 +152,10 @@ func TestContextToolReportsWarningsForCorruptedState(t *testing.T) {
 		t.Fatalf("Marshal: %v", err)
 	}
 
-	result, err := tool.Execute(context.Background(), args)
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
+	_, err = tool.Execute(context.Background(), args)
+	if err == nil || !strings.Contains(err.Error(), "progress") {
+		t.Fatalf("核心事实损坏必须终止上下文装配: %v", err)
 	}
-
-	var payload struct {
-		Warnings []string `json:"_warnings"`
-		Summary  string   `json:"_loading_summary"`
-	}
-	if err := json.Unmarshal(result, &payload); err != nil {
-		t.Fatalf("Unmarshal: %v", err)
-	}
-	if len(payload.Warnings) == 0 {
-		t.Fatal("expected context warnings for corrupted files")
-	}
-	if !containsWarning(payload.Warnings, "outline") {
-		t.Fatalf("expected outline warning, got %v", payload.Warnings)
-	}
-	if !containsWarning(payload.Warnings, "progress") {
-		t.Fatalf("expected progress warning, got %v", payload.Warnings)
-	}
-	if !strings.Contains(payload.Summary, "告警:") {
-		t.Fatalf("expected loading summary to contain warning count, got %q", payload.Summary)
-	}
-}
-
-func containsWarning(warnings []string, key string) bool {
-	for _, warning := range warnings {
-		if strings.Contains(warning, key) {
-			return true
-		}
-	}
-	return false
 }
 
 func TestContextToolChapterModeIncludesWorkingAndReferenceFields(t *testing.T) {
@@ -316,20 +280,33 @@ func TestContextToolChapterModeIncludesWorkingAndReferenceFields(t *testing.T) {
 		"outline",
 		"world_rules",
 		"memory_policy",
-		"planning_tier",
 		"working_memory",
 		"episodic_memory",
 		"reference_pack",
-		"current_chapter_outline",
-		"recent_summaries",
-		"chapter_plan",
-		"chapter_contract",
-		"previous_tail",
-		"style_rules",
-		"references",
 	} {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("expected key %q in chapter context", key)
+		}
+	}
+	working := payload["working_memory"].(map[string]any)
+	for _, key := range []string{"current_chapter_outline", "recent_summaries", "chapter_plan", "chapter_contract", "previous_tail"} {
+		if _, ok := working[key]; !ok {
+			t.Fatalf("expected working_memory.%s", key)
+		}
+	}
+	episodic := payload["episodic_memory"].(map[string]any)
+	if _, ok := episodic["planning_tier"]; !ok {
+		t.Fatal("expected episodic_memory.planning_tier")
+	}
+	referencePack := payload["reference_pack"].(map[string]any)
+	for _, key := range []string{"style_rules", "references"} {
+		if _, ok := referencePack[key]; !ok {
+			t.Fatalf("expected reference_pack.%s", key)
+		}
+	}
+	for _, key := range []string{"planning_tier", "current_chapter_outline", "recent_summaries", "chapter_plan", "chapter_contract", "previous_tail", "style_rules", "references"} {
+		if _, ok := payload[key]; ok {
+			t.Fatalf("unexpected top-level memory field %q", key)
 		}
 	}
 }
@@ -461,35 +438,64 @@ func TestContextToolArchitectModeIncludesPlanningAndFoundation(t *testing.T) {
 		t.Fatalf("Unmarshal: %v", err)
 	}
 
-	for _, key := range []string{
-		"memory_policy",
-		"planning_tier",
-		"planning_memory",
-		"foundation_memory",
-		"reference_pack",
-		"premise_sections",
-		"premise_structure",
-		"characters",
-		"layered_outline",
-		"skeleton_arcs",
-		"arc_summaries",
-		"compass",
-		"style_rules",
-		"references",
-		"foundation_status",
-	} {
+	for _, key := range []string{"memory_policy", "planning_memory", "foundation_memory", "reference_pack"} {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("expected key %q in architect context", key)
 		}
 	}
+	planning := payload["planning_memory"].(map[string]any)
+	for _, key := range []string{"planning_tier", "layered_outline", "skeleton_arcs", "arc_summaries", "compass"} {
+		if _, ok := planning[key]; !ok {
+			t.Fatalf("expected planning_memory.%s", key)
+		}
+	}
+	foundation := payload["foundation_memory"].(map[string]any)
+	for _, key := range []string{"premise", "premise_sections", "premise_structure", "characters", "foundation_status"} {
+		if _, ok := foundation[key]; !ok {
+			t.Fatalf("expected foundation_memory.%s", key)
+		}
+	}
+	referencePack := payload["reference_pack"].(map[string]any)
+	for _, key := range []string{"style_rules", "references"} {
+		if _, ok := referencePack[key]; !ok {
+			t.Fatalf("expected reference_pack.%s", key)
+		}
+	}
+	for _, key := range []string{"planning_tier", "layered_outline", "skeleton_arcs", "arc_summaries", "compass", "premise", "premise_sections", "premise_structure", "characters", "foundation_status", "style_rules", "references"} {
+		if _, ok := payload[key]; ok {
+			t.Fatalf("unexpected top-level memory field %q", key)
+		}
+	}
 }
 
-func TestTrimByBudgetRemovesMirroredMemoryKeys(t *testing.T) {
+func TestContextToolArchitectModeIncludesFlatOutline(t *testing.T) {
+	s := store.NewStore(t.TempDir())
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Outline.SaveOutline([]domain.OutlineEntry{{Chapter: 1, Title: "开端"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := newTestContextTool(s, References{}, "default").Execute(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	planning := payload["planning_memory"].(map[string]any)
+	if _, ok := planning["outline"]; !ok {
+		t.Fatal("expected planning_memory.outline")
+	}
+	if _, ok := payload["outline"]; ok {
+		t.Fatal("unexpected top-level outline")
+	}
+}
+
+func TestTrimByBudgetRemovesCanonicalMemoryKeys(t *testing.T) {
 	result := map[string]any{
-		"references": map[string]string{
-			"a": strings.Repeat("x", 200),
-			"b": strings.Repeat("y", 200),
-		},
 		"reference_pack": map[string]any{
 			"references": map[string]string{
 				"a": strings.Repeat("x", 200),
@@ -501,15 +507,12 @@ func TestTrimByBudgetRemovesMirroredMemoryKeys(t *testing.T) {
 
 	trimByBudget(result, 80)
 
-	if _, ok := result["references"]; ok {
-		t.Fatal("expected top-level references to be trimmed")
-	}
 	pack, ok := result["reference_pack"].(map[string]any)
 	if !ok {
 		t.Fatal("expected reference_pack to remain available")
 	}
 	if _, ok := pack["references"]; ok {
-		t.Fatal("expected mirrored references to be trimmed from reference_pack")
+		t.Fatal("expected references to be trimmed from reference_pack")
 	}
 }
 
@@ -521,8 +524,9 @@ func TestTrimByBudgetKeepsStyleStats(t *testing.T) {
 		},
 	}
 	result := map[string]any{
-		"references":  strings.Repeat("x", 500),
-		"style_stats": styleStats,
+		"reference_pack": map[string]any{
+			"references": strings.Repeat("x", 500),
+		},
 		"episodic_memory": map[string]any{
 			"style_stats": styleStats,
 		},
@@ -530,9 +534,6 @@ func TestTrimByBudgetKeepsStyleStats(t *testing.T) {
 
 	trimByBudget(result, 100)
 
-	if _, ok := result["style_stats"]; !ok {
-		t.Fatal("style_stats must remain at top level")
-	}
 	episodic := result["episodic_memory"].(map[string]any)
 	if _, ok := episodic["style_stats"]; !ok {
 		t.Fatal("style_stats must remain in episodic_memory")
@@ -791,7 +792,8 @@ func TestContextToolKeepsFullForeshadowWhenRecallNotTriggered(t *testing.T) {
 	if err := json.Unmarshal(result, &payload); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if _, ok := payload["foreshadow_ledger"]; !ok {
+	episodic := payload["episodic_memory"].(map[string]any)
+	if _, ok := episodic["foreshadow_ledger"]; !ok {
 		t.Fatal("expected full foreshadow ledger to remain when selected recall is not triggered")
 	}
 	if _, ok := payload["selected_memory"]; ok {
@@ -839,7 +841,8 @@ func TestContextToolFallsBackToFullForeshadowWhenSelectionIsTooSparse(t *testing
 	if err := json.Unmarshal(result, &payload); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if _, ok := payload["foreshadow_ledger"]; !ok {
+	episodic := payload["episodic_memory"].(map[string]any)
+	if _, ok := episodic["foreshadow_ledger"]; !ok {
 		t.Fatal("expected full foreshadow ledger when selection is too sparse")
 	}
 	if selected, ok := payload["selected_memory"].(map[string]any); ok {
@@ -900,9 +903,10 @@ func TestContextToolInjectsRewriteBriefForPendingRewriteChapter(t *testing.T) {
 	if err := json.Unmarshal(result, &payload); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	brief, ok := payload["rewrite_brief"].(map[string]any)
+	working := payload["working_memory"].(map[string]any)
+	brief, ok := working["rewrite_brief"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected rewrite_brief in chapter context, got %T", payload["rewrite_brief"])
+		t.Fatalf("expected working_memory.rewrite_brief, got %T", working["rewrite_brief"])
 	}
 	if got := brief["reason"]; got != "节奏拖沓，需要压缩前半段" {
 		t.Fatalf("expected rewrite reason, got %v", got)
@@ -942,7 +946,8 @@ func TestContextToolOmitsRewriteBriefForNormalChapter(t *testing.T) {
 	if err := json.Unmarshal(result, &payload); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if _, ok := payload["rewrite_brief"]; ok {
+	working := payload["working_memory"].(map[string]any)
+	if _, ok := working["rewrite_brief"]; ok {
 		t.Fatal("expected no rewrite_brief for chapter outside PendingRewrites")
 	}
 }
@@ -981,7 +986,8 @@ func TestContextToolLoadsArcReviewAffectingEarlierChapter(t *testing.T) {
 	if err := json.Unmarshal(result, &payload); err != nil {
 		t.Fatal(err)
 	}
-	brief, _ := payload["rewrite_brief"].(map[string]any)
+	working := payload["working_memory"].(map[string]any)
+	brief, _ := working["rewrite_brief"].(map[string]any)
 	if brief == nil || !strings.Contains(fmt.Sprint(brief["review_summary"]), "第二弧") {
 		t.Fatalf("expected arc review handoff for chapter 3, got %#v", brief)
 	}

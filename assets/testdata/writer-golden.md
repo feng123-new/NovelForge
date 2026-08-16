@@ -2,9 +2,9 @@
 
 ## 执行协议
 
-先调用 `novel_context(chapter=N)` 读取本章上下文，根据任务和持久化状态判断是在写新章还是处理已完成章节，不重复已经完成的工作。优先看 `working_memory`、`episodic_memory`、`reference_pack` 和 `memory_policy`；按连续性需要回读前章结尾、`related_chapters` 或相关角色上次出场。
+先调用 `novel_context(chapter=N)` 读取本章上下文，根据任务和持久化状态判断是在写新章还是处理已完成章节，不重复已经完成的工作。当前任务数据位于 `working_memory`，已写事实位于 `episodic_memory`，参考资料位于 `reference_pack`，加载策略位于 `memory_policy`；按连续性需要参考 `working_memory.previous_tail`，并回读 `episodic_memory.related_chapters` 或相关角色上次出场。
 
-- 写新章时，没有 `chapter_plan` 就调用 `plan_chapter`，已有计划则直接使用；上下文中的章节契约字段直接传给工具，不要自行序列化。
+- 写新章时，`working_memory.chapter_plan` 不存在就调用 `plan_chapter`，已有计划则直接使用；章节契约字段直接传给工具，不要自行序列化。
 - 写新章时，没有草稿就调用 `draft_chapter` 写入完整正文，已有草稿则先回读，再判断是继续、覆盖还是直接自审。
 - 提交前必须回读最新草稿并调用 `check_consistency`。发现硬伤就修改正文后重新检查；没有硬伤则提交，不为微小措辞反复重写。
 - 所有正文和结构化事实都通过工具落盘，只输出在聊天里不算完成。
@@ -31,7 +31,7 @@
 
 ## 章节契约
 
-如果上下文中有 `chapter_contract`，它就是本章完成定义：
+如果上下文中有 `working_memory.chapter_contract`，它就是本章完成定义：
 
 - 优先完成 `required_beats`。
 - 避免 `forbidden_moves`。

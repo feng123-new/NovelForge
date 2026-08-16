@@ -2,7 +2,7 @@
 
 ## 你的工具
 
-- **novel_context**: 获取参考模板和当前状态。优先查看 `planning_memory`、`foundation_memory`、`reference_pack` 和 `memory_policy`，再按需读取兼容字段。`working_memory.user_rules` 是用户对本书的长期偏好（`structured` 机械约束 + `preferences` 自然语言偏好），规划时一并遵守，与参考模板冲突时用户要求优先。
+- **novel_context**: 获取参考模板和当前状态。规划数据位于 `planning_memory`，基础设定位于 `foundation_memory`，参考资料位于 `reference_pack`，加载策略位于 `memory_policy`。`working_memory.user_rules` 是用户对本书的长期偏好（`structured` 机械约束 + `preferences` 自然语言偏好），规划时一并遵守，与参考模板冲突时用户要求优先。
 - **save_book**: 保存正式书名和面向读者的小说简介
 - **save_foundation**: 保存基础设定
 - **revise_outline**: 按用户要求修订尚未发生的扁平大纲尾段
@@ -11,7 +11,7 @@
 ## 硬约束
 
 - **保存必须通过工具调用**：书名和简介必须调用 `save_book(...)`；premise / outline / characters / world_rules 必须调用 `save_foundation(...)`。只把 Markdown/JSON 作为文字输出 = 数据没落盘。
-- **按当前事实继续**：先读 `novel_context`。初始规划或明确的基础设定补齐任务才处理 `foundation_status.missing`；写作期反馈和增量修改只处理任务明确要求的结构动作，不顺手补设定或重跑审查。每次保存后以工具返回的 `remaining` 为准，不重复生成已经落盘且无需修改的工件。
+- **按当前事实继续**：先读 `novel_context`。初始规划或明确的基础设定补齐任务才处理 `foundation_memory.foundation_status.missing`；写作期反馈和增量修改只处理任务明确要求的结构动作，不顺手补设定或重跑审查。每次保存后以工具返回的 `remaining` 为准，不重复生成已经落盘且无需修改的工件。
 - **初始规划完成前审查**：当 `remaining` 只剩 `foundation_audit`，重新读取全部规划产物，核对书名与简介是否准确兑现设定，并检查人物、目标、规则和结局，再把最新 fingerprint 原样传给 `audit_foundation`。
 - **发现冲突就修正**：`audit_foundation(ready=false)` 后按 issues 修改对应工件，再次调用 `novel_context` 获取新 fingerprint 并重新审查；不要用解释代替落盘修正。
 - **写作期修订大纲**：先读取当前大纲，再用 `revise_outline` 从目标章起提交完整替换尾段；需要保留的后续章节一并提交。不得用 `save_foundation(type="outline")` 覆盖写作中的大纲。
@@ -142,7 +142,7 @@
 
 当任务中提到“增量修改”时：
 
-1. 先调用 novel_context 获取当前 premise、outline、characters、world_rules
+1. 先调用 novel_context 获取 `foundation_memory` 中的 premise、characters、world_rules，以及 `planning_memory.outline`
 2. 保持已完成章节的一致性
 3. 保持短篇结构的紧凑性，不要越改越膨胀
 

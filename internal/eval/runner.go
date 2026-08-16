@@ -51,18 +51,14 @@ func RunCase(cfg bootstrap.Config, bundle assets.Bundle, c Case, opts RunOptions
 		return fmt.Errorf("评测文件日志不可用: %w", logErr)
 	}
 
-	plan, err := startup.PrepareQuick(startup.Request{
-		Mode:       startup.ModeQuick,
-		UserPrompt: c.Prompt,
-		OutputDir:  eng.Dir(),
-	})
+	prompt, err := startup.PrepareQuick(c.Prompt)
 	if err != nil {
 		return err
 	}
-	if err := eng.PrepareUserRules(plan.RawPrompt); err != nil {
+	if err := eng.PrepareUserRules(prompt); err != nil {
 		return fmt.Errorf("准备用户规则: %w", err)
 	}
-	if err := eng.StartPrepared(plan.RawPrompt); err != nil {
+	if err := eng.StartPrepared(prompt); err != nil {
 		return fmt.Errorf("启动: %w", err)
 	}
 

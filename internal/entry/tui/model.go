@@ -774,13 +774,13 @@ func (m Model) handleCoCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(resumeFromCoCreate(m.runtime, draft), m.textarea.Focus())
 		}
 		// 冷启动共创：用整理好的创作指令开始创作。
-		plan, err := state.buildPlan()
+		prompt, err := state.buildPrompt()
 		if err != nil {
 			m.err = err
 			return m, nil
 		}
-		cmd := m.enterStarting(plan.RawPrompt)
-		return m, tea.Batch(startRuntime(m.runtime, plan), cmd)
+		cmd := m.enterStarting(prompt)
+		return m, tea.Batch(startRuntime(m.runtime, prompt), cmd)
 	case tea.KeyEnter:
 		// Alt+Enter → 主动换行，让 textarea.Update 接管（KeyMap.InsertNewline 已绑此键）
 		if msg.Alt {

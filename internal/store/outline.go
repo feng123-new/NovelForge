@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -11,6 +12,9 @@ import (
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/errs"
 )
+
+// ErrOutlineChapterNotFound 表示章节尚未进入当前大纲。
+var ErrOutlineChapterNotFound = errors.New("outline chapter not found")
 
 // OutlineStore 管理故事前提、大纲（扁平/分层）和指南针。
 type OutlineStore struct{ io *IO }
@@ -68,7 +72,7 @@ func (s *OutlineStore) GetChapterOutline(chapter int) (*domain.OutlineEntry, err
 			return &entries[i], nil
 		}
 	}
-	return nil, fmt.Errorf("chapter %d not found in outline", chapter)
+	return nil, fmt.Errorf("%w: chapter %d", ErrOutlineChapterNotFound, chapter)
 }
 
 // SaveLayeredOutline 以分层大纲为唯一来源，保存分层视图并同步重建扁平派生视图。
@@ -120,7 +124,7 @@ func (s *OutlineStore) GetChapterFromLayered(chapter int) (*domain.OutlineEntry,
 			}
 		}
 	}
-	return nil, fmt.Errorf("chapter %d not found in layered outline", chapter)
+	return nil, fmt.Errorf("%w: chapter %d in layered outline", ErrOutlineChapterNotFound, chapter)
 }
 
 // LocateChapter 根据全局章节号定位所在的卷和弧。
@@ -140,7 +144,7 @@ func (s *OutlineStore) LocateChapter(chapter int) (volume, arc int, err error) {
 			}
 		}
 	}
-	return 0, 0, fmt.Errorf("chapter %d not found in layered outline", chapter)
+	return 0, 0, fmt.Errorf("%w: chapter %d in layered outline", ErrOutlineChapterNotFound, chapter)
 }
 
 // ArcBoundary 弧边界信息。
