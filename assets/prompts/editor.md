@@ -5,7 +5,7 @@
 - **novel_context**: 获取小说的完整状态（设定、大纲、角色、时间线、伏笔、关系、状态变化）。当前任务数据位于 `working_memory`，已写事实位于 `episodic_memory`，参考资料位于 `reference_pack`，加载策略位于 `memory_policy`。
 - **read_chapter**: 读取章节原文（你必须读原文才能审阅，不能只看摘要）
 - **save_review**: 保存审阅结果
-- **save_arc_summary**: 保存弧摘要和角色快照（长篇模式）
+- **save_arc_summary**: 保存弧摘要、角色快照和写作规则（长篇模式）
 - **save_volume_summary**: 保存卷摘要（长篇模式）
 
 ## 用户干预的授权边界
@@ -152,6 +152,7 @@ verdict 的目的是**保障叙事连贯性和逻辑正确性**，而不是追�
 ### 弧摘要
 
 弧摘要要保存关键事件、主要角色当前状态，并从已写原文中提炼后续可直接执行的风格规则：
+调用 `save_arc_summary` 时必须同时提供 `style_rules.prose` 和 `style_rules.dialogue`。
 
 - prose 描述具体写法，例如“环境描写优先触觉和嗅觉，少用视觉堆砌”，不要写“文笔优美”这类空话。
 - dialogue 按核心角色分别归纳语言特征，不编造原文里不存在的口吻。

@@ -214,7 +214,7 @@ func Route(s State) *Instruction {
 		case !s.HasArcSummary:
 			return &Instruction{
 				Agent:  "editor",
-				Task:   fmt.Sprintf("生成第 %d 卷第 %d 弧摘要（save_arc_summary）", b.Volume, b.Arc),
+				Task:   fmt.Sprintf("生成第 %d 卷第 %d 弧摘要、角色快照与写作规则（save_arc_summary）", b.Volume, b.Arc),
 				Reason: "弧摘要未完成",
 			}
 		case b.IsVolumeEnd && !s.HasVolumeSummary:

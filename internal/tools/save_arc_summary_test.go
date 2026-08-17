@@ -80,3 +80,22 @@ func TestSaveArcSummaryRejectsDialogueStringArray(t *testing.T) {
 		t.Fatalf("expected style_rules.dialogue validation error, got %v", err)
 	}
 }
+
+func TestSaveArcSummaryRequiresStyleRules(t *testing.T) {
+	s := store.NewStore(t.TempDir())
+	if err := s.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	args := json.RawMessage(`{
+		"volume": 1,
+		"arc": 2,
+		"title": "入山",
+		"summary": "主角完成入山试炼。",
+		"key_events": ["通过试炼"],
+		"character_snapshots": []
+	}`)
+	if _, err := NewSaveArcSummaryTool(s).Execute(context.Background(), args); err == nil || !strings.Contains(err.Error(), "style_rules is required") {
+		t.Fatalf("expected missing style_rules error, got %v", err)
+	}
+}

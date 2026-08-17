@@ -13,7 +13,7 @@ import (
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
-// SaveArcSummaryTool 保存弧级摘要和角色快照，Editor 在弧结束时调用。
+// SaveArcSummaryTool 保存弧级摘要、角色快照和写作规则，Editor 在弧结束时调用。
 type SaveArcSummaryTool struct {
 	store *store.Store
 }
@@ -24,7 +24,7 @@ func NewSaveArcSummaryTool(store *store.Store) *SaveArcSummaryTool {
 
 func (t *SaveArcSummaryTool) Name() string { return "save_arc_summary" }
 func (t *SaveArcSummaryTool) Description() string {
-	return "保存弧级摘要和角色状态快照（长篇模式，弧结束时调用）"
+	return "保存弧级摘要、角色状态快照和写作规则（长篇模式，弧结束时调用）"
 }
 func (t *SaveArcSummaryTool) Label() string { return "保存弧摘要" }
 
@@ -56,7 +56,7 @@ func (t *SaveArcSummaryTool) Schema() map[string]any {
 		schema.Property("summary", schema.String("弧摘要（500字以内）")).Required(),
 		schema.Property("key_events", schema.Array("弧内关键事件", schema.String(""))).Required(),
 		schema.Property("character_snapshots", schema.Array("角色状态快照", snapshotSchema)).Required(),
-		schema.Property("style_rules", styleRulesSchema),
+		schema.Property("style_rules", styleRulesSchema).Required(),
 	)
 }
 
@@ -104,20 +104,16 @@ func (t *SaveArcSummaryTool) Execute(_ context.Context, args json.RawMessage) (j
 		}
 	}
 
-	styleRulesSaved := false
-	if a.StyleRules != nil && len(a.StyleRules.Prose) > 0 {
-		rules := domain.WritingStyleRules{
-			Volume:    a.Volume,
-			Arc:       a.Arc,
-			Prose:     a.StyleRules.Prose,
-			Dialogue:  a.StyleRules.Dialogue,
-			Taboos:    a.StyleRules.Taboos,
-			UpdatedAt: time.Now().Format(time.RFC3339),
-		}
-		if err := t.store.World.SaveStyleRules(rules); err != nil {
-			return nil, fmt.Errorf("save style rules: %w: %w", errs.ErrStoreWrite, err)
-		}
-		styleRulesSaved = true
+	rules := domain.WritingStyleRules{
+		Volume:    a.Volume,
+		Arc:       a.Arc,
+		Prose:     a.StyleRules.Prose,
+		Dialogue:  a.StyleRules.Dialogue,
+		Taboos:    a.StyleRules.Taboos,
+		UpdatedAt: time.Now().Format(time.RFC3339),
+	}
+	if err := t.store.World.SaveStyleRules(rules); err != nil {
+		return nil, fmt.Errorf("save style rules: %w: %w", errs.ErrStoreWrite, err)
 	}
 
 	if _, err := t.store.Checkpoints.AppendArtifact(
@@ -131,7 +127,7 @@ func (t *SaveArcSummaryTool) Execute(_ context.Context, args json.RawMessage) (j
 		"saved": true, "type": "arc_summary",
 		"volume": a.Volume, "arc": a.Arc,
 		"snapshots":         len(a.CharacterSnapshots),
-		"style_rules_saved": styleRulesSaved,
+		"style_rules_saved": true,
 	})
 }
 
@@ -143,13 +139,13 @@ type arcSummaryStyleRules struct {
 
 func validateArcSummaryStyleRules(rules *arcSummaryStyleRules) error {
 	if rules == nil {
-		return nil
+		return fmt.Errorf("style_rules is required: %w", errs.ErrToolArgs)
 	}
 	if len(rules.Prose) == 0 {
-		return fmt.Errorf("style_rules.prose is required when style_rules is provided: %w", errs.ErrToolArgs)
+		return fmt.Errorf("style_rules.prose is required: %w", errs.ErrToolArgs)
 	}
 	if len(rules.Dialogue) == 0 {
-		return fmt.Errorf("style_rules.dialogue is required when style_rules is provided; expected array of objects {name, rules}: %w", errs.ErrToolArgs)
+		return fmt.Errorf("style_rules.dialogue is required; expected array of objects {name, rules}: %w", errs.ErrToolArgs)
 	}
 	for i, voice := range rules.Dialogue {
 		if strings.TrimSpace(voice.Name) == "" {
