@@ -52,6 +52,8 @@ func (s *ChapterRecordStore) Accept(chapter int, origin domain.ChapterOrigin, co
 	digest := domain.ChapterContentSHA256(content)
 	revision := 1
 	if existing != nil {
+		// 覆盖旧记录时保住本章自己种下的伏笔：重写只换正文，不该抹掉这一章的埋设事实。
+		facts.ForeshadowUpdates = domain.RestoreOwnPlants(existing.Facts.ForeshadowUpdates, facts.ForeshadowUpdates)
 		if existing.ContentSHA256 == digest && existing.Origin == origin && reflect.DeepEqual(existing.Facts, facts) && reflect.DeepEqual(existing.StyleDelta, style) {
 			return existing, nil
 		}

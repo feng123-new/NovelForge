@@ -505,6 +505,95 @@ func TestEngine_WorkerFailureConsultsArbiterAndAborts(t *testing.T) {
 	}
 }
 
+// seedStuckRewrite 造出"第 2 章已完成并排进返工队列"的现场。
+func seedStuckRewrite(t *testing.T, st *storepkg.Store) {
+	t.Helper()
+	if err := st.Init(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := st.Progress.Init(5); err != nil {
+		t.Fatalf("progress: %v", err)
+	}
+	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+	if err := st.Progress.MarkChapterComplete(2, 3000, "", ""); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if err := st.Progress.SetPendingRewrites([]int{2}, "评审要求重写"); err != nil {
+		t.Fatalf("pending: %v", err)
+	}
+	if err := st.Progress.SetFlow(domain.FlowRewriting); err != nil {
+		t.Fatalf("flow: %v", err)
+	}
+}
+
+// TestEngine_DeadlockAbortDropsStuckRewrite 锁死 issue #110 的死锁面：僵局熔断时
+// 卡死的返工章必须出队。PendingRewrites 是持久化事实，只暂停不出队的话重启会立刻
+// 重放同一条死指令，把整本书永久锁死。
+func TestEngine_DeadlockAbortDropsStuckRewrite(t *testing.T) {
+	st := storepkg.NewStore(t.TempDir())
+	seedStuckRewrite(t, st)
+	e, events, _ := newTestEngine(t, st, subagent.NewRunner(), nil)
+
+	inst := &flow.Instruction{Agent: "writer", Task: "重写第 2 章", Chapter: 2}
+	e.lastKey, e.repeats = instructionKey(inst), deadlockAbortAt-1
+
+	if stop := e.trackDeadlock(context.Background(), &inst); !stop {
+		t.Fatal("僵局熔断仍应停机等待人工介入")
+	}
+	p, err := st.Progress.Load()
+	if err != nil {
+		t.Fatalf("progress: %v", err)
+	}
+	if len(p.PendingRewrites) != 0 {
+		t.Fatalf("熔断时卡死的返工章必须出队: %v", p.PendingRewrites)
+	}
+	if p.Flow != domain.FlowWriting {
+		t.Fatalf("队列排空后 flow 应回到 writing，实际 %s", p.Flow)
+	}
+	var notified bool
+	for _, ev := range *events {
+		if strings.Contains(ev.Summary, "移出返工队列") {
+			notified = true
+		}
+	}
+	if !notified {
+		t.Fatalf("跳过返工必须显式告知用户: %+v", *events)
+	}
+}
+
+// TestEngine_DropStuckRewriteOnlyTouchesQueuedChapter 出队是破坏性动作，误伤面必须钉死：
+// 只有"排在返工队列里的那一章"可以被移出，其余指令一律不动队列。
+func TestEngine_DropStuckRewriteOnlyTouchesQueuedChapter(t *testing.T) {
+	cases := []struct {
+		name string
+		inst *flow.Instruction
+	}{
+		{"非 writer 指令", &flow.Instruction{Agent: "editor", Task: "弧级评审"}},
+		{"不涉及章节的 writer 指令", &flow.Instruction{Agent: "writer", Task: "续写"}},
+		{"不在队列里的续写章", &flow.Instruction{Agent: "writer", Task: "写第 3 章", Chapter: 3}},
+		{"空指令", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := storepkg.NewStore(t.TempDir())
+			seedStuckRewrite(t, st)
+			e, _, _ := newTestEngine(t, st, subagent.NewRunner(), nil)
+			if e.dropStuckRewrite(tc.inst) {
+				t.Fatal("不该出队")
+			}
+			p, err := st.Progress.Load()
+			if err != nil {
+				t.Fatalf("progress: %v", err)
+			}
+			if len(p.PendingRewrites) != 1 || p.PendingRewrites[0] != 2 {
+				t.Fatalf("返工队列不得被误伤: %v", p.PendingRewrites)
+			}
+		})
+	}
+}
+
 // TestEngine_TransientProviderFailuresDoNotBecomeDeadlock 回归第 135 章故障链：
 // 两轮网络失败后的 worker_failure=retry 不能在下一轮被 trackDeadlock 当成
 // “同一写作任务连续无进展”并触发 deadlock 改派。
