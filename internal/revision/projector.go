@@ -17,7 +17,8 @@ type Projector struct{ store *store.Store }
 
 func NewProjector(st *store.Store) *Projector { return &Projector{store: st} }
 
-func validateRecordSet(records []domain.ChapterRecord) error {
+// ValidateRecords 校验完整章节记录集能否被确定性重放，不写入任何投影。
+func ValidateRecords(records []domain.ChapterRecord) error {
 	records = slices.Clone(records)
 	slices.SortFunc(records, func(a, b domain.ChapterRecord) int { return a.Chapter - b.Chapter })
 	for _, record := range records {

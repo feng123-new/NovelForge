@@ -277,7 +277,6 @@ func TestContextToolChapterModeIncludesWorkingAndReferenceFields(t *testing.T) {
 		"premise",
 		"premise_sections",
 		"premise_structure",
-		"outline",
 		"world_rules",
 		"memory_policy",
 		"working_memory",
@@ -287,6 +286,9 @@ func TestContextToolChapterModeIncludesWorkingAndReferenceFields(t *testing.T) {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("expected key %q in chapter context", key)
 		}
+	}
+	if _, ok := payload["outline"]; ok {
+		t.Fatal("chapter context must not include the whole outline")
 	}
 	working := payload["working_memory"].(map[string]any)
 	for _, key := range []string{"current_chapter_outline", "recent_summaries", "chapter_plan", "chapter_contract", "previous_tail"} {
@@ -505,7 +507,9 @@ func TestTrimByBudgetRemovesCanonicalMemoryKeys(t *testing.T) {
 		},
 	}
 
-	trimByBudget(result, 80)
+	if err := trimByBudget(result, 80); err != nil {
+		t.Fatal(err)
+	}
 
 	pack, ok := result["reference_pack"].(map[string]any)
 	if !ok {
@@ -532,7 +536,9 @@ func TestTrimByBudgetKeepsStyleStats(t *testing.T) {
 		},
 	}
 
-	trimByBudget(result, 100)
+	if err := trimByBudget(result, 200); err != nil {
+		t.Fatal(err)
+	}
 
 	episodic := result["episodic_memory"].(map[string]any)
 	if _, ok := episodic["style_stats"]; !ok {
@@ -540,6 +546,151 @@ func TestTrimByBudgetKeepsStyleStats(t *testing.T) {
 	}
 	if trimmed, ok := result["_trimmed"].([]string); ok && slices.Contains(trimmed, "style_stats") {
 		t.Fatal("style_stats must not be reported as trimmed")
+	}
+}
+
+func TestTrimByBudgetRejectsUntrimmablePayload(t *testing.T) {
+	result := map[string]any{"required": strings.Repeat("x", 500)}
+	if err := trimByBudget(result, 100); err == nil || !strings.Contains(err.Error(), "exceeds budget") {
+		t.Fatalf("expected explicit budget error, got %v", err)
+	}
+}
+
+func TestFinalizeContextPayloadReportsAppliedTrimming(t *testing.T) {
+	result := map[string]any{
+		"reference_pack": map[string]any{
+			"references": map[string]string{"guide": strings.Repeat("x", 1000)},
+		},
+		"episodic_memory": map[string]any{
+			"style_stats": map[string]any{"chapters": 20},
+		},
+	}
+	raw, err := finalizeContextPayload(result, 3, 400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > 400 {
+		t.Fatalf("payload = %d bytes, budget = 400", len(raw))
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	summary, _ := payload["_loading_summary"].(string)
+	if !strings.Contains(summary, "裁剪:references") {
+		t.Fatalf("loading summary must reflect final trimming, got %q", summary)
+	}
+}
+
+func TestProjectLayeredOutlineCompactsOnlyCompletedArcs(t *testing.T) {
+	volumes := []domain.VolumeOutline{{
+		Index: 1,
+		Arcs: []domain.ArcOutline{
+			{Index: 1, Chapters: []domain.OutlineEntry{{Title: "一"}, {Title: "二"}}},
+			{Index: 2, Chapters: []domain.OutlineEntry{{Title: "三"}, {Title: "四"}}},
+		},
+	}}
+
+	projected := projectLayeredOutlineForPlanning(volumes, 2)
+	if got := projected[0].Arcs[0]; got.Status != "completed" || len(got.Chapters) != 0 || got.StartChapter != 1 || got.EndChapter != 2 {
+		t.Fatalf("completed arc projection = %+v", got)
+	}
+	if got := projected[0].Arcs[1]; got.Status != "expanded" || len(got.Chapters) != 2 || got.StartChapter != 3 || got.EndChapter != 4 {
+		t.Fatalf("future arc projection = %+v", got)
+	}
+}
+
+func TestContextToolLongLayeredPlanningStaysWithinBudget(t *testing.T) {
+	s := store.NewStore(t.TempDir())
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	volumes := make([]domain.VolumeOutline, 10)
+	completed := make([]int, 0, 500)
+	chapter := 0
+	for vi := range volumes {
+		volumes[vi] = domain.VolumeOutline{Index: vi + 1, Title: fmt.Sprintf("卷%d", vi+1), Theme: strings.Repeat("主题", 10)}
+		for ai := 0; ai < 10; ai++ {
+			arc := domain.ArcOutline{Index: ai + 1, Title: fmt.Sprintf("弧%d", ai+1), Goal: strings.Repeat("目标", 20)}
+			for ci := 0; ci < 5; ci++ {
+				chapter++
+				completed = append(completed, chapter)
+				arc.Chapters = append(arc.Chapters, domain.OutlineEntry{
+					Title: fmt.Sprintf("第%d章", chapter), CoreEvent: strings.Repeat("关键事件", 30),
+					Hook: strings.Repeat("悬念", 20), Scenes: []string{strings.Repeat("场景", 20)},
+				})
+			}
+			volumes[vi].Arcs = append(volumes[vi].Arcs, arc)
+		}
+	}
+	if err := s.Outline.SaveLayeredOutline(volumes); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.Save(&domain.Progress{
+		Phase: domain.PhaseWriting, Layered: true, CompletedChapters: completed,
+		CurrentVolume: 10, CurrentArc: 10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := newTestContextTool(s, References{}, "default").Execute(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > 60*1024 {
+		t.Fatalf("architect payload = %d bytes, budget = %d", len(raw), 60*1024)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	planning := payload["planning_memory"].(map[string]any)
+	encoded, err := json.Marshal(planning["layered_outline"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "关键事件") {
+		t.Fatal("completed chapter details must not remain in architect planning projection")
+	}
+}
+
+func TestContextToolWriterDoesNotIncludeWholeOutline(t *testing.T) {
+	s := store.NewStore(t.TempDir())
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	outline := make([]domain.OutlineEntry, 200)
+	for i := range outline {
+		outline[i] = domain.OutlineEntry{
+			Chapter: i + 1, Title: fmt.Sprintf("第%d章", i+1),
+			CoreEvent: strings.Repeat("事件", 20), Hook: strings.Repeat("悬念", 10),
+		}
+	}
+	if err := s.Outline.SaveOutline(outline); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.Save(&domain.Progress{Phase: domain.PhaseWriting, TotalChapters: 200}); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := newTestContextTool(s, References{}, "default").Execute(context.Background(), json.RawMessage(`{"chapter":100}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := payload["outline"]; ok {
+		t.Fatal("writer payload must not include the whole outline")
+	}
+	working := payload["working_memory"].(map[string]any)
+	if _, ok := working["current_chapter_outline"]; !ok {
+		t.Fatal("writer payload must retain the current chapter outline")
+	}
+	window, ok := working["outline_window"].([]any)
+	if !ok || len(window) != domain.ReviewInterval {
+		t.Fatalf("writer outline window = %T/%d, want %d entries", working["outline_window"], len(window), domain.ReviewInterval)
 	}
 }
 

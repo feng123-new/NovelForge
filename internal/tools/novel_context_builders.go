@@ -12,6 +12,7 @@ type contextBuildState struct {
 	profile         domain.ContextProfile
 	progress        *domain.Progress
 	runMeta         *domain.RunMeta
+	outline         []domain.OutlineEntry
 	currentEntry    *domain.OutlineEntry
 	chapterPlan     *domain.ChapterPlan
 	storyThreads    []domain.RecallItem
@@ -32,6 +33,28 @@ type architectContextEnvelope struct {
 	Planning   map[string]any
 	Foundation map[string]any
 	References map[string]any
+}
+
+// planningVolumeOutline 是 Architect 的只读结构投影。已完成弧只保留边界和数量，
+// 未完成/未发生弧保留详细章节，避免长篇上下文随已写章节数线性膨胀。
+type planningVolumeOutline struct {
+	Index int                  `json:"index"`
+	Title string               `json:"title"`
+	Theme string               `json:"theme"`
+	Final bool                 `json:"final,omitempty"`
+	Arcs  []planningArcOutline `json:"arcs"`
+}
+
+type planningArcOutline struct {
+	Index             int                   `json:"index"`
+	Title             string                `json:"title"`
+	Goal              string                `json:"goal"`
+	Status            string                `json:"status"`
+	StartChapter      int                   `json:"start_chapter,omitempty"`
+	EndChapter        int                   `json:"end_chapter,omitempty"`
+	ChapterCount      int                   `json:"chapter_count,omitempty"`
+	EstimatedChapters int                   `json:"estimated_chapters,omitempty"`
+	Chapters          []domain.OutlineEntry `json:"chapters,omitempty"`
 }
 
 func newChapterContextEnvelope() chapterContextEnvelope {
@@ -190,11 +213,6 @@ func (t *ContextTool) buildBaseContext(result map[string]any, reads *contextRead
 	} else {
 		reads.require("premise", err)
 	}
-	if outline, err := t.store.Outline.LoadOutline(); err == nil && outline != nil {
-		result["outline"] = outline
-	} else {
-		reads.require("outline", err)
-	}
 	if rules, err := t.store.World.LoadWorldRules(); err == nil && len(rules) > 0 {
 		result["world_rules"] = rules
 	} else {
@@ -225,11 +243,12 @@ func (t *ContextTool) prepareChapterContext(chapter int, envelope *chapterContex
 		state.profile.Layered = false
 	}
 
-	currentEntry, currentEntryErr := t.store.Outline.GetChapterOutline(chapter)
-	if currentEntryErr == nil && currentEntry != nil {
+	outline, outlineErr := t.store.Outline.LoadOutline()
+	reads.require("outline", outlineErr)
+	state.outline = outline
+	currentEntry := findOutlineEntry(outline, chapter)
+	if currentEntry != nil {
 		envelope.Working["current_chapter_outline"] = currentEntry
-	} else {
-		reads.require("current_chapter_outline", currentEntryErr)
 	}
 	state.currentEntry = currentEntry
 
@@ -424,7 +443,8 @@ func (t *ContextTool) styleStopwords(reads *contextReads) []string {
 }
 
 func (t *ContextTool) buildChapterWorkingMemory(envelope *chapterContextEnvelope, state contextBuildState, reads *contextReads) {
-	if next, err := t.store.Outline.GetChapterOutline(state.chapter + 1); err == nil && next != nil {
+	t.buildOutlineWindow(envelope.Working, state, reads)
+	if next := findOutlineEntry(state.outline, state.chapter+1); next != nil {
 		envelope.Working["next_chapter_outline"] = next
 	}
 
@@ -481,6 +501,42 @@ func (t *ContextTool) buildChapterWorkingMemory(envelope *chapterContextEnvelope
 			reads.require("previous_chapter", err)
 		}
 	}
+}
+
+// buildOutlineWindow 为 Writer/Editor 保留与当前任务直接相关的大纲，而不是注入
+// 随全书增长的完整扁平大纲。分层模式使用当前弧；非分层模式使用最近一个评审周期。
+func (t *ContextTool) buildOutlineWindow(working map[string]any, state contextBuildState, reads *contextReads) {
+	outline := state.outline
+	if len(outline) == 0 {
+		return
+	}
+
+	start := max(1, state.chapter-domain.ReviewInterval+1)
+	end := min(state.chapter, len(outline))
+	if state.profile.Layered {
+		boundary, err := t.store.Outline.CheckArcBoundary(state.chapter)
+		if err != nil {
+			reads.require("outline_window.arc_boundary", err)
+			return
+		}
+		if boundary == nil {
+			return
+		}
+		start = boundary.StartChapter
+		end = min(boundary.EndChapter, len(outline))
+	}
+	if start <= end {
+		working["outline_window"] = outline[start-1 : end]
+	}
+}
+
+func findOutlineEntry(outline []domain.OutlineEntry, chapter int) *domain.OutlineEntry {
+	for i := range outline {
+		if outline[i].Chapter == chapter {
+			return &outline[i]
+		}
+	}
+	return nil
 }
 
 func (t *ContextTool) buildChapterSelectedMemory(envelope *chapterContextEnvelope, state contextBuildState, reads *contextReads) {
@@ -629,11 +685,21 @@ func (t *ContextTool) buildArchitectPlanning(envelope *architectContextEnvelope,
 	if runMeta != nil && runMeta.PlanningTier != "" {
 		envelope.Planning["planning_tier"] = runMeta.PlanningTier
 	}
+	progress, progressErr := t.store.Progress.Load()
+	reads.require("progress_for_planning", progressErr)
 
 	var layered []domain.VolumeOutline
 	if l, err := t.store.Outline.LoadLayeredOutline(); err == nil && len(l) > 0 {
 		layered = l
-		envelope.Planning["layered_outline"] = layered
+		latestCompleted := 0
+		if progress != nil {
+			latestCompleted = progress.LatestCompleted()
+		}
+		if latestCompleted > 0 {
+			envelope.Planning["layered_outline"] = projectLayeredOutlineForPlanning(layered, latestCompleted)
+		} else {
+			envelope.Planning["layered_outline"] = layered
+		}
 		var skeletonArcs []map[string]any
 		for _, v := range layered {
 			for _, a := range v.Arcs {
@@ -676,20 +742,55 @@ func (t *ContextTool) buildArchitectPlanning(envelope *architectContextEnvelope,
 	}
 	// 卷摘要承接已完成卷；当前卷的弧摘要承接最近实际剧情。扩弧时两者与
 	// 骨架目标同时交给 Architect，让模型自行决定保留还是修订未写计划。
-	if progress, err := t.store.Progress.Load(); err == nil && progress != nil && progress.CurrentVolume > 0 {
+	if progressErr == nil && progress != nil && progress.CurrentVolume > 0 {
 		if arcSummaries, err := t.store.Summaries.LoadArcSummaries(progress.CurrentVolume); err == nil && len(arcSummaries) > 0 {
 			envelope.Planning["arc_summaries"] = arcSummaries
 		} else {
 			reads.require("arc_summaries", err)
 		}
 	} else {
-		reads.require("progress_for_arc_summaries", err)
+		reads.require("progress_for_arc_summaries", progressErr)
 	}
 
 	// completion_signals 把"全书是否该结尾"的关键事实集中呈现，
 	// 让架构师在裁定 complete_book / append_volume 时一眼看到对照面。
 	// 散落在 progress / compass / foreshadow / layered_outline 里靠 LLM 脑算容易漏。
 	envelope.Planning["completion_signals"] = t.completionSignals(layered, compass, reads)
+}
+
+func projectLayeredOutlineForPlanning(volumes []domain.VolumeOutline, latestCompleted int) []planningVolumeOutline {
+	projected := make([]planningVolumeOutline, 0, len(volumes))
+	chapter := 1
+	for _, volume := range volumes {
+		pv := planningVolumeOutline{
+			Index: volume.Index, Title: volume.Title, Theme: volume.Theme, Final: volume.Final,
+			Arcs: make([]planningArcOutline, 0, len(volume.Arcs)),
+		}
+		for _, arc := range volume.Arcs {
+			pa := planningArcOutline{
+				Index: arc.Index, Title: arc.Title, Goal: arc.Goal,
+				EstimatedChapters: arc.EstimatedChapters,
+			}
+			if len(arc.Chapters) == 0 {
+				pa.Status = "skeleton"
+				pv.Arcs = append(pv.Arcs, pa)
+				continue
+			}
+			pa.StartChapter = chapter
+			pa.EndChapter = chapter + len(arc.Chapters) - 1
+			pa.ChapterCount = len(arc.Chapters)
+			if pa.EndChapter <= latestCompleted {
+				pa.Status = "completed"
+			} else {
+				pa.Status = "expanded"
+				pa.Chapters = arc.Chapters
+			}
+			chapter = pa.EndChapter + 1
+			pv.Arcs = append(pv.Arcs, pa)
+		}
+		projected = append(projected, pv)
+	}
+	return projected
 }
 
 func (t *ContextTool) completionSignals(layered []domain.VolumeOutline, compass *domain.StoryCompass, reads *contextReads) map[string]any {

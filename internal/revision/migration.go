@@ -58,7 +58,7 @@ func MigrateLegacyBaseline(st *store.Store) error {
 		if err != nil {
 			return err
 		}
-		return validateRecordSet(records)
+		return ValidateRecords(records)
 	}
 
 	commits, err := loadLegacyCommits(st.Dir())
@@ -107,7 +107,7 @@ func MigrateLegacyBaseline(st *store.Store) error {
 			AcceptedAt: acceptedAt,
 		})
 	}
-	if err := validateRecordSet(records); err != nil {
+	if err := ValidateRecords(records); err != nil {
 		return fmt.Errorf("历史章节事实无法形成一致基线: %w", err)
 	}
 

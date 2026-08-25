@@ -200,6 +200,20 @@ func (e *engine) run(ctx context.Context) {
 				e.pauseWithNotify(notify.KindWorkerFailure, "路由事实读取失败，已暂停: "+err.Error())
 				return
 			}
+			// 卷摘要可能已落盘而进程尚未来得及 MarkComplete。聚合工件全部齐备时
+			// 先按事实补做完结判定，再交给 Router，避免收官卷被误派去续卷。
+			if state.AggregateRefresh == nil && state.Progress != nil && state.Progress.Layered &&
+				state.Progress.Phase == domain.PhaseWriting && state.ArcBoundary != nil &&
+				state.ArcBoundary.IsVolumeEnd && state.HasArcReview && state.HasArcSummary && state.HasVolumeSummary {
+				complete, reconcileErr := tools.ReconcileLayeredCompletion(e.store)
+				if reconcileErr != nil {
+					e.pauseWithNotify(notify.KindWorkerFailure, "完结状态恢复失败，已暂停: "+reconcileErr.Error())
+					return
+				}
+				if complete {
+					continue
+				}
+			}
 			inst = flow.Route(state)
 		}
 		if inst == nil {

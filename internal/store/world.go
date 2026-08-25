@@ -396,15 +396,23 @@ func (s *WorldStore) HasArcReview(chapter int) (bool, error) {
 // HasGlobalReview 检查指定章节是否已保存 scope=global 的全局审阅
 // (save_review 落盘为 reviews/%02d-global.json;非分层书按 ReviewInterval 触发)。
 func (s *WorldStore) HasGlobalReview(chapter int) (bool, error) {
-	var r domain.ReviewEntry
-	err := s.io.ReadJSON(fmt.Sprintf("reviews/%02d-global.json", chapter), &r)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
+	r, err := s.LoadGlobalReview(chapter)
 	if err != nil {
 		return false, err
 	}
-	return r.Scope == "global", nil
+	return r != nil && r.Scope == "global", nil
+}
+
+// LoadGlobalReview 读取指定截止章节的全局审阅。
+func (s *WorldStore) LoadGlobalReview(chapter int) (*domain.ReviewEntry, error) {
+	var r domain.ReviewEntry
+	if err := s.io.ReadJSON(fmt.Sprintf("reviews/%02d-global.json", chapter), &r); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &r, nil
 }
 
 // LoadReview 读取章节审阅结果。

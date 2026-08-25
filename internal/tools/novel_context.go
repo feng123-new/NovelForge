@@ -155,15 +155,33 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 		result["_warnings"] = reads.warnings
 	}
 
-	// 优先级预算：总大小超过阈值时自动裁剪低优先级数据
+	// 优先级预算：总大小超过阈值时裁剪低优先级数据；摘要在裁剪完成后重建，
+	// 确保展示的字段数量和 _trimmed 与最终 payload 一致。
+	budget := 60 * 1024
 	if a.Chapter > 0 {
-		trimByBudget(result, 100*1024) // Writer: 100KB
-	} else {
-		trimByBudget(result, 60*1024) // Architect: 60KB
+		budget = 100 * 1024
 	}
+	return finalizeContextPayload(result, a.Chapter, budget)
+}
 
-	result["_loading_summary"] = buildLoadingSummary(result, a.Chapter)
-	return json.Marshal(result)
+func finalizeContextPayload(result map[string]any, chapter, budget int) (json.RawMessage, error) {
+	if err := trimByBudget(result, budget); err != nil {
+		return nil, err
+	}
+	result["_loading_summary"] = buildLoadingSummary(result, chapter)
+	if err := trimByBudget(result, budget); err != nil {
+		return nil, err
+	}
+	result["_loading_summary"] = buildLoadingSummary(result, chapter)
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("marshal context payload: %w", err)
+	}
+	if len(data) > budget {
+		return nil, fmt.Errorf("context payload exceeds budget after summary rebuild: size=%d budget=%d", len(data), budget)
+	}
+	return data, nil
 }
 
 // buildLoadingSummary 从已组装的 result 中统计各项数据量，生成一行可读摘要。
@@ -309,6 +327,8 @@ func sliceLen(v any) int {
 	case []domain.RelatedChapter:
 		return len(s)
 	case []domain.RecallItem:
+		return len(s)
+	case []planningVolumeOutline:
 		return len(s)
 	default:
 		return 0
@@ -508,11 +528,14 @@ func (t *ContextTool) foundationStatus() (map[string]any, error) {
 // style_stats 是体积有界的全书级核心信号，不参与裁剪。
 //
 // 裁剪的 key 会记录到 result["_trimmed"] 供日志排查。
-func trimByBudget(result map[string]any, budget int) {
+func trimByBudget(result map[string]any, budget int) error {
 	// 先测量当前大小
 	data, err := json.Marshal(result)
-	if err != nil || len(data) <= budget {
-		return
+	if err != nil {
+		return fmt.Errorf("measure context payload: %w", err)
+	}
+	if len(data) <= budget {
+		return nil
 	}
 
 	// 按优先级从低到高列出可裁剪的 key
@@ -528,20 +551,23 @@ func trimByBudget(result map[string]any, budget int) {
 		"relationship_state",
 	}
 
-	var trimmed []string
+	trimmed, _ := result["_trimmed"].([]string)
+	trimmed = append([]string(nil), trimmed...)
 	for _, key := range trimOrder {
 		if !deleteContextKey(result, key) {
 			continue
 		}
 		trimmed = append(trimmed, key)
+		result["_trimmed"] = append([]string(nil), trimmed...)
 		data, err = json.Marshal(result)
-		if err != nil || len(data) <= budget {
-			break
+		if err != nil {
+			return fmt.Errorf("measure trimmed context payload: %w", err)
+		}
+		if len(data) <= budget {
+			return nil
 		}
 	}
-	if len(trimmed) > 0 {
-		result["_trimmed"] = trimmed
-	}
+	return fmt.Errorf("context payload exceeds budget after trimming: size=%d budget=%d", len(data), budget)
 }
 
 func deleteContextKey(result map[string]any, key string) bool {

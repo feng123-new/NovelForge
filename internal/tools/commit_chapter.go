@@ -128,6 +128,16 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 	}
 	if existingPending == nil || existingPending.Stage == domain.CommitStageStarted {
 		if err := t.validateCommitArgs(a); err != nil {
+			// 旧版本可能在发现非法返工事实前就留下了冻结提交。继续保留这份
+			// 不可变载荷只会让每次重试重复同一个错误，因此显式解除冻结，
+			// 让 Writer 能修正参数后重新提交；正文和章节记录均不在此改动。
+			if existingPending != nil && existingPending.Rewrite &&
+				(errors.Is(err, errs.ErrToolArgs) || errors.Is(err, errs.ErrToolPrecondition)) {
+				if clearErr := t.store.Signals.ClearPendingCommit(); clearErr != nil {
+					return nil, fmt.Errorf("返工提交校验失败（%v），且清理冻结提交失败: %w: %w", err, errs.ErrStoreWrite, clearErr)
+				}
+				return nil, fmt.Errorf("旧版遗留的返工提交未通过校验，已解除冻结；请修正后重新提交: %w", err)
+			}
 			return nil, err
 		}
 	}
@@ -174,6 +184,12 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 				return nil, err
 			}
 			return nil, fmt.Errorf("章节当前不允许提交: %w: %w", errs.ErrToolPrecondition, err)
+		}
+		if progress.Flow != domain.FlowRewriting && progress.Flow != domain.FlowPolishing {
+			expected := progress.NextChapter()
+			if a.Chapter != expected {
+				return nil, fmt.Errorf("正常续写只能提交下一章 %d，收到第 %d 章: %w", expected, a.Chapter, errs.ErrToolConflict)
+			}
 		}
 	}
 
@@ -556,20 +572,61 @@ func (t *CommitChapterTool) executeRewriteCommit(a commitArgs, progress *domain.
 	}
 
 	if pending.Stage == domain.CommitStageStarted {
-		// 3. 覆盖终稿与摘要；两者都是同载荷覆盖写，崩溃重放幂等。
+		// 3. 先构造完整候选记录集并重放校验。旧实现先覆盖记录再重建投影，
+		// 一旦事实链不闭合就会把失败载荷留在磁盘上，后续重试永远读到坏基线。
+		existing, err := t.store.ChapterRecords.Load(chapter)
+		if err != nil {
+			return nil, fmt.Errorf("rewrite: load chapter record: %w: %w", errs.ErrStoreRead, err)
+		}
+		var existingUpdates []domain.ForeshadowUpdate
+		var style domain.StyleDelta
+		if existing != nil {
+			existingUpdates = existing.Facts.ForeshadowUpdates
+			style = existing.StyleDelta
+		}
+		recovered, err := t.restoreRewritePlants(chapter, existingUpdates, &a.ChapterFacts)
+		if err != nil {
+			return nil, err
+		}
+		candidate, err := t.store.ChapterRecords.Prepare(
+			chapter, domain.ChapterOriginGenerated, content, a.ChapterFacts, style,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("rewrite: prepare chapter record: %w: %w", errs.ErrStoreRead, err)
+		}
+		chapters := slices.Clone(progress.CompletedChapters)
+		slices.Sort(chapters)
+		records := make([]domain.ChapterRecord, 0, len(chapters))
+		for _, completedChapter := range chapters {
+			if completedChapter == chapter {
+				records = append(records, *candidate)
+				continue
+			}
+			record, err := t.store.ChapterRecords.Load(completedChapter)
+			if err != nil {
+				return nil, fmt.Errorf("rewrite: load chapter record %d: %w: %w", completedChapter, errs.ErrStoreRead, err)
+			}
+			if record == nil {
+				return nil, fmt.Errorf("rewrite: 第 %d 章缺少接纳记录: %w", completedChapter, errs.ErrToolConflict)
+			}
+			records = append(records, *record)
+		}
+		if err := revision.ValidateRecords(records); err != nil {
+			if clearErr := t.store.Signals.ClearPendingCommit(); clearErr != nil {
+				return nil, fmt.Errorf("rewrite: 章节事实链校验失败（%v），且清理冻结提交失败: %w: %w", err, errs.ErrStoreWrite, clearErr)
+			}
+			return nil, fmt.Errorf("rewrite: 章节事实链校验失败，已解除冻结且未写入返工结果: %w: %w", errs.ErrToolPrecondition, err)
+		}
+
+		// 4. 校验通过后再覆盖权威记录与终稿；同一冻结载荷可安全重放。
 		if err := t.store.Drafts.SaveFinalChapter(chapter, content); err != nil {
 			return nil, fmt.Errorf("rewrite: save final chapter: %w: %w", errs.ErrStoreWrite, err)
 		}
-		style, err := t.chapterStyleDelta(chapter)
-		if err != nil {
-			return nil, fmt.Errorf("rewrite: load chapter style: %w: %w", errs.ErrStoreRead, err)
-		}
-		if _, err := t.store.ChapterRecords.Accept(chapter, domain.ChapterOriginGenerated, content, a.ChapterFacts, style); err != nil {
+		if err := t.store.ChapterRecords.Save(*candidate); err != nil {
 			return nil, fmt.Errorf("rewrite: save chapter record: %w: %w", errs.ErrStoreWrite, err)
 		}
-		records, err := t.store.ChapterRecords.LoadCompleted(progress.CompletedChapters)
-		if err != nil {
-			return nil, fmt.Errorf("rewrite: load chapter records: %w: %w", errs.ErrStoreRead, err)
+		if len(recovered) > 0 {
+			slog.Warn("已从伏笔账本恢复旧版本丢失的种植事实", "module", "commit", "chapter", chapter, "foreshadows", recovered)
 		}
 		if err := revision.NewProjector(t.store).Apply(records); err != nil {
 			return nil, fmt.Errorf("rewrite: rebuild chapter projections: %w: %w", errs.ErrStoreWrite, err)
@@ -586,19 +643,19 @@ func (t *CommitChapterTool) executeRewriteCommit(a commitArgs, progress *domain.
 		}
 	}
 
-	// 4. 更新字数（MarkChapterComplete 对已完成章节是幂等的：replaces word count, slice.Contains 防止重复入队）
+	// 5. 更新字数（MarkChapterComplete 对已完成章节是幂等的：replaces word count, slice.Contains 防止重复入队）
 	if progress.Phase != domain.PhaseComplete {
 		if err := t.store.Progress.MarkChapterComplete(chapter, wordCount, a.HookType, a.DominantStrand); err != nil {
 			return nil, fmt.Errorf("rewrite: update word count: %w: %w", errs.ErrStoreWrite, err)
 		}
 
-		// 5. Drain 待处理队列；队列空时 CompleteRewrite 会自动把 flow 切回 writing
+		// 6. Drain 待处理队列；队列空时 CompleteRewrite 会自动把 flow 切回 writing
 		if err := t.store.Progress.CompleteRewrite(chapter); err != nil {
 			return nil, fmt.Errorf("rewrite: complete rewrite: %w: %w", errs.ErrStoreWrite, err)
 		}
 	}
 
-	// 6. 读取 drain 后的 Progress 快照，作为事实返回
+	// 7. 读取 drain 后的 Progress 快照，作为事实返回
 	mode := pending.RewriteMode
 	if mode == "" {
 		mode = "rewrite"
@@ -668,7 +725,7 @@ func (t *CommitChapterTool) executeRewriteCommit(a commitArgs, progress *domain.
 		return nil, fmt.Errorf("rewrite: update pending progress stage: %w: %w", errs.ErrStoreWrite, err)
 	}
 
-	// 7. Checkpoint 后再标 signal_saved，最后清理 PendingCommit。
+	// 8. Checkpoint 后再标 signal_saved，最后清理 PendingCommit。
 	if err := t.appendCommitCheckpoint(chapter); err != nil {
 		return nil, fmt.Errorf("rewrite: checkpoint commit: %w: %w", errs.ErrStoreWrite, err)
 	}
@@ -689,6 +746,50 @@ func (t *CommitChapterTool) executeRewriteCommit(a commitArgs, progress *domain.
 	}
 	t.refreshStyleStats(chapter, content)
 	return output, nil
+}
+
+// restoreRewritePlants 只修复旧版本已经造成的单一损坏形态：伏笔账本仍记录本章
+// 的 plant，但本章接纳记录已被失败返工覆盖。账本给出完整 id、描述和种植章，
+// 因而可以确定性还原；其他不一致继续显式报错，不猜测剧情事实。
+func (t *CommitChapterTool) restoreRewritePlants(chapter int, existing []domain.ForeshadowUpdate, facts *domain.ChapterFacts) ([]string, error) {
+	planted := make(map[string]struct{}, len(existing)+len(facts.ForeshadowUpdates))
+	for _, update := range existing {
+		if update.Action == "plant" {
+			planted[update.ID] = struct{}{}
+		}
+	}
+	for _, update := range facts.ForeshadowUpdates {
+		if update.Action == "plant" {
+			planted[update.ID] = struct{}{}
+		}
+	}
+
+	ledger, err := t.store.World.LoadForeshadowLedger()
+	if err != nil {
+		return nil, fmt.Errorf("rewrite: load foreshadow ledger for recovery: %w: %w", errs.ErrStoreRead, err)
+	}
+	var restored []domain.ForeshadowUpdate
+	var ids []string
+	for _, entry := range ledger {
+		if entry.PlantedAt != chapter {
+			continue
+		}
+		if _, ok := planted[entry.ID]; ok {
+			continue
+		}
+		if strings.TrimSpace(entry.ID) == "" || strings.TrimSpace(entry.Description) == "" {
+			return nil, fmt.Errorf("rewrite: 第 %d 章伏笔账本缺少可恢复的 id 或 description: %w", chapter, errs.ErrToolConflict)
+		}
+		planted[entry.ID] = struct{}{}
+		restored = append(restored, domain.ForeshadowUpdate{
+			ID: entry.ID, Action: "plant", Description: entry.Description,
+		})
+		ids = append(ids, entry.ID)
+	}
+	if len(restored) > 0 {
+		facts.ForeshadowUpdates = append(restored, facts.ForeshadowUpdates...)
+	}
+	return ids, nil
 }
 
 func (t *CommitChapterTool) refreshStyleStats(chapter int, content string) {
@@ -897,6 +998,33 @@ func layeredComplete(st *store.Store, progress *domain.Progress) (bool, error) {
 		return finaleWrapped(st, progress)
 	}
 	return layeredBookComplete(st, progress)
+}
+
+// ReconcileLayeredCompletion 根据当前持久化事实补齐分层书的完结状态。
+// save_volume_summary 正常路径和 Engine 崩溃恢复共用这一入口，避免卷摘要已落盘、
+// Progress 尚未来得及 MarkComplete 时永久丢失自动完结触发点。
+func ReconcileLayeredCompletion(st *store.Store) (bool, error) {
+	progress, err := st.Progress.Load()
+	if err != nil {
+		return false, fmt.Errorf("load progress: %w", err)
+	}
+	if progress == nil || !progress.Layered {
+		return false, nil
+	}
+	if progress.Phase == domain.PhaseComplete {
+		return true, nil
+	}
+	if progress.Phase != domain.PhaseWriting {
+		return false, nil
+	}
+	complete, err := layeredComplete(st, progress)
+	if err != nil || !complete {
+		return complete, err
+	}
+	if err := st.Progress.MarkComplete(); err != nil {
+		return false, fmt.Errorf("mark complete: %w", err)
+	}
+	return true, nil
 }
 
 // layeredBookComplete 用客观事实判断分层长篇是否真正写完，对照 architect-long.md 完结判定

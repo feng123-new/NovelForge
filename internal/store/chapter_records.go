@@ -44,18 +44,39 @@ func (s *ChapterRecordStore) Save(record domain.ChapterRecord) error {
 	return s.io.WriteJSON(ChapterRecordPath(record.Chapter), record)
 }
 
+// Prepare 构造下一版章节记录但不落盘，供跨记录不变量在写入前完成校验。
+func (s *ChapterRecordStore) Prepare(chapter int, origin domain.ChapterOrigin, content string, facts domain.ChapterFacts, style domain.StyleDelta) (*domain.ChapterRecord, error) {
+	existing, err := s.Load(chapter)
+	if err != nil {
+		return nil, err
+	}
+	record, _ := prepareChapterRecord(existing, chapter, origin, content, facts, style)
+	return record, nil
+}
+
 func (s *ChapterRecordStore) Accept(chapter int, origin domain.ChapterOrigin, content string, facts domain.ChapterFacts, style domain.StyleDelta) (*domain.ChapterRecord, error) {
 	existing, err := s.Load(chapter)
 	if err != nil {
 		return nil, err
 	}
+	record, changed := prepareChapterRecord(existing, chapter, origin, content, facts, style)
+	if !changed {
+		return record, nil
+	}
+	if err := s.Save(*record); err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+func prepareChapterRecord(existing *domain.ChapterRecord, chapter int, origin domain.ChapterOrigin, content string, facts domain.ChapterFacts, style domain.StyleDelta) (*domain.ChapterRecord, bool) {
 	digest := domain.ChapterContentSHA256(content)
 	revision := 1
 	if existing != nil {
 		// 覆盖旧记录时保住本章自己种下的伏笔：重写只换正文，不该抹掉这一章的埋设事实。
 		facts.ForeshadowUpdates = domain.RestoreOwnPlants(existing.Facts.ForeshadowUpdates, facts.ForeshadowUpdates)
 		if existing.ContentSHA256 == digest && existing.Origin == origin && reflect.DeepEqual(existing.Facts, facts) && reflect.DeepEqual(existing.StyleDelta, style) {
-			return existing, nil
+			return existing, false
 		}
 		revision = existing.Revision + 1
 	}
@@ -70,10 +91,7 @@ func (s *ChapterRecordStore) Accept(chapter int, origin domain.ChapterOrigin, co
 		StyleDelta:    style,
 		AcceptedAt:    time.Now(),
 	}
-	if err := s.Save(record); err != nil {
-		return nil, err
-	}
-	return &record, nil
+	return &record, true
 }
 
 func (s *ChapterRecordStore) LoadCompleted(chapters []int) ([]domain.ChapterRecord, error) {

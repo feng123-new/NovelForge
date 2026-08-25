@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
+	"github.com/voocel/ainovel-cli/internal/errs"
 	"github.com/voocel/ainovel-cli/internal/llmcontract"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
@@ -71,6 +72,32 @@ func TestCommitChapterRejectsUnknownForeshadowReferenceBeforePending(t *testing.
 	}
 	if pending, err := s.Signals.LoadPendingCommit(); err != nil || pending != nil {
 		t.Fatalf("invalid args must not create pending commit: pending=%+v err=%v", pending, err)
+	}
+}
+
+func TestCommitChapterRejectsSkippedNormalChapter(t *testing.T) {
+	s := store.NewStore(t.TempDir())
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.Init(10); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
+		t.Fatal(err)
+	}
+	args, err := json.Marshal(map[string]any{
+		"chapter": 2, "title": "第二章", "summary": "跳过第一章", "characters": []string{"主角"}, "key_events": []string{"事件"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := newTestCommitChapterTool(s).Execute(context.Background(), args); err == nil || !strings.Contains(err.Error(), "只能提交下一章 1") {
+		t.Fatalf("expected skipped chapter rejection, got %v", err)
+	}
+	if pending, err := s.Signals.LoadPendingCommit(); err != nil || pending != nil {
+		t.Fatalf("rejected commit must not create pending state, pending=%+v err=%v", pending, err)
 	}
 }
 
@@ -205,7 +232,7 @@ func TestCommitChapterAllowsPendingRewrite(t *testing.T) {
 	}
 }
 
-// TestCommitChapterRewriteKeepsOwnForeshadowPlant 锁死 issue #110：重写伏笔的"种植章"时，
+// TestCommitChapterRewriteKeepsOwnForeshadowPlant 锁死 issue #112：重写伏笔的"种植章"时，
 // Writer 看到账本里该伏笔已存在，自然只写 advance；旧实现整条覆盖章节记录，plant 随之丢失，
 // Projector 全量重放时报"推进未知伏笔"并把返工队列锁死。种植事实必须被保留。
 func TestCommitChapterRewriteKeepsOwnForeshadowPlant(t *testing.T) {
@@ -285,7 +312,139 @@ func TestCommitChapterRewriteKeepsOwnForeshadowPlant(t *testing.T) {
 	}
 }
 
-// TestCommitChapterRewriteRejectsForwardForeshadowReference 与上一个用例同源（issue #110）：
+func TestCommitChapterRewriteRepairsPlantLostByPreviousFailure(t *testing.T) {
+	const foreshadowID = "F24_LICENSE_SUSPENSION"
+	s := store.NewStore(t.TempDir())
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.Init(10); err != nil {
+		t.Fatal(err)
+	}
+	// 模拟旧版本第一次返工失败后的状态：派生账本仍保留正确的种植事实，
+	// 但章节记录已被 advance 覆盖，缺少同章 plant。
+	oldContent := "旧版本失败后留下的终稿。"
+	if _, err := s.ChapterRecords.Accept(2, domain.ChapterOriginGenerated, oldContent, domain.ChapterFacts{
+		Title: "第二章", Summary: "损坏记录", KeyEvents: []string{"推进线索"},
+		ForeshadowUpdates: []domain.ForeshadowUpdate{{ID: foreshadowID, Action: "advance"}},
+	}, domain.StyleDelta{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Drafts.SaveFinalChapter(2, oldContent); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.World.SaveForeshadowLedger([]domain.ForeshadowEntry{{
+		ID: foreshadowID, Description: "执照暂停线索", PlantedAt: 2, Status: "planted",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.MarkChapterComplete(2, 3000, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.SetPendingRewrites([]int{2}, "恢复旧版本损坏记录"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.SetFlow(domain.FlowPolishing); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Drafts.SaveDraft(2, "修复后的第二章正文。"); err != nil {
+		t.Fatal(err)
+	}
+
+	args, err := json.Marshal(map[string]any{
+		"chapter": 2, "title": "第二章", "summary": "恢复伏笔链",
+		"characters": []string{"主角"}, "key_events": []string{"推进线索"},
+		"foreshadow_updates": []map[string]any{{"id": foreshadowID, "action": "advance"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newTestCommitChapterTool(s).Execute(context.Background(), args); err != nil {
+		t.Fatalf("旧版本丢失的同章 plant 应可确定性恢复: %v", err)
+	}
+
+	record, err := s.ChapterRecords.Load(2)
+	if err != nil || record == nil {
+		t.Fatalf("Load record: %+v err=%v", record, err)
+	}
+	if got := record.Facts.ForeshadowUpdates; len(got) != 2 || got[0].Action != "plant" || got[0].ID != foreshadowID || got[1].Action != "advance" {
+		t.Fatalf("repaired foreshadow chain = %+v", got)
+	}
+	ledger, err := s.World.LoadForeshadowLedger()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ledger) != 1 || ledger[0].Status != "advanced" || ledger[0].PlantedAt != 2 {
+		t.Fatalf("reprojected ledger = %+v", ledger)
+	}
+}
+
+func TestCommitChapterRewriteValidatesRecordSetBeforeWriting(t *testing.T) {
+	s := store.NewStore(t.TempDir())
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.Init(10); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ChapterRecords.Accept(1, domain.ChapterOriginGenerated, "第一章终稿。", domain.ChapterFacts{
+		Title: "第一章", Summary: "损坏基线", KeyEvents: []string{"错误推进"},
+		ForeshadowUpdates: []domain.ForeshadowUpdate{{ID: "missing", Action: "advance"}},
+	}, domain.StyleDelta{}); err != nil {
+		t.Fatal(err)
+	}
+	oldContent := "第二章旧终稿。"
+	if _, err := s.ChapterRecords.Accept(2, domain.ChapterOriginGenerated, oldContent, domain.ChapterFacts{
+		Title: "第二章", Summary: "原摘要", KeyEvents: []string{"原事件"},
+	}, domain.StyleDelta{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Drafts.SaveFinalChapter(2, oldContent); err != nil {
+		t.Fatal(err)
+	}
+	for _, chapter := range []int{1, 2} {
+		if err := s.Progress.MarkChapterComplete(chapter, 3000, "", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Progress.SetPendingRewrites([]int{2}, "测试写前校验"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.SetFlow(domain.FlowRewriting); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Drafts.SaveDraft(2, "第二章新正文。"); err != nil {
+		t.Fatal(err)
+	}
+
+	args, err := json.Marshal(map[string]any{
+		"chapter": 2, "title": "第二章", "summary": "新摘要",
+		"characters": []string{"主角"}, "key_events": []string{"新事件"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = newTestCommitChapterTool(s).Execute(context.Background(), args)
+	if err == nil || !strings.Contains(err.Error(), "已解除冻结且未写入返工结果") {
+		t.Fatalf("expected preflight projection error, got %v", err)
+	}
+	if strings.Contains(err.Error(), errs.ErrStoreWrite.Error()) {
+		t.Fatalf("projection invariant must not be classified as a store write: %v", err)
+	}
+	final, err := s.Drafts.LoadChapterText(2)
+	if err != nil || final != oldContent {
+		t.Fatalf("final chapter changed before validation: %q err=%v", final, err)
+	}
+	record, err := s.ChapterRecords.Load(2)
+	if err != nil || record == nil || record.Revision != 1 || record.Content != oldContent {
+		t.Fatalf("chapter record changed before validation: %+v err=%v", record, err)
+	}
+	if pending, err := s.Signals.LoadPendingCommit(); err != nil || pending != nil {
+		t.Fatalf("invalid frozen commit must be cleared: %+v err=%v", pending, err)
+	}
+}
+
+// TestCommitChapterRewriteRejectsForwardForeshadowReference 与上一个用例同源（issue #112）：
 // 账本是全书投影，重写早期章节时里面还躺着后续章节才种下的伏笔。旧实现放行 → Projector
 // 按章序重放时报"推进未知伏笔"，且此时章节记录已被覆盖，返工队列就此锁死。
 // 必须在落盘前挡下，并把"种植于第几章"讲清楚，模型才改得动。
@@ -354,6 +513,65 @@ func TestCommitChapterRewriteRejectsForwardForeshadowReference(t *testing.T) {
 	}
 	if len(p.PendingRewrites) != 1 || p.PendingRewrites[0] != 2 {
 		t.Fatalf("返工队列应原样保留待重试: %v", p.PendingRewrites)
+	}
+}
+
+func TestCommitChapterClearsInvalidLegacyRewritePending(t *testing.T) {
+	s := store.NewStore(t.TempDir())
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.Init(10); err != nil {
+		t.Fatal(err)
+	}
+	oldContent := "旧终稿。"
+	if _, err := s.ChapterRecords.Accept(2, domain.ChapterOriginGenerated, oldContent, domain.ChapterFacts{
+		Title: "第二章", Summary: "旧摘要", KeyEvents: []string{"旧事件"},
+	}, domain.StyleDelta{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Drafts.SaveFinalChapter(2, oldContent); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.World.SaveForeshadowLedger([]domain.ForeshadowEntry{{
+		ID: "f_late", Description: "后续伏笔", PlantedAt: 7, Status: "planted",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.MarkChapterComplete(2, 3000, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.SetPendingRewrites([]int{2}, "恢复旧冻结提交"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Progress.SetFlow(domain.FlowRewriting); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(map[string]any{
+		"chapter": 2, "title": "第二章", "summary": "非法旧提交",
+		"characters": []string{"主角"}, "key_events": []string{"提前推进"},
+		"foreshadow_updates": []map[string]any{{"id": "f_late", "action": "advance"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Signals.SavePendingCommit(domain.PendingCommit{
+		Chapter: 2, Stage: domain.CommitStageStarted, Rewrite: true,
+		Payload: payload, DraftContent: "冻结正文。",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = newTestCommitChapterTool(s).Execute(context.Background(), payload)
+	if err == nil || !strings.Contains(err.Error(), "已解除冻结") || !strings.Contains(err.Error(), "种植于第 7 章") {
+		t.Fatalf("expected actionable legacy pending error, got %v", err)
+	}
+	if pending, err := s.Signals.LoadPendingCommit(); err != nil || pending != nil {
+		t.Fatalf("invalid legacy pending must be cleared: %+v err=%v", pending, err)
+	}
+	record, err := s.ChapterRecords.Load(2)
+	if err != nil || record == nil || record.Revision != 1 || record.Content != oldContent {
+		t.Fatalf("clearing pending changed chapter record: %+v err=%v", record, err)
 	}
 }
 
@@ -1235,6 +1453,16 @@ func TestCommitChapterFinaleVolumeCompletesDespiteOpenThreads(t *testing.T) {
 	if bc, _ := commit(1)["book_complete"].(bool); bc {
 		t.Fatal("收官卷尚未写完不应完结")
 	}
+	// 第一卷的聚合工件必须先完成，第二卷末的卷摘要才是 Router 当前目标。
+	if err := s.World.SaveReview(domain.ReviewEntry{Chapter: 1, Scope: "arc", Verdict: "accept", Summary: "第一卷评审"}); err != nil {
+		t.Fatalf("SaveReview v1: %v", err)
+	}
+	if err := s.Summaries.SaveArcSummary(domain.ArcSummary{Volume: 1, Arc: 1, Title: "弧一", Summary: "完成", KeyEvents: []string{"起"}}); err != nil {
+		t.Fatalf("SaveArcSummary v1: %v", err)
+	}
+	if err := s.Summaries.SaveVolumeSummary(domain.VolumeSummary{Volume: 1, Title: "卷一", Summary: "完成", KeyEvents: []string{"起"}}); err != nil {
+		t.Fatalf("SaveVolumeSummary v1: %v", err)
+	}
 	// 第 2 章（收官卷末章）：卷末收尾三连未齐，完结不得抢在 editor 评审/摘要之前
 	if bc, _ := commit(2)["book_complete"].(bool); bc {
 		t.Fatal("末章 commit 时三连未齐，不应完结")
@@ -1326,14 +1554,8 @@ func TestCommitChapterFinaleSkeletonArcBlocksCompletion(t *testing.T) {
 	volArgs, _ := json.Marshal(map[string]any{
 		"volume": 1, "title": "终卷", "summary": "s", "key_events": []string{"e"},
 	})
-	volRaw, err := volTool.Execute(context.Background(), volArgs)
-	if err != nil {
-		t.Fatalf("Execute save_volume_summary: %v", err)
-	}
-	var volOut map[string]any
-	_ = json.Unmarshal(volRaw, &volOut)
-	if volOut["book_complete"] == true {
-		t.Fatal("收官卷仍有骨架弧时不得完结")
+	if _, err := volTool.Execute(context.Background(), volArgs); err == nil || !strings.Contains(err.Error(), "当前没有待处理") {
+		t.Fatalf("骨架弧尚未展开时卷并未结束，卷摘要必须被拒绝，got %v", err)
 	}
 	if p, _ := s.Progress.Load(); p.Phase == domain.PhaseComplete {
 		t.Fatal("骨架弧未展开，phase 不应为 complete")

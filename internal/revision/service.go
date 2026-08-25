@@ -256,7 +256,7 @@ func (s *Service) validatePendingRecords(items []domain.PendingRevisionItem) err
 			records[i] = replacement
 		}
 	}
-	return validateRecordSet(records)
+	return ValidateRecords(records)
 }
 
 func (s *Service) downstreamSummaries(chapter int, proposed map[int]domain.ChapterSummary) ([]domain.ChapterSummary, error) {
