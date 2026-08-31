@@ -1,17 +1,18 @@
 #!/bin/sh
-# ainovel-cli 一键安装脚本
+# NovelForge one-line installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/voocel/ainovel-cli/main/scripts/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/voocel/ainovel-cli/v1.2.3/scripts/install.sh | sh -s -- v1.2.3
+#   curl -fsSL https://raw.githubusercontent.com/feng123-new/NovelForge/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/feng123-new/NovelForge/v0.1.0/scripts/install.sh | sh -s -- v0.1.0
 #
-# 自定义安装目录： AINOVEL_INSTALL_DIR=~/.local/bin curl -fsSL ... | sh
-# 指定版本：AINOVEL_VERSION=v1.2.3 curl -fsSL ... | sh
+# Custom destination: NOVELFORGE_INSTALL_DIR=~/.local/bin curl -fsSL ... | sh
+# Pin version: NOVELFORGE_VERSION=v0.1.0 curl -fsSL ... | sh
+# Legacy AINOVEL_INSTALL_DIR / AINOVEL_VERSION remain accepted as fallbacks.
 set -e
 
-REPO="voocel/ainovel-cli"
-BIN="ainovel-cli"
-DEST="${AINOVEL_INSTALL_DIR:-/usr/local/bin}"
-VERSION="${AINOVEL_VERSION:-${1:-latest}}"
+REPO="feng123-new/NovelForge"
+BIN="novelforge"
+DEST="${NOVELFORGE_INSTALL_DIR:-${AINOVEL_INSTALL_DIR:-/usr/local/bin}}"
+VERSION="${NOVELFORGE_VERSION:-${AINOVEL_VERSION:-${1:-latest}}}"
 
 for cmd in curl tar; do
 	command -v "$cmd" >/dev/null 2>&1 || { echo "需要 $cmd，请先安装后重试"; exit 1; }

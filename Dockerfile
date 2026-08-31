@@ -14,8 +14,8 @@ COPY . .
 
 RUN GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" \
-    -o /out/ainovel-cli \
-    ./cmd/ainovel-cli
+    -o /out/novelforge \
+    ./cmd/novelforge
 
 FROM alpine:3.22
 
@@ -25,6 +25,8 @@ RUN apk add --no-cache \
 
 WORKDIR /workspace
 
-COPY --from=builder /out/ainovel-cli /usr/local/bin/ainovel-cli
+COPY --from=builder /out/novelforge /usr/local/bin/novelforge
 
-ENTRYPOINT ["ainovel-cli"]
+EXPOSE 48090
+
+ENTRYPOINT ["novelforge"]

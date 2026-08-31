@@ -1,10 +1,19 @@
 services:
-  ainovel:
-    image: ghcr.io/voocel/ainovel-cli:latest
+  novelforge:
+    image: ghcr.io/feng123-new/novelforge:latest
     build:
       context: .
+    command:
+      - server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "48090"
+      - --workspace
+      - /workspace
+    ports:
+      - "48090:48090"
     volumes:
       - ./config:/root/.ainovel
       - ./workspace:/workspace
-    stdin_open: true
-    tty: true
+    restart: unless-stopped
