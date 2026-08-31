@@ -51,12 +51,12 @@ function renderProjects() {
     const path = document.createElement('div');
     path.className = 'project-path';
     path.textContent = project.path;
-    const progress = document.createElement('div');
+    const progress = document.createElement('progress');
     progress.className = 'progress';
-    const bar = document.createElement('span');
+    progress.max = 100;
     const ratio = project.total_chapters > 0 ? Math.min(100, project.completed_chapters / project.total_chapters * 100) : 0;
-    bar.style.width = ratio + '%';
-    progress.append(bar);
+    progress.value = ratio;
+    progress.setAttribute('aria-label', `完成度 ${Math.round(ratio)}%`);
     body.append(title, meta, path, progress);
 
     const stat = document.createElement('div');
