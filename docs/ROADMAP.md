@@ -5,7 +5,7 @@ This roadmap follows incremental, test-gated delivery. A phase is marked complet
 ## Phase 0 — Import upstream baseline — Complete
 
 - Imported ainovel-cli from original upstream commit `c0900290be8dfbae4d1614726e48b53259efbd47`.
-- Retained commit graph, authors, timestamps and messages; import details are in `UPSTREAM_BASE.md`.
+- Retained auditable non-workflow source lineage and surviving commit metadata; workflow-only commits may have been pruned and imported SHAs were rewritten. Details are in `UPSTREAM_BASE.md`.
 - Preserved Apache-2.0 license and core packages.
 - Baseline `gofmt`, `go vet ./...` and `go test ./...` passed before NovelForge changes.
 

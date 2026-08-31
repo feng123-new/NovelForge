@@ -9,7 +9,7 @@ NovelForge is distributed under the Apache License 2.0. This file records code p
 - Original imported commit: `c0900290be8dfbae4d1614726e48b53259efbd47` (2026-08-25)
 - Use in NovelForge: direct code base and continuing upstream
 
-NovelForge preserves the upstream source history, authorship, copyright notices, and Apache-2.0 license. During the initial GitHub-hosted import, `.github/workflows` was filtered from imported historical commits because the GitHub Actions installation token was not permitted to introduce workflow files from fetched history. The source graph, authors, dates, messages, and all non-workflow code were retained; exact import details are recorded in `UPSTREAM_BASE.md`.
+NovelForge preserves the upstream non-workflow source lineage, copyright notices, Apache-2.0 license, and the author/date/message metadata of surviving imported commits. During the initial GitHub-hosted import, `.github/workflows` was filtered from historical commits because the GitHub Actions installation token was not permitted to introduce workflow files from fetched history. This rewrote commit SHAs and may have pruned commits whose only changes were workflow files; exact import details are recorded in `UPSTREAM_BASE.md`.
 
 Files directly derived from or modified from ainovel-cli remain subject to the Apache License 2.0 requirements, including retention of notices and prominent identification of changes where applicable.
 
