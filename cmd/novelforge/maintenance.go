@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
 	"github.com/voocel/ainovel-cli/internal/compat"
@@ -21,12 +22,13 @@ type doctorCheck struct {
 }
 
 type doctorReport struct {
-	Product      string                  `json:"product"`
-	Status       string                  `json:"status"`
-	Home         string                  `json:"home"`
-	ProjectRoot  string                  `json:"project_root"`
-	ConfigSource *compat.ConfigCandidate `json:"config_source,omitempty"`
-	Checks       []doctorCheck           `json:"checks"`
+	Product      string                   `json:"product"`
+	Status       string                   `json:"status"`
+	Home         string                   `json:"home"`
+	ProjectRoot  string                   `json:"project_root"`
+	ConfigSource *compat.ConfigCandidate  `json:"config_source,omitempty"`
+	ConfigLayers []compat.ConfigCandidate `json:"config_layers,omitempty"`
+	Checks       []doctorCheck            `json:"checks"`
 }
 
 func runDoctorCommand(args []string) int {
@@ -38,6 +40,7 @@ func runDoctorCommandWith(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	home := flags.String("home", "", "override the user home directory for diagnostics")
 	projectRoot := flags.String("project-root", "", "project directory to inspect (default: current directory)")
+	explicitConfig := flags.String("config", "", "inspect an explicit configuration file (same precedence as --config)")
 	jsonOutput := flags.Bool("json", false, "write the report as JSON")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -49,8 +52,11 @@ func runDoctorCommandWith(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "doctor does not accept positional arguments")
 		return 2
 	}
+	if *explicitConfig == "" {
+		*explicitConfig = compat.ExplicitConfigPath()
+	}
 
-	report, err := buildDoctorReport(*home, *projectRoot)
+	report, err := buildDoctorReport(*home, *projectRoot, *explicitConfig)
 	if err != nil {
 		fmt.Fprintf(stderr, "doctor: %v\n", err)
 		return 1
@@ -71,8 +77,12 @@ func runDoctorCommandWith(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func buildDoctorReport(home, projectRoot string) (doctorReport, error) {
+func buildDoctorReport(home, projectRoot, explicit string) (doctorReport, error) {
 	paths, err := compat.ResolvePaths(home, projectRoot)
+	if err != nil {
+		return doctorReport{}, err
+	}
+	resolution, err := paths.ResolveConfig(explicit)
 	if err != nil {
 		return doctorReport{}, err
 	}
@@ -81,6 +91,13 @@ func buildDoctorReport(home, projectRoot string) (doctorReport, error) {
 		Status:      "ok",
 		Home:        paths.Home,
 		ProjectRoot: paths.ProjectRoot,
+	}
+	if resolution.Effective != nil {
+		effective := *resolution.Effective
+		report.ConfigSource = &effective
+	}
+	for _, layer := range activeConfigLayers(resolution) {
+		report.ConfigLayers = append(report.ConfigLayers, layer)
 	}
 
 	if info, err := os.Stat(paths.ProjectRoot); err != nil {
@@ -91,85 +108,118 @@ func buildDoctorReport(home, projectRoot string) (doctorReport, error) {
 		report.addCheck("project.root", "ok", "project root is accessible", paths.ProjectRoot)
 	}
 
-	candidates := paths.ConfigCandidates()
-	for _, candidate := range candidates {
-		if !candidate.Exists {
+	active := make(map[string]compat.ConfigCandidate)
+	for _, layer := range activeConfigLayers(resolution) {
+		active[filepath.Clean(layer.Path)] = layer
+	}
+	for _, current := range doctorCandidates(paths, resolution) {
+		name := "config." + string(current.Scope) + "." + string(current.Generation)
+		if !current.Exists {
+			if current.Scope == compat.ScopeExplicit {
+				report.addCheck(name, "error", "explicit configuration does not exist", current.Path)
+			}
 			continue
 		}
-		if _, err := bootstrap.LoadConfigFile(candidate.Path); err != nil {
-			report.addCheck(
-				"config."+string(candidate.Scope)+"."+string(candidate.Generation),
-				"error",
-				"configuration cannot be parsed: "+err.Error(),
-				candidate.Path,
-			)
+		if _, ok := active[filepath.Clean(current.Path)]; !ok {
+			report.addCheck(name, "info", "configuration is shadowed by a higher-precedence layer and will not be merged", current.Path)
 			continue
 		}
-		report.addCheck(
-			"config."+string(candidate.Scope)+"."+string(candidate.Generation),
-			"ok",
-			"configuration is readable",
-			candidate.Path,
-		)
+		if _, err := bootstrap.LoadConfigFile(current.Path); err != nil {
+			status := "error"
+			message := "active configuration cannot be parsed: " + err.Error()
+			if current.Scope == compat.ScopeGlobal && resolution.Project != nil {
+				status = "warning"
+				message = "global configuration cannot be parsed; a project layer may still provide a complete configuration: " + err.Error()
+			}
+			report.addCheck(name, status, message, current.Path)
+			continue
+		}
+		if current.Generation == compat.GenerationLegacy {
+			report.addCheck(name, "warning", "using the .ainovel compatibility fallback; run novelforge migrate to prepare a backed-up .novelforge copy", current.Path)
+		} else {
+			report.addCheck(name, "ok", "configuration is readable and selected", current.Path)
+		}
 	}
 
-	runtimeSource, runtimeFound := legacyRuntimeConfig(candidates)
-	if runtimeFound {
-		report.ConfigSource = &runtimeSource
-		report.addCheck("config.source", "warning", "the current runtime still reads .ainovel; a backed-up .novelforge copy can be prepared with novelforge migrate", runtimeSource.Path)
-	} else if preferred, ok := preferredConfig(candidates); ok {
-		report.ConfigSource = &preferred
-		report.addCheck("config.source", "error", ".novelforge exists without a legacy runtime source; keep .ainovel until the runtime precedence switch lands", preferred.Path)
-	} else {
+	checkConfigOverlap(&report, paths.ConfigCandidates(), compat.ScopeProject)
+	checkConfigOverlap(&report, paths.ConfigCandidates(), compat.ScopeGlobal)
+
+	if resolution.Effective == nil {
 		report.addCheck("config.source", "error", "no configuration file was found", "")
+		return report, nil
 	}
 
-	checkConfigOverlap(&report, candidates, compat.ScopeProject)
-	checkConfigOverlap(&report, candidates, compat.ScopeGlobal)
+	loaded, loadErr := bootstrap.LoadNovelForgeConfig(paths.Home, paths.ProjectRoot, explicit)
+	for _, warning := range loaded.Warnings {
+		report.addCheck("config.load."+string(warning.Scope), "warning", warning.Err.Error(), warning.Path)
+	}
+	if loadErr != nil {
+		report.addCheck("config.load", "error", loadErr.Error(), resolution.Effective.Path)
+		return report, nil
+	}
+	cfg := loaded.Config
+	cfg.FillDefaults()
+	if err := cfg.ValidateBase(); err != nil {
+		report.addCheck("config.validation", "error", err.Error(), resolution.Effective.Path)
+	} else {
+		report.addCheck("config.validation", "ok", "effective configuration passed runtime validation", resolution.Effective.Path)
+	}
 	return report, nil
 }
 
-func legacyRuntimeConfig(candidates []compat.ConfigCandidate) (compat.ConfigCandidate, bool) {
-	for _, scope := range []compat.Scope{compat.ScopeProject, compat.ScopeGlobal} {
-		for _, candidate := range candidates {
-			if candidate.Scope == scope && candidate.Generation == compat.GenerationLegacy && candidate.Exists {
-				return candidate, true
-			}
-		}
+func activeConfigLayers(resolution compat.ConfigResolution) []compat.ConfigCandidate {
+	if resolution.Explicit != nil {
+		return []compat.ConfigCandidate{*resolution.Explicit}
 	}
-	return compat.ConfigCandidate{}, false
+	var layers []compat.ConfigCandidate
+	if resolution.Global != nil {
+		layers = append(layers, *resolution.Global)
+	}
+	if resolution.Project != nil {
+		layers = append(layers, *resolution.Project)
+	}
+	return layers
 }
 
-func preferredConfig(candidates []compat.ConfigCandidate) (compat.ConfigCandidate, bool) {
-	for _, scope := range []compat.Scope{compat.ScopeProject, compat.ScopeGlobal} {
-		for _, candidate := range candidates {
-			if candidate.Scope == scope && candidate.Generation == compat.GenerationNovelForge && candidate.Exists {
-				return candidate, true
-			}
+func doctorCandidates(paths compat.Paths, resolution compat.ConfigResolution) []compat.ConfigCandidate {
+	var candidates []compat.ConfigCandidate
+	seen := make(map[string]bool)
+	appendCandidate := func(current compat.ConfigCandidate) {
+		key := filepath.Clean(current.Path)
+		if seen[key] {
+			return
 		}
+		seen[key] = true
+		candidates = append(candidates, current)
 	}
-	return compat.ConfigCandidate{}, false
+	if resolution.Explicit != nil {
+		appendCandidate(*resolution.Explicit)
+	}
+	for _, current := range paths.ConfigCandidates() {
+		appendCandidate(current)
+	}
+	return candidates
 }
 
 func checkConfigOverlap(report *doctorReport, candidates []compat.ConfigCandidate, scope compat.Scope) {
 	var preferred, legacy *compat.ConfigCandidate
 	for i := range candidates {
-		candidate := &candidates[i]
-		if candidate.Scope != scope || !candidate.Exists {
+		current := &candidates[i]
+		if current.Scope != scope || !current.Exists {
 			continue
 		}
-		switch candidate.Generation {
+		switch current.Generation {
 		case compat.GenerationNovelForge:
-			preferred = candidate
+			preferred = current
 		case compat.GenerationLegacy:
-			legacy = candidate
+			legacy = current
 		}
 	}
 	if preferred != nil && legacy != nil {
 		report.addCheck(
 			"config."+string(scope)+".precedence",
-			"warning",
-			"both .novelforge and .ainovel exist; this iteration keeps .ainovel as the runtime source while preserving the staged copy",
+			"info",
+			"both directories exist; .novelforge is active and .ainovel is retained unchanged for rollback and legacy compatibility",
 			preferred.Path,
 		)
 	}
@@ -194,6 +244,8 @@ func printDoctorReport(w io.Writer, report doctorReport) {
 	for _, check := range report.Checks {
 		marker := "OK"
 		switch check.Status {
+		case "info":
+			marker = "INFO"
 		case "warning":
 			marker = "WARN"
 		case "error":

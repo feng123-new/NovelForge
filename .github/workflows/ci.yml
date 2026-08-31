@@ -38,8 +38,12 @@ jobs:
         run: go build -trimpath ./cmd/novelforge
       - name: Validate embedded Web asset
         run: test -s web/dist/index.html
-      - name: Validate installer syntax
-        run: sh -n scripts/install.sh
+      - name: Validate lifecycle scripts
+        run: sh -n scripts/install.sh scripts/uninstall.sh scripts/install_lifecycle_smoke.sh scripts/brand_audit.sh
+      - name: Install, upgrade and uninstall smoke
+        run: sh scripts/install_lifecycle_smoke.sh
+      - name: NovelForge brand audit
+        run: sh scripts/brand_audit.sh
 
   windows:
     name: Windows test and build

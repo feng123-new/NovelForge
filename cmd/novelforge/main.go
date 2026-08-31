@@ -11,6 +11,7 @@ import (
 
 	"github.com/voocel/ainovel-cli/assets"
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
+	"github.com/voocel/ainovel-cli/internal/compat"
 	"github.com/voocel/ainovel-cli/internal/entry/headless"
 	"github.com/voocel/ainovel-cli/internal/entry/startup"
 	"github.com/voocel/ainovel-cli/internal/entry/tui"
@@ -30,6 +31,14 @@ var (
 var headlessMode bool
 
 func main() {
+	// Activate NovelForge path semantics before any shared package reads config,
+	// rules, caches, setup state or startup logs. cmd/ainovel-cli never activates
+	// this profile and therefore preserves its original behavior.
+	if err := compat.ActivateNovelForgeRuntime(); err != nil {
+		fmt.Fprintf(os.Stderr, "runtime: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Commands with their own flag grammar are intercepted before legacy option
 	// parsing. The original TUI/headless behavior remains the default path.
 	if len(os.Args) > 1 {
@@ -49,6 +58,11 @@ func main() {
 	if err != nil {
 		die("flags: %v", err)
 	}
+	if opts.ConfigFile != "" {
+		if err := compat.SetExplicitConfigPath(opts.ConfigFile); err != nil {
+			die("config path: %v", err)
+		}
+	}
 	if opts.Version {
 		printVersion(os.Stdout, versionInfo())
 		return
@@ -62,13 +76,9 @@ func main() {
 	}
 	headlessMode = opts.Headless
 
-	// Keep the mature ainovel first-run setup and ~/.ainovel configuration path
-	// intact in Phase 1. This lets existing users run NovelForge without moving
-	// credentials or project settings; a backed-up ~/.novelforge migration is a
-	// separate compatibility phase.
 	if bootstrap.NeedsSetup() {
 		if opts.Headless {
-			die("error: headless 模式不支持首次引导，请先运行一次 TUI 完成配置")
+			die("error: headless 模式缺少有效配置；请先运行 novelforge 完成设置，或使用 --config/NOVELFORGE_CONFIG")
 		}
 		setupCfg, err := bootstrap.RunSetup()
 		if err != nil {
@@ -137,6 +147,7 @@ type cliOptions struct {
 	Headless      bool
 	Prompt        string
 	PromptFile    string
+	ConfigFile    string
 	Version       bool
 	Update        bool
 	UpdateVersion string
@@ -183,6 +194,12 @@ func parseCLIOptions(argv []string) (cliOptions, []string, error) {
 			}
 			opts.PromptFile = argv[i+1]
 			i++
+		case "--config":
+			if i+1 >= len(argv) {
+				return opts, nil, fmt.Errorf("--config 缺少值")
+			}
+			opts.ConfigFile = argv[i+1]
+			i++
 		default:
 			args = append(args, argv[i])
 		}
@@ -190,10 +207,10 @@ func parseCLIOptions(argv []string) (cliOptions, []string, error) {
 	if opts.Prompt != "" && opts.PromptFile != "" {
 		return opts, nil, fmt.Errorf("--prompt 和 --prompt-file 不能同时使用")
 	}
-	if opts.Version && (opts.Update || opts.Headless || opts.Prompt != "" || opts.PromptFile != "" || len(args) > 0) {
+	if opts.Version && (opts.Update || opts.Headless || opts.Prompt != "" || opts.PromptFile != "" || opts.ConfigFile != "" || len(args) > 0) {
 		return opts, nil, fmt.Errorf("version 不能与其他启动参数混用")
 	}
-	if opts.Update && (opts.Headless || opts.Prompt != "" || opts.PromptFile != "" || len(args) > 0) {
+	if opts.Update && (opts.Headless || opts.Prompt != "" || opts.PromptFile != "" || opts.ConfigFile != "" || len(args) > 0) {
 		return opts, nil, fmt.Errorf("update 不能与其他启动参数混用")
 	}
 	return opts, args, nil

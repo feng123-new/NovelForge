@@ -8,71 +8,200 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/voocel/ainovel-cli/internal/compat"
 )
 
-const configDirName = ".ainovel"
+// ConfigLoadWarning records a non-fatal lower-layer read failure. Global
+// configuration remains tolerant so a valid project configuration can still
+// start the application, matching the legacy behavior.
+type ConfigLoadWarning struct {
+	Scope compat.Scope
+	Path  string
+	Err   error
+}
 
-// DefaultConfigPath 返回全局配置文件路径 ~/.ainovel/config.json。
+// NovelForgeConfigResult exposes the selected layers for doctor and tests
+// without returning configuration contents through diagnostics.
+type NovelForgeConfigResult struct {
+	Config     Config
+	Resolution compat.ConfigResolution
+	Warnings   []ConfigLoadWarning
+}
+
+// DefaultConfigPath returns the effective writable top-level configuration
+// path. cmd/ainovel-cli keeps ~/.ainovel/config.json. cmd/novelforge selects an
+// explicit config first, then an existing ~/.novelforge file, then the legacy
+// fallback; a fresh NovelForge setup writes ~/.novelforge/config.json.
 func DefaultConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, configDirName, "config.json")
-}
-
-// DefaultConfigDir 返回 ~/.ainovel 目录路径；取不到家目录时返回空字符串。
-// 仅用于读/写不强制存在的文件（如模型缓存），不会自动创建目录。
-func DefaultConfigDir() string {
-	home, err := os.UserHomeDir()
+	if !compat.NovelForgeRuntimeActive() {
+		return filepath.Join(home, compat.LegacyDirName, compat.ConfigFileName)
+	}
+	paths, err := compat.ResolvePaths(home, "")
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, configDirName)
+	if explicit := compat.ExplicitConfigPath(); explicit != "" {
+		resolution, resolveErr := paths.ResolveConfig(explicit)
+		if resolveErr == nil && resolution.Explicit != nil {
+			return resolution.Explicit.Path
+		}
+	}
+	if selected, ok := paths.SelectedConfig(compat.ScopeGlobal); ok {
+		return selected.Path
+	}
+	return paths.GlobalNovelForgeConfig
 }
 
-// configDir 返回 ~/.ainovel 目录路径，不存在时创建。
-func configDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("home dir: %w", err)
+// DefaultConfigDir returns the directory containing DefaultConfigPath.
+func DefaultConfigDir() string {
+	path := DefaultConfigPath()
+	if path == "" {
+		return ""
 	}
-	dir := filepath.Join(home, configDirName)
+	return filepath.Dir(path)
+}
+
+// configDir returns the active global or explicit configuration directory,
+// creating it when needed by first-run setup.
+func configDir() (string, error) {
+	dir := DefaultConfigDir()
+	if dir == "" {
+		return "", fmt.Errorf("home dir is unavailable")
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("create config dir: %w", err)
 	}
 	return dir, nil
 }
 
-// projectConfigPath 返回项目级配置文件的相对路径 ./.ainovel/config.json。
-// 项目级 dotdir 镜像全局 ~/.ainovel/，复用同一个 configDirName；相对 cwd 解析。
+// projectConfigPath returns the selected project configuration layer. A fresh
+// NovelForge project uses ./.novelforge/config.json; a legacy-only project is
+// read in place and is never copied or moved implicitly.
 func projectConfigPath() string {
-	return filepath.Join(configDirName, "config.json")
-}
-
-// EffectiveConfigPath 返回 TUI 改动（/config、/model）应写回的配置文件：
-// 项目目录有 ./.ainovel/config.json 就写它——与读取时项目层覆盖全局的方向一致，
-// 保证"改当前生效的那份"、改完立刻生效；否则写全局 ~/.ainovel/config.json。
-// 仅编辑已存在的项目配置，不会凭空创建（创建项目覆盖是用户主动放文件的动作）。
-func EffectiveConfigPath() string {
-	rel := projectConfigPath()
-	if _, err := os.Stat(rel); err == nil {
-		if abs, err := filepath.Abs(rel); err == nil {
-			return abs
-		}
-		return rel
+	if !compat.NovelForgeRuntimeActive() {
+		return filepath.Join(compat.LegacyDirName, compat.ConfigFileName)
 	}
-	return DefaultConfigPath()
+	paths, err := compat.ResolvePaths("", "")
+	if err != nil {
+		return filepath.Join(compat.ProductDirName, compat.ConfigFileName)
+	}
+	if selected, ok := paths.SelectedConfig(compat.ScopeProject); ok {
+		return selected.Path
+	}
+	return paths.ProjectNovelForgeConfig
 }
 
-// LoadConfig 按优先级加载并合并配置：
-//  1. ~/.ainovel/config.json（全局）
-//  2. ./.ainovel/config.json（项目级覆盖）
+// EffectiveConfigPath returns the file edited by TUI /config and /model.
+// NovelForge writes the active explicit/project/global layer instead of
+// silently creating a second credentials file.
+func EffectiveConfigPath() string {
+	if !compat.NovelForgeRuntimeActive() {
+		rel := projectConfigPath()
+		if _, err := os.Stat(rel); err == nil {
+			if abs, err := filepath.Abs(rel); err == nil {
+				return abs
+			}
+			return rel
+		}
+		return DefaultConfigPath()
+	}
+
+	paths, err := compat.ResolvePaths("", "")
+	if err != nil {
+		return DefaultConfigPath()
+	}
+	resolution, err := paths.ResolveConfig(compat.ExplicitConfigPath())
+	if err == nil {
+		if resolution.Explicit != nil {
+			return resolution.Explicit.Path
+		}
+		if resolution.Project != nil {
+			return resolution.Project.Path
+		}
+		if resolution.Global != nil {
+			return resolution.Global.Path
+		}
+	}
+	return paths.GlobalNovelForgeConfig
+}
+
+// LoadConfig loads the configuration for the current command profile.
+// cmd/ainovel-cli keeps the original two-layer .ainovel merge. NovelForge uses
+// one selected file per scope and never merges new and legacy credential files
+// from the same scope.
 func LoadConfig() (Config, error) {
+	if !compat.NovelForgeRuntimeActive() {
+		return loadLegacyConfig()
+	}
+	result, err := LoadNovelForgeConfig("", "", compat.ExplicitConfigPath())
+	for _, warning := range result.Warnings {
+		slog.Warn("配置解析失败，已忽略较低优先级层", "module", "config", "scope", warning.Scope, "path", warning.Path, "err", warning.Err)
+	}
+	return result.Config, err
+}
+
+// LoadNovelForgeConfig loads NovelForge configuration for an explicit home and
+// project root. It is used by doctor and by unit tests so diagnostics do not
+// need to mutate HOME or inspect secret values.
+func LoadNovelForgeConfig(home, projectRoot, explicit string) (NovelForgeConfigResult, error) {
+	paths, err := compat.ResolvePaths(home, projectRoot)
+	if err != nil {
+		return NovelForgeConfigResult{}, err
+	}
+	resolution, err := paths.ResolveConfig(explicit)
+	if err != nil {
+		return NovelForgeConfigResult{}, err
+	}
+	result := NovelForgeConfigResult{Resolution: resolution}
+
+	if resolution.Explicit != nil {
+		if !resolution.Explicit.Exists {
+			return result, fmt.Errorf("显式配置不存在: %s", resolution.Explicit.Path)
+		}
+		cfg, err := loadJSONFile(resolution.Explicit.Path)
+		if err != nil {
+			return result, fmt.Errorf("显式配置 %s 解析失败: %w", resolution.Explicit.Path, err)
+		}
+		result.Config = cfg
+		return result, nil
+	}
+
+	var cfg Config
+	if resolution.Global != nil {
+		global, err := loadJSONFile(resolution.Global.Path)
+		if err != nil {
+			result.Warnings = append(result.Warnings, ConfigLoadWarning{
+				Scope: compat.ScopeGlobal,
+				Path:  resolution.Global.Path,
+				Err:   err,
+			})
+		} else {
+			cfg = global
+		}
+	}
+
+	if resolution.Project != nil {
+		project, err := loadJSONFile(resolution.Project.Path)
+		if err != nil {
+			return result, fmt.Errorf("项目级配置 %s 解析失败（请检查 JSON 语法）: %w", resolution.Project.Path, err)
+		}
+		cfg = mergeConfig(cfg, project)
+	}
+	result.Config = cfg
+	return result, nil
+}
+
+// loadLegacyConfig preserves the original ainovel-cli behavior exactly:
+// global ~/.ainovel is a tolerant base and project ./.ainovel is a fail-loud
+// overlay.
+func loadLegacyConfig() (Config, error) {
 	var cfg Config
 
-	// 1. 全局配置。它是最低优先级基底，坏文件降级为告警而非阻断——可被项目级覆盖；
-	//    硬失败会把"坏全局 + 有效项目配置"的用户挡在门外。
 	if p := DefaultConfigPath(); p != "" {
 		global, found, err := loadOptionalJSON(p)
 		switch {
@@ -83,8 +212,6 @@ func LoadConfig() (Config, error) {
 		}
 	}
 
-	// 2. 项目级覆盖。坏文件 fail loud：用户在当前目录主动放的配置，静默吞掉会让
-	//    "配了不生效"无从排查（issue #37）。
 	project, found, err := loadOptionalJSON(projectConfigPath())
 	if err != nil {
 		return cfg, fmt.Errorf("项目级配置 ./.ainovel/config.json 解析失败（请检查 JSON 语法）: %w", err)
@@ -92,14 +219,10 @@ func LoadConfig() (Config, error) {
 	if found {
 		cfg = mergeConfig(cfg, project)
 	}
-
 	return cfg, nil
 }
 
-// loadOptionalJSON 读取一个可选的配置文件：
-//   - 文件不存在 → (zero, false, nil)，由调用方决定用默认/上层值
-//   - 文件存在但解析失败 → 返回错误（不再静默吞掉——否则用户的配置"配了不生效"
-//     却无从排查，正是 issue #37 的根因）
+// loadOptionalJSON reads an optional configuration file.
 func loadOptionalJSON(path string) (Config, bool, error) {
 	cfg, err := loadJSONFile(path)
 	if err != nil {
@@ -111,14 +234,11 @@ func loadOptionalJSON(path string) (Config, bool, error) {
 	return cfg, true, nil
 }
 
-// LoadConfigFile 读取单个 JSON 配置文件，支持 // 行注释。
-// 不做任何合并，仅返回该文件自身的配置。文件不存在时返回错误。
+// LoadConfigFile reads one JSON/JSONC configuration file without merging.
 func LoadConfigFile(path string) (Config, error) {
 	return loadJSONFile(path)
 }
 
-// loadJSONFile 读取 JSON 配置文件，支持 // 行注释。
-// 文件不存在时返回错误（由调用方决定是否忽略）。
 func loadJSONFile(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -132,7 +252,7 @@ func loadJSONFile(path string) (Config, error) {
 	return cfg, nil
 }
 
-// mergeConfig 将 overlay 合并到 base 上。非零值字段覆盖，map 按 key 合并。
+// mergeConfig overlays non-zero scalar values and merges maps by key.
 func mergeConfig(base, overlay Config) Config {
 	if overlay.Provider != "" {
 		base.Provider = overlay.Provider
@@ -150,7 +270,6 @@ func mergeConfig(base, overlay Config) Config {
 		base.ContextWindow = overlay.ContextWindow
 	}
 
-	// Providers: overlay 的 key 覆盖 base 同名 key
 	if len(overlay.Providers) > 0 {
 		if base.Providers == nil {
 			base.Providers = make(map[string]ProviderConfig)
@@ -178,11 +297,13 @@ func mergeConfig(base, overlay Config) Config {
 			if len(v.Extra) > 0 {
 				existing.Extra = cloneMap(v.Extra)
 			}
+			if v.StreamIdleTimeout != "" {
+				existing.StreamIdleTimeout = v.StreamIdleTimeout
+			}
 			base.Providers[k] = existing
 		}
 	}
 
-	// Roles: overlay 的 key 覆盖 base 同名 key
 	if len(overlay.Roles) > 0 {
 		if base.Roles == nil {
 			base.Roles = make(map[string]RoleConfig)
@@ -205,14 +326,12 @@ func mergeConfig(base, overlay Config) Config {
 		}
 	}
 
-	// Budget / Notify：整块覆盖（项目级预算/告警是独立政策声明，不与全局逐字段拼接）
 	if overlay.Budget != (BudgetConfig{}) {
 		base.Budget = overlay.Budget
 	}
 	if overlay.Notify.Enabled != nil || overlay.Notify.Command != "" || len(overlay.Notify.Events) > 0 {
 		base.Notify = overlay.Notify
 	}
-
 	return base
 }
 
@@ -227,7 +346,7 @@ func cloneMap(m map[string]any) map[string]any {
 	return c
 }
 
-// CloneConfig 深拷贝配置中会在运行时修改的 map/slice，避免候选配置污染当前配置。
+// CloneConfig deep-copies mutable configuration maps and slices.
 func CloneConfig(cfg Config) Config {
 	clone := cfg
 	clone.Providers = make(map[string]ProviderConfig, len(cfg.Providers))
@@ -246,9 +365,7 @@ func CloneConfig(cfg Config) Config {
 	return clone
 }
 
-// SaveProviderConfig 补丁式更新目标配置层里单个 provider 的凭证与模型库。
-// 只动 providers 段，绝不触碰顶层 provider/model 选择——“当前用哪个”归 /model。
-// 目标不存在时创建最小配置；目标损坏时拒绝覆盖。
+// SaveProviderConfig patch-updates one provider in the target configuration.
 func SaveProviderConfig(path string, provider string, pc ProviderConfig) error {
 	target, found, err := loadOptionalJSON(path)
 	if err != nil {
@@ -264,7 +381,7 @@ func SaveProviderConfig(path string, provider string, pc ProviderConfig) error {
 	return SaveConfig(path, target)
 }
 
-// stripJSONComments 去除 JSON 中的 // 行注释，跟踪引号状态避免误删字符串内容。
+// stripJSONComments removes // comments while preserving string contents.
 func stripJSONComments(data []byte) []byte {
 	out := make([]byte, 0, len(data))
 	inString := false
@@ -272,13 +389,11 @@ func stripJSONComments(data []byte) []byte {
 
 	for i := 0; i < len(data); i++ {
 		b := data[i]
-
 		if escaped {
 			out = append(out, b)
 			escaped = false
 			continue
 		}
-
 		if inString {
 			out = append(out, b)
 			if b == '\\' {
@@ -288,17 +403,12 @@ func stripJSONComments(data []byte) []byte {
 			}
 			continue
 		}
-
-		// 不在字符串内
 		if b == '"' {
 			inString = true
 			out = append(out, b)
 			continue
 		}
-
-		// 检测 // 注释
 		if b == '/' && i+1 < len(data) && data[i+1] == '/' {
-			// 跳到行尾
 			for i < len(data) && data[i] != '\n' {
 				i++
 			}
@@ -307,16 +417,14 @@ func stripJSONComments(data []byte) []byte {
 			}
 			continue
 		}
-
 		out = append(out, b)
 	}
-
 	return out
 }
 
-// WriteStartupError 把启动期致命错误追加写入 ~/.ainovel/last-error.log，并返回
-// 该文件路径（best-effort，失败时返回空字符串）。双击启动时控制台窗口会随进程
-// 退出立即关闭、错误一闪而过，落盘是这类用户事后追溯的唯一途径。
+// WriteStartupError appends a best-effort startup error to the active runtime
+// directory. NovelForge uses .novelforge when present (or selected explicitly)
+// and falls back to .ainovel without moving credentials.
 func WriteStartupError(msg string) string {
 	dir := DefaultConfigDir()
 	if dir == "" {
@@ -326,7 +434,7 @@ func WriteStartupError(msg string) string {
 		return ""
 	}
 	path := filepath.Join(dir, "last-error.log")
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return ""
 	}
@@ -337,7 +445,7 @@ func WriteStartupError(msg string) string {
 	return path
 }
 
-// SaveConfig 将配置写入指定路径（JSON 格式，缩进美化）。
+// SaveConfig atomically writes formatted JSON with owner-only permissions.
 func SaveConfig(path string, cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
