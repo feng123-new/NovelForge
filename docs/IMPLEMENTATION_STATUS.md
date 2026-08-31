@@ -4,21 +4,21 @@ Last updated: 2026-08-31
 
 ## Repository state
 
-- Base branch: `main`
-- Base commit: `fff850da34fe490ffbfb4eb595a5f302711269a5`
-- Active branch: `feature/phase-1-compatibility-completion`
-- Active phase: Phase 1 — brand, configuration and compatibility
+- Delivery base: `main@fff850da34fe490ffbfb4eb595a5f302711269a5`
+- Phase 1 delivery branch: `feature/phase-1-compatibility-completion`
+- Phase 1 implementation head: `b175809a19a3c419f5fbc22d8877aa5b75a2262b`
+- Phase 1 pull request: [#6](https://github.com/feng123-new/NovelForge/pull/6)
+- Successful implementation CI: [run #9](https://github.com/feng123-new/NovelForge/actions/runs/33410916935)
 - Migration manifest version: `1`
-- Pull request: pending
-- CI: pending
+- Exact next phase: Phase 2 — Project Repository and API Foundation completion
 
 ## Phase status
 
 | Phase | Status | Notes |
 | --- | --- | --- |
 | 0 — upstream baseline | complete | Imported ainovel-cli baseline and retained provenance. |
-| 1 — compatibility | implementation complete; merge gate pending | Dual-path runtime, setup/write routing, doctor, migration rollback, lifecycle smoke and branding are implemented on the active branch. |
-| 2 — project/API foundation | foundation only | Existing server remains read-only. |
+| 1 — compatibility | complete | Dual-path runtime, setup/write routing, doctor, migration rollback, lifecycle smoke, branding and cross-platform gates are complete. |
+| 2 — project/API foundation | foundation only | Existing server remains read-only; Phase 2 resumes here. |
 | 3–13 | not started | Must follow test-gated delivery. |
 
 ## Completed in Phase 1
@@ -46,26 +46,25 @@ Last updated: 2026-08-31
 - Added an active packaging brand audit and switched Docker Compose to `/root/.novelforge`.
 - Updated README, MIGRATION, DEVELOPMENT and ROADMAP documentation.
 
-## Validation
+## Validation evidence
 
-Locally available checks in the restricted execution environment:
+The successful Phase 1 implementation run completed all repository gates:
 
 ```text
-gofmt on all changed Go files
-sh -n scripts/uninstall.sh scripts/install_lifecycle_smoke.sh scripts/brand_audit.sh
+formatting: PASS
+go vet ./...: PASS
+go test -buildvcs=false -count=1 ./...: PASS
+Linux novelforge build: PASS
+Windows full tests: PASS
+Windows novelforge build: PASS
+embedded Web asset validation: PASS
+lifecycle script syntax: PASS
 install -> upgrade -> dry-run uninstall -> uninstall smoke: PASS
+NovelForge brand audit: PASS
+Docker build: PASS
 ```
 
-Authoritative repository gates required before merge:
-
-- formatting
-- `go vet ./...`
-- `go test -buildvcs=false -count=1 ./...`
-- Linux build
-- Windows test/build
-- install/upgrade/uninstall smoke
-- brand audit
-- Docker build
+The first Windows run exposed a platform-specific test defect: Windows does not report POSIX permission bits through `os.FileMode`. The test was corrected to assert `0600` permission bits only on POSIX systems; the production owner-only open mode remains unchanged. The complete second run passed on Linux and Windows.
 
 ## Architecture decisions
 
@@ -92,7 +91,7 @@ These belong to later phases, not compatibility completion:
 
 ## Exact resume point
 
-After this branch passes CI and merges, start Phase 2 from the resulting `main` HEAD:
+Start Phase 2 from the `main` commit containing PR #6:
 
 1. add the Project Repository and safe project lifecycle writes;
 2. add the unified API error envelope and idempotency store;
