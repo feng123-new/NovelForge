@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-test-build:
+    name: Go lint, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        env:
+          GOWORK: "off"
+        run: go vet ./...
+      - name: Test
+        env:
+          GOWORK: "off"
+        run: go test -buildvcs=false -count=1 ./...
+      - name: Build NovelForge
+        env:
+          GOWORK: "off"
+        run: go build -trimpath ./cmd/novelforge
+      - name: Validate embedded Web asset
+        run: test -s web/dist/index.html
+      - name: Validate installer syntax
+        run: sh -n scripts/install.sh
+
+  windows:
+    name: Windows test and build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test
+        env:
+          GOWORK: "off"
+        run: go test -buildvcs=false -count=1 ./...
+      - name: Build NovelForge
+        env:
+          GOWORK: "off"
+        run: go build -trimpath ./cmd/novelforge
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build --tag novelforge-ci .
