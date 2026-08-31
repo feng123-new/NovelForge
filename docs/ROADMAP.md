@@ -9,21 +9,21 @@ This roadmap follows incremental, test-gated delivery. A phase is marked complet
 - Preserved Apache-2.0 license and core packages.
 - Baseline `gofmt`, `go vet ./...` and `go test ./...` passed before NovelForge changes.
 
-## Phase 1 — Brand and compatibility — In progress
-
-Delivered in the first development branch:
+## Phase 1 — Brand and compatibility — Complete
 
 - `cmd/novelforge` brand entry with TUI/headless compatibility.
-- Legacy `cmd/ainovel-cli` remains intact.
-- Docker and release configuration target `novelforge`.
-- Existing `~/.ainovel` and project directories continue to work without migration.
-- License notices, architecture, roadmap and upstream sync documentation.
-
-Remaining before declaring the whole phase final:
-
-- backed-up `~/.novelforge` migration and dual-path tests;
-- remaining user-facing string audit where rebranding does not harm upstream compatibility;
-- installer and release smoke tests on every target OS.
+- Legacy `cmd/ainovel-cli` remains intact and keeps `.ainovel` path behavior.
+- NovelForge supports global and project `.novelforge` directories with `.ainovel` fallback.
+- Deterministic precedence: explicit config, project new/legacy, global new/legacy.
+- New and legacy credentials at the same scope are never merged.
+- First-run setup and generated rules use `.novelforge`; active legacy files are read in place.
+- `novelforge doctor` reports active and shadowed layers without exposing secrets.
+- `novelforge migrate` provides dry-run, backups, manifests, atomic copy-only commit, rollback cleanup and idempotence.
+- TUI configuration writes and startup logs target the active NovelForge layer.
+- Docker, installer, updater and GoReleaser target `novelforge`.
+- Offline install/upgrade/uninstall smoke coverage preserves configuration data.
+- Linux and Windows regression gates cover the dual-path behavior.
+- License notices, migration, development, architecture, roadmap and upstream sync documentation are present.
 
 ## Phase 2 — Embedded server and API foundation — Foundation delivered
 
@@ -94,7 +94,7 @@ Next additions: project lifecycle writes, Engine adapter, durable event replay, 
 - Web TXT/MD/EPUB import with resumable analysis.
 - TXT/Markdown/EPUB export.
 - ZIP backup/restore excluding global API credentials.
-- Compatibility migration with automatic pre-migration backup.
+- Project-format migration with automatic pre-migration backup.
 
 ## Phase 12 — Diagnostics, cost and observability
 

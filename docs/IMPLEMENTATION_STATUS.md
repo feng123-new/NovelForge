@@ -5,11 +5,11 @@ Last updated: 2026-08-31
 ## Repository state
 
 - Base branch: `main`
-- Base commit: `3400b868a04c228841316156d56e36dba06b7e02`
-- Active branch: `feature/phase-1-compatibility-tooling`
+- Base commit: `fff850da34fe490ffbfb4eb595a5f302711269a5`
+- Active branch: `feature/phase-1-compatibility-completion`
 - Active phase: Phase 1 — brand, configuration and compatibility
 - Migration manifest version: `1`
-- Pull request: https://github.com/feng123-new/NovelForge/pull/5
+- Pull request: pending
 - CI: pending
 
 ## Phase status
@@ -17,58 +17,85 @@ Last updated: 2026-08-31
 | Phase | Status | Notes |
 | --- | --- | --- |
 | 0 — upstream baseline | complete | Imported ainovel-cli baseline and retained provenance. |
-| 1 — compatibility | in progress | This iteration adds safe migration tooling and diagnostics. Runtime config precedence still uses `.ainovel`; activation of `.novelforge` remains the next compatibility slice. |
+| 1 — compatibility | implementation complete; merge gate pending | Dual-path runtime, setup/write routing, doctor, migration rollback, lifecycle smoke and branding are implemented on the active branch. |
 | 2 — project/API foundation | foundation only | Existing server remains read-only. |
 | 3–13 | not started | Must follow test-gated delivery. |
 
-## Completed in this iteration
+## Completed in Phase 1
 
-- Added a platform-neutral path inventory for global and project `.novelforge` / `.ainovel` locations.
-- Added `novelforge doctor` with text and JSON reports that never print configuration contents or API keys.
-- Added `novelforge migrate` with global/project scopes and dry-run support.
-- Migration creates a timestamped backup before writing the destination.
-- Migration copies through a same-parent staging directory and commits with an atomic rename.
-- Legacy directories remain in place.
-- Existing destination directories are never overwritten.
-- Symbolic links and unsupported file types are rejected.
-- Backup and destination manifests contain relative file names, sizes and SHA-256 values, not file contents.
-- Added unit tests for precedence inventory, dry-run, idempotence, backups, manifests, cancellation, symlink rejection and secret-safe command output.
+- Kept `cmd/ainovel-cli` on its original `.ainovel` configuration and rules behavior.
+- Activated a separate NovelForge runtime profile before shared packages read setup state, configuration, rules or startup logs.
+- Implemented configuration precedence:
+  1. `--config`
+  2. `NOVELFORGE_CONFIG`
+  3. project `.novelforge`
+  4. project `.ainovel`
+  5. global `.novelforge`
+  6. global `.ainovel`
+- Selected one complete file per scope; new and legacy credential files at the same scope are never merged.
+- Kept project-over-global overlay after each scope selects one generation.
+- Made first-run NovelForge setup target `.novelforge` while legacy-only installations continue in place without implicit copy or move.
+- Made TUI `/config` and `/model`, startup error logs and rules directories follow the active NovelForge layer.
+- Added `--config` to TUI/headless startup.
+- Updated `novelforge doctor` to report selected, fallback and shadowed layers, explicit configuration and runtime validation without exposing secrets.
+- Retained `novelforge migrate` dry-run, scope selection, timestamped backup, SHA-256 manifest, symlink rejection, atomic destination commit and idempotence.
+- Added deterministic failure-after-backup coverage proving source/backup retention, staging cleanup and absence of a partial destination.
+- Added Linux/Windows dual-path regression coverage through the existing cross-platform test matrix.
+- Added offline initial-install, upgrade, dry-run-uninstall and uninstall smoke coverage.
+- Added safe `scripts/uninstall.sh`, which removes only the executable and preserves `.novelforge`, `.ainovel` and projects.
+- Added an active packaging brand audit and switched Docker Compose to `/root/.novelforge`.
+- Updated README, MIGRATION, DEVELOPMENT and ROADMAP documentation.
 
 ## Validation
 
-Local container limitations prevent cloning the repository or downloading the Go 1.25.5 toolchain because outbound DNS is disabled.
-
-Executed locally against the isolated new packages with the installed Go 1.23.2 toolchain:
+Locally available checks in the restricted execution environment:
 
 ```text
-GOTOOLCHAIN=local go test ./internal/compat ./cmd/novelforge
-PASS
+gofmt on all changed Go files
+sh -n scripts/uninstall.sh scripts/install_lifecycle_smoke.sh scripts/brand_audit.sh
+install -> upgrade -> dry-run uninstall -> uninstall smoke: PASS
 ```
 
-The repository GitHub Actions run is the authoritative full gate for:
+Authoritative repository gates required before merge:
 
 - formatting
 - `go vet ./...`
 - `go test -buildvcs=false -count=1 ./...`
 - Linux build
 - Windows test/build
+- install/upgrade/uninstall smoke
+- brand audit
 - Docker build
 
-## Known issues
+## Architecture decisions
 
-- The main TUI/headless runtime still reads `~/.ainovel` and `./.ainovel` in this iteration.
-- Running `novelforge migrate` prepares a backed-up `.novelforge` copy but does not delete or deactivate `.ainovel`.
-- `doctor` deliberately reports the legacy runtime source until the dual-path loader is merged.
-- Installer upgrade/uninstall smoke coverage is not yet complete.
+- The command profile is process-local and activated only by `cmd/novelforge`; the legacy command does not inherit the new precedence.
+- An explicit configuration is authoritative rather than an overlay, preventing accidental credential combination.
+- `.novelforge` shadows `.ainovel` at the same scope even when the selected new file is invalid; invalid preferred configuration fails loudly instead of silently reverting.
+- Global parse failure remains recoverable when a complete project layer exists, preserving established behavior.
+- Normal startup performs no data migration. Migration remains an explicit copy-only command.
+
+## License review
+
+- No new Go or npm dependency was added.
+- No source was copied from AGPL or GPL reference projects.
+- Existing Apache-2.0 and third-party notice boundaries are unchanged.
+
+## Known issues after Phase 1
+
+These belong to later phases, not compatibility completion:
+
+- Server project APIs are still read-only.
+- SSE events are process-local and not replayable.
+- The Web UI is still the embedded transitional dashboard.
+- SQLite Truth Store, durable jobs, chapter versions and Web Autopilot are not implemented.
 
 ## Exact resume point
 
-Next branch should start from the merged result of this iteration and implement the Phase 1 runtime switch:
+After this branch passes CI and merges, start Phase 2 from the resulting `main` HEAD:
 
-1. keep `cmd/ainovel-cli` on the legacy layout;
-2. make `cmd/novelforge` read `.novelforge` first with `.ainovel` fallback;
-3. make first-run setup write `.novelforge` without silently copying credentials;
-4. make TUI configuration writes target the active NovelForge layer;
-5. add dual-path and cross-platform regression tests;
-6. complete installer upgrade/uninstall smoke tests;
-7. update this file and only then declare Phase 1 complete.
+1. add the Project Repository and safe project lifecycle writes;
+2. add the unified API error envelope and idempotency store;
+3. introduce the SQLite migration runner foundation;
+4. add Engine Adapter boundaries and durable event repository interfaces;
+5. update OpenAPI and API integration tests before adding Web controls.
