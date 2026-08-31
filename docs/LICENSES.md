@@ -8,9 +8,23 @@ NovelForge is licensed under Apache License 2.0. The root `LICENSE` file is reta
 
 `voocel/ainovel-cli` is the direct source-code upstream under Apache-2.0. NovelForge preserves its history and notices. Direct modifications remain Apache-2.0-compatible and should carry a clear changed/derived notice when the file already has or warrants one.
 
+## Phase 2 SQLite dependency
+
+Phase 2 adds `modernc.org/sqlite` as the SQLite driver. It is distributed under BSD-3-Clause terms and provides the required CGo-free build path. The exact selected module version and all transitive modules are recorded in `docs/DEPENDENCY_LICENSES.md` after `go mod tidy` resolves the committed graph.
+
+The dependency inventory is generated from the real module graph and module-cache license files:
+
+```sh
+GOWORK=off go mod download all
+GOWORK=off go run ./scripts/dependency_license_inventory.go > docs/DEPENDENCY_LICENSES.md
+GOWORK=off go run ./scripts/dependency_license_inventory.go -check docs/DEPENDENCY_LICENSES.md
+```
+
+CI rejects a stale inventory and rejects dependencies detected as GPL, AGPL, LGPL, SSPL, unknown, or requiring manual review. The inventory generator itself uses only the Go standard library so it does not introduce a hidden audit dependency.
+
 ## MIT code policy
 
-`Nigh/show-me-the-story` is MIT-licensed. The first NovelForge server/Web foundation is an original implementation based on requirements and public product behavior; no source from that repository is copied in the current phase.
+`Nigh/show-me-the-story` is MIT-licensed. The NovelForge server, project repository, migrations, API, tests, and Web foundation are original implementations based on requirements and public product behavior; no source from that repository is copied in Phase 2.
 
 Before incorporating MIT code in a future change, the author must:
 
@@ -25,6 +39,8 @@ Before incorporating MIT code in a future change, the author must:
 
 Allowed inputs are public documentation, high-level architecture concepts, and observable product behavior. NovelForge design documents define independent interfaces and tests first; implementation is written without consulting or transcribing copyleft source.
 
+No code, SQL, component, test, or prompt in the Phase 2 implementation was copied from either clean-room reference repository.
+
 ## Review checklist
 
 Every pull request that touches third-party-derived material must answer:
@@ -34,5 +50,7 @@ Every pull request that touches third-party-derived material must answer:
 - Is its license compatible with Apache-2.0 distribution?
 - Are required notices present?
 - Does the change cross the GPL/AGPL clean-room boundary?
+- Does `docs/DEPENDENCY_LICENSES.md` exactly match the resolved lockfile?
+- Does the CGo-disabled release build still pass?
 
 When uncertain, do not merge the copied implementation until the boundary is resolved.

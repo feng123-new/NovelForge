@@ -12,6 +12,7 @@ require (
 	github.com/voocel/agentcore v1.8.2
 	github.com/voocel/litellm v1.8.10
 	golang.org/x/text v0.41.0
+	modernc.org/sqlite v1.57.0
 )
 
 require (

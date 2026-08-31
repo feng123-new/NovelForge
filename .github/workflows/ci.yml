@@ -22,6 +22,28 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Normalize and download module graph
+        env:
+          GOWORK: "off"
+        run: |
+          go mod tidy
+          go mod download all
+      - name: Generate dependency license inventory
+        env:
+          GOWORK: "off"
+        run: |
+          mkdir -p .generated
+          go run ./scripts/dependency_license_inventory.go > .generated/DEPENDENCY_LICENSES.md
+      - name: Capture generated dependency metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-metadata-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            go.mod
+            go.sum
+            .generated/DEPENDENCY_LICENSES.md
       - name: Verify formatting
         run: test -z "$(gofmt -l .)"
       - name: Vet
@@ -32,10 +54,25 @@ jobs:
         env:
           GOWORK: "off"
         run: go test -buildvcs=false -count=1 ./...
-      - name: Build NovelForge
+      - name: Targeted race tests
         env:
           GOWORK: "off"
+        run: go test -race -buildvcs=false -count=1 ./internal/db/migrate ./internal/project ./internal/server/...
+      - name: Validate OpenAPI routes and schemas
+        env:
+          GOWORK: "off"
+        run: go test -buildvcs=false -count=1 ./internal/server -run '^TestOpenAPI'
+      - name: Build NovelForge without CGO
+        env:
+          CGO_ENABLED: "0"
+          GOWORK: "off"
         run: go build -trimpath ./cmd/novelforge
+      - name: Verify module lock is committed
+        run: git diff --exit-code -- go.mod go.sum
+      - name: Verify dependency licenses
+        env:
+          GOWORK: "off"
+        run: go run ./scripts/dependency_license_inventory.go -check docs/DEPENDENCY_LICENSES.md
       - name: Validate embedded Web asset
         run: test -s web/dist/index.html
       - name: Validate lifecycle scripts
@@ -56,10 +93,12 @@ jobs:
           cache: true
       - name: Test
         env:
+          CGO_ENABLED: "0"
           GOWORK: "off"
         run: go test -buildvcs=false -count=1 ./...
       - name: Build NovelForge
         env:
+          CGO_ENABLED: "0"
           GOWORK: "off"
         run: go build -trimpath ./cmd/novelforge
 

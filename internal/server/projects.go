@@ -1,251 +1,318 @@
 package server
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
-	"sort"
+	"strconv"
 	"strings"
-	"time"
+
+	"github.com/voocel/ainovel-cli/internal/project"
 )
 
-type ProjectSummary struct {
-	ID                string    `json:"id"`
-	Title             string    `json:"title"`
-	Path              string    `json:"path"`
-	Phase             string    `json:"phase,omitempty"`
-	CurrentChapter    int       `json:"current_chapter"`
-	CompletedChapters int       `json:"completed_chapters"`
-	TotalChapters     int       `json:"total_chapters"`
-	TotalWords        int       `json:"total_words"`
-	CurrentVolume     int       `json:"current_volume,omitempty"`
-	CurrentArc        int       `json:"current_arc,omitempty"`
-	FormatVersion     int       `json:"format_version,omitempty"`
-	UpdatedAt         time.Time `json:"updated_at"`
-	Warnings          []string  `json:"warnings,omitempty"`
-}
-
-type ProjectDetail struct {
-	ProjectSummary
-	Synopsis string `json:"synopsis,omitempty"`
-}
-
-type legacyBook struct {
-	Title    string `json:"title"`
-	Synopsis string `json:"synopsis"`
-}
-
-type legacyProgress struct {
-	Phase             string `json:"phase"`
-	CurrentChapter    int    `json:"current_chapter"`
-	InProgressChapter int    `json:"in_progress_chapter"`
-	TotalChapters     int    `json:"total_chapters"`
-	TotalWordCount    int    `json:"total_word_count"`
-	CurrentVolume     int    `json:"current_volume"`
-	CurrentArc        int    `json:"current_arc"`
-	CompletedChapters []int  `json:"completed_chapters"`
-}
-
-type formatMetadata struct {
-	Version int `json:"version"`
-}
+// Aliases preserve the original server package API for downstream callers.
+type ProjectSummary = project.Summary
+type ProjectDetail = project.Project
 
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, http.MethodGet)
-		return
+	switch r.Method {
+	case http.MethodGet:
+		s.listProjects(w, r)
+	case http.MethodPost:
+		s.createProject(w, r)
+	default:
+		writeMethodNotAllowed(w, r, http.MethodGet, http.MethodPost)
 	}
-	projects, err := discoverProjects(s.cfg.Workspace)
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"projects": projects})
 }
 
 func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, http.MethodGet)
+	trimmed := strings.TrimPrefix(r.URL.Path, "/api/projects/")
+	segments := strings.Split(strings.Trim(trimmed, "/"), "/")
+	if len(segments) == 0 || segments[0] == "" || len(segments) > 2 {
+		writeAPIError(w, r, http.StatusNotFound, "PROJECT_NOT_FOUND", "project not found")
 		return
 	}
-	id := strings.TrimPrefix(r.URL.Path, "/api/projects/")
-	if id == "" || strings.Contains(id, "/") {
-		writeAPIError(w, http.StatusNotFound, "project not found")
+	projectID := segments[0]
+	if len(segments) == 1 {
+		switch r.Method {
+		case http.MethodGet:
+			s.getProject(w, r, projectID)
+		case http.MethodPatch:
+			s.updateProject(w, r, projectID)
+		case http.MethodDelete:
+			s.deleteProject(w, r, projectID)
+		default:
+			writeMethodNotAllowed(w, r, http.MethodGet, http.MethodPatch, http.MethodDelete)
+		}
 		return
 	}
-	projects, err := discoverProjectDetails(s.cfg.Workspace)
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, err.Error())
-		return
+	switch segments[1] {
+	case "archive":
+		if r.Method != http.MethodPost {
+			writeMethodNotAllowed(w, r, http.MethodPost)
+			return
+		}
+		s.archiveProject(w, r, projectID, true)
+	case "unarchive":
+		if r.Method != http.MethodPost {
+			writeMethodNotAllowed(w, r, http.MethodPost)
+			return
+		}
+		s.archiveProject(w, r, projectID, false)
+	case "duplicate":
+		if r.Method != http.MethodPost {
+			writeMethodNotAllowed(w, r, http.MethodPost)
+			return
+		}
+		s.duplicateProject(w, r, projectID)
+	default:
+		writeAPIError(w, r, http.StatusNotFound, "API_ROUTE_NOT_FOUND", "API route not found")
 	}
-	for _, project := range projects {
-		if project.ID == id {
-			writeJSON(w, http.StatusOK, project)
+}
+
+func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
+	options := project.ListOptions{
+		Limit:  50,
+		Offset: 0,
+		Query:  r.URL.Query().Get("query"),
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("limit")); value != "" {
+		limit, err := strconv.Atoi(value)
+		if err != nil || limit <= 0 || limit > 100 {
+			writeAPIError(
+				w,
+				r,
+				http.StatusBadRequest,
+				"PAGINATION_INVALID",
+				"limit must be between 1 and 100",
+			)
+			return
+		}
+		options.Limit = limit
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("offset")); value != "" {
+		offset, err := strconv.Atoi(value)
+		if err != nil || offset < 0 {
+			writeAPIError(
+				w,
+				r,
+				http.StatusBadRequest,
+				"PAGINATION_INVALID",
+				"offset must not be negative",
+			)
+			return
+		}
+		options.Offset = offset
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("archived")); value != "" {
+		switch value {
+		case "true":
+			archived := true
+			options.Archived = &archived
+		case "false":
+			archived := false
+			options.Archived = &archived
+		case "all":
+		default:
+			writeAPIError(
+				w,
+				r,
+				http.StatusBadRequest,
+				"PROJECT_FILTER_INVALID",
+				"archived must be true, false or all",
+			)
 			return
 		}
 	}
-	writeAPIError(w, http.StatusNotFound, "project not found")
-}
-
-func discoverProjects(workspace string) ([]ProjectSummary, error) {
-	details, err := discoverProjectDetails(workspace)
+	result, err := s.projects.List(r.Context(), options)
 	if err != nil {
-		return nil, err
+		writeFailure(w, r, *projectFailure(err))
+		return
 	}
-	projects := make([]ProjectSummary, 0, len(details))
-	for _, detail := range details {
-		projects = append(projects, detail.ProjectSummary)
-	}
-	return projects, nil
+	writeJSON(w, http.StatusOK, result)
 }
 
-func discoverProjectDetails(workspace string) ([]ProjectDetail, error) {
-	entries, err := os.ReadDir(workspace)
-	if err != nil {
-		return nil, fmt.Errorf("read workspace: %w", err)
-	}
-
-	candidateDirs := make([]string, 0, len(entries)+1)
-	if looksLikeProject(workspace) {
-		candidateDirs = append(candidateDirs, workspace)
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		dir := filepath.Join(workspace, entry.Name())
-		if looksLikeProject(dir) {
-			candidateDirs = append(candidateDirs, dir)
-		}
-	}
-
-	projects := make([]ProjectDetail, 0, len(candidateDirs))
-	for _, dir := range candidateDirs {
-		project, err := readProject(workspace, dir)
-		if err != nil {
-			return nil, err
-		}
-		projects = append(projects, project)
-	}
-	sort.Slice(projects, func(i, j int) bool {
-		left := strings.ToLower(projects[i].Title)
-		right := strings.ToLower(projects[j].Title)
-		if left == right {
-			return projects[i].Path < projects[j].Path
-		}
-		return left < right
-	})
-	return projects, nil
-}
-
-func looksLikeProject(dir string) bool {
-	markers := []string{
-		filepath.Join(dir, "meta", "book.json"),
-		filepath.Join(dir, "meta", "progress.json"),
-		filepath.Join(dir, "outline.json"),
-		filepath.Join(dir, "chapters"),
-	}
-	for _, marker := range markers {
-		if _, err := os.Stat(marker); err == nil {
-			return true
-		}
-	}
-	return false
-}
-
-func readProject(workspace, dir string) (ProjectDetail, error) {
-	relative, err := filepath.Rel(workspace, dir)
-	if err != nil {
-		return ProjectDetail{}, fmt.Errorf("resolve project path: %w", err)
-	}
-	relative = filepath.ToSlash(relative)
-	if relative == "." {
-		relative = "."
-	}
-
-	project := ProjectDetail{
-		ProjectSummary: ProjectSummary{
-			ID:        stableProjectID(relative),
-			Title:     filepath.Base(dir),
-			Path:      relative,
-			UpdatedAt: latestModTime(dir),
+func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
+	s.executeIdempotent(
+		w,
+		r,
+		"project.create",
+		"",
+		func(body []byte) (int, any, *apiFailure) {
+			var input project.CreateInput
+			if failure := decodeJSONBody(body, &input, false); failure != nil {
+				return failure.Status, nil, failure
+			}
+			created, err := s.projects.Create(r.Context(), input)
+			if err != nil {
+				failure := projectFailure(err)
+				return failure.Status, nil, failure
+			}
+			if _, err := s.events.PublishContext(
+				r.Context(),
+				"project.created",
+				created.ID,
+				projectEventData(created),
+			); err != nil {
+				failure := ptrFailure(internalFailure())
+				return failure.Status, nil, failure
+			}
+			return http.StatusCreated, created, nil
 		},
-	}
-
-	var book legacyBook
-	if err := readOptionalJSON(filepath.Join(dir, "meta", "book.json"), &book); err != nil {
-		project.Warnings = append(project.Warnings, "book metadata: "+err.Error())
-	} else {
-		if strings.TrimSpace(book.Title) != "" {
-			project.Title = strings.TrimSpace(book.Title)
-		}
-		project.Synopsis = strings.TrimSpace(book.Synopsis)
-	}
-
-	var progress legacyProgress
-	if err := readOptionalJSON(filepath.Join(dir, "meta", "progress.json"), &progress); err != nil {
-		project.Warnings = append(project.Warnings, "progress metadata: "+err.Error())
-	} else {
-		project.Phase = progress.Phase
-		project.CurrentChapter = progress.CurrentChapter
-		if progress.InProgressChapter > project.CurrentChapter {
-			project.CurrentChapter = progress.InProgressChapter
-		}
-		project.CompletedChapters = len(progress.CompletedChapters)
-		project.TotalChapters = progress.TotalChapters
-		project.TotalWords = progress.TotalWordCount
-		project.CurrentVolume = progress.CurrentVolume
-		project.CurrentArc = progress.CurrentArc
-	}
-
-	var format formatMetadata
-	if err := readOptionalJSON(filepath.Join(dir, "meta", "format.json"), &format); err != nil {
-		project.Warnings = append(project.Warnings, "format metadata: "+err.Error())
-	} else {
-		project.FormatVersion = format.Version
-	}
-	if project.FormatVersion == 0 {
-		project.FormatVersion = 1
-	}
-	return project, nil
+	)
 }
 
-func readOptionalJSON(path string, target any) error {
-	data, err := os.ReadFile(path)
+func (s *Server) getProject(w http.ResponseWriter, r *http.Request, projectID string) {
+	projectDetail, err := s.projects.Get(r.Context(), projectID)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
+		writeFailure(w, r, *projectFailure(err))
+		return
 	}
-	if err := json.Unmarshal(data, target); err != nil {
-		return err
-	}
-	return nil
+	writeJSON(w, http.StatusOK, projectDetail)
 }
 
-func stableProjectID(relative string) string {
-	digest := sha256.Sum256([]byte(filepath.ToSlash(relative)))
-	return hex.EncodeToString(digest[:8])
+func (s *Server) updateProject(w http.ResponseWriter, r *http.Request, projectID string) {
+	s.executeIdempotent(
+		w,
+		r,
+		"project.update",
+		projectID,
+		func(body []byte) (int, any, *apiFailure) {
+			var input project.UpdateInput
+			if failure := decodeJSONBody(body, &input, false); failure != nil {
+				return failure.Status, nil, failure
+			}
+			updated, err := s.projects.Update(r.Context(), projectID, input)
+			if err != nil {
+				failure := projectFailure(err)
+				return failure.Status, nil, failure
+			}
+			if _, err := s.events.PublishContext(
+				r.Context(),
+				"project.updated",
+				updated.ID,
+				projectEventData(updated),
+			); err != nil {
+				failure := ptrFailure(internalFailure())
+				return failure.Status, nil, failure
+			}
+			return http.StatusOK, updated, nil
+		},
+	)
 }
 
-func latestModTime(dir string) time.Time {
-	paths := []string{
-		dir,
-		filepath.Join(dir, "meta", "book.json"),
-		filepath.Join(dir, "meta", "progress.json"),
+func (s *Server) archiveProject(
+	w http.ResponseWriter,
+	r *http.Request,
+	projectID string,
+	archived bool,
+) {
+	operation := "project.unarchive"
+	eventType := "project.unarchived"
+	if archived {
+		operation = "project.archive"
+		eventType = "project.archived"
 	}
-	var latest time.Time
-	for _, path := range paths {
-		info, err := os.Stat(path)
-		if err == nil && info.ModTime().After(latest) {
-			latest = info.ModTime()
-		}
+	s.executeIdempotent(
+		w,
+		r,
+		operation,
+		projectID,
+		func(body []byte) (int, any, *apiFailure) {
+			var empty struct{}
+			if failure := decodeJSONBody(body, &empty, true); failure != nil {
+				return failure.Status, nil, failure
+			}
+			updated, err := s.projects.SetArchived(r.Context(), projectID, archived)
+			if err != nil {
+				failure := projectFailure(err)
+				return failure.Status, nil, failure
+			}
+			if _, err := s.events.PublishContext(
+				r.Context(),
+				eventType,
+				updated.ID,
+				projectEventData(updated),
+			); err != nil {
+				failure := ptrFailure(internalFailure())
+				return failure.Status, nil, failure
+			}
+			return http.StatusOK, updated, nil
+		},
+	)
+}
+
+func (s *Server) duplicateProject(w http.ResponseWriter, r *http.Request, projectID string) {
+	s.executeIdempotent(
+		w,
+		r,
+		"project.duplicate",
+		projectID,
+		func(body []byte) (int, any, *apiFailure) {
+			var input project.DuplicateInput
+			if failure := decodeJSONBody(body, &input, true); failure != nil {
+				return failure.Status, nil, failure
+			}
+			duplicated, err := s.projects.Duplicate(r.Context(), projectID, input)
+			if err != nil {
+				failure := projectFailure(err)
+				return failure.Status, nil, failure
+			}
+			if _, err := s.events.PublishContext(
+				r.Context(),
+				"project.duplicated",
+				duplicated.ID,
+				map[string]any{
+					"id":        duplicated.ID,
+					"title":     duplicated.Title,
+					"source_id": projectID,
+				},
+			); err != nil {
+				failure := ptrFailure(internalFailure())
+				return failure.Status, nil, failure
+			}
+			return http.StatusCreated, duplicated, nil
+		},
+	)
+}
+
+func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request, projectID string) {
+	s.executeIdempotent(
+		w,
+		r,
+		"project.delete",
+		projectID,
+		func(body []byte) (int, any, *apiFailure) {
+			var input project.DeleteInput
+			if failure := decodeJSONBody(body, &input, false); failure != nil {
+				return failure.Status, nil, failure
+			}
+			result, err := s.projects.Delete(r.Context(), projectID, input)
+			if err != nil {
+				failure := projectFailure(err)
+				return failure.Status, nil, failure
+			}
+			if _, err := s.events.PublishContext(
+				r.Context(),
+				"audit.project.deleted",
+				projectID,
+				map[string]any{
+					"id":        projectID,
+					"deleted":   true,
+					"permanent": result.Permanent,
+				},
+			); err != nil {
+				failure := ptrFailure(internalFailure())
+				return failure.Status, nil, failure
+			}
+			return http.StatusOK, result, nil
+		},
+	)
+}
+
+func projectEventData(value project.Project) map[string]any {
+	return map[string]any{
+		"id":       value.ID,
+		"title":    value.Title,
+		"status":   value.Status,
+		"archived": value.Archived,
 	}
-	return latest.UTC()
 }
