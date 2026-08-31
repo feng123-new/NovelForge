@@ -38,6 +38,10 @@ func main() {
 			os.Exit(runServerCommand(os.Args[2:]))
 		case "eval":
 			os.Exit(eval.Command(os.Args[2:]))
+		case "doctor":
+			os.Exit(runDoctorCommand(os.Args[2:]))
+		case "migrate":
+			os.Exit(runMigrateCommand(os.Args[2:]))
 		}
 	}
 
