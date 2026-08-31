@@ -9,7 +9,7 @@ Last updated: 2026-08-31
 - Active branch: `feature/phase-1-compatibility-tooling`
 - Active phase: Phase 1 — brand, configuration and compatibility
 - Migration manifest version: `1`
-- Pull request: pending
+- Pull request: https://github.com/feng123-new/NovelForge/pull/5
 - CI: pending
 
 ## Phase status
