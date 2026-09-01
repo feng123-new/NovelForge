@@ -8,22 +8,30 @@ import (
 
 func TestOpenAPICoversImplementedRoutesAndUniqueOperations(t *testing.T) {
 	t.Parallel()
+	type parameter struct {
+		Ref  string `json:"$ref"`
+		Name string `json:"name"`
+		In   string `json:"in"`
+	}
 	var document struct {
 		OpenAPI string `json:"openapi"`
 		Paths   map[string]map[string]struct {
-			OperationID string `json:"operationId"`
-			Parameters  []struct {
-				Name string `json:"name"`
-				In   string `json:"in"`
-			} `json:"parameters"`
+			OperationID string      `json:"operationId"`
+			Parameters  []parameter `json:"parameters"`
 		} `json:"paths"`
-		Components map[string]any `json:"components"`
+		Components struct {
+			Parameters map[string]parameter `json:"parameters"`
+		} `json:"components"`
 	}
 	if err := json.Unmarshal(openAPISpec, &document); err != nil {
 		t.Fatalf("OpenAPI JSON: %v", err)
 	}
 	if document.OpenAPI != "3.1.0" {
 		t.Fatalf("openapi = %q", document.OpenAPI)
+	}
+	idempotencyParameter, ok := document.Components.Parameters["IdempotencyKey"]
+	if !ok || idempotencyParameter.Name != "Idempotency-Key" || idempotencyParameter.In != "header" {
+		t.Fatalf("invalid reusable IdempotencyKey parameter: %#v", idempotencyParameter)
 	}
 	expected := map[string][]string{
 		"/api/health":                   {"get"},
@@ -69,7 +77,8 @@ func TestOpenAPICoversImplementedRoutesAndUniqueOperations(t *testing.T) {
 			if method != "get" {
 				hasIdempotencyKey := false
 				for _, parameter := range operation.Parameters {
-					if parameter.Name == "Idempotency-Key" && parameter.In == "header" {
+					if (parameter.Name == "Idempotency-Key" && parameter.In == "header") ||
+						parameter.Ref == "#/components/parameters/IdempotencyKey" {
 						hasIdempotencyKey = true
 					}
 				}
