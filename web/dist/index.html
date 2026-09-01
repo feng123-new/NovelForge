@@ -1,63 +1,15 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="dark">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark light">
-  <title>NovelForge</title>
-  <link rel="stylesheet" href="/app.css">
-</head>
-<body>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="mark">N</div>
-        <div><strong>NovelForge</strong><small>Long-form studio</small></div>
-      </div>
-      <nav aria-label="主导航">
-        <a class="nav-item active" href="/">◫ 项目总览</a>
-        <a class="nav-item" href="/api/openapi.json">⌁ API Schema</a>
-      </nav>
-      <div class="sidebar-note">
-        当前页面是 Phase 2 的真实只读工作台：项目、进度与事件均来自本机 REST / SSE。写作控制与结构化 Truth Store 将在后续阶段接入。
-      </div>
-    </aside>
-    <main>
-      <div class="topbar">
-        <div>
-          <div class="eyebrow">Deterministic workspace</div>
-          <h1>小说工程总览</h1>
-          <p class="subtitle">从现有 ainovel 工程目录读取真实元数据，并通过单二进制 Go Server 提供 REST 与实时事件流。</p>
-        </div>
-        <div class="actions">
-          <span id="connection" class="status"><span class="status-dot"></span><span>连接中</span></span>
-          <button id="refresh" class="button" type="button">刷新</button>
-          <button id="theme" class="button" type="button" aria-label="切换明暗主题">明暗</button>
-        </div>
-      </div>
-
-      <section class="metrics" aria-label="汇总指标">
-        <article class="metric"><div class="metric-label">项目</div><div id="project-count" class="metric-value">—</div><div class="metric-detail">当前工作区</div></article>
-        <article class="metric"><div class="metric-label">已完成章节</div><div id="chapter-count" class="metric-value">—</div><div class="metric-detail">按项目汇总</div></article>
-        <article class="metric"><div class="metric-label">累计字数</div><div id="word-count" class="metric-value">—</div><div class="metric-detail">已持久化进度</div></article>
-        <article class="metric"><div class="metric-label">服务版本</div><div id="version" class="metric-value">—</div><div id="uptime" class="metric-detail">读取中</div></article>
-      </section>
-
-      <div class="workspace">
-        <section class="panel">
-          <header class="panel-header"><div><h2>Novel Library</h2><span id="workspace-label">正在扫描工作区</span></div><span id="last-refresh">—</span></header>
-          <div id="projects" class="project-list"><div class="empty">正在读取项目…</div></div>
-        </section>
-
-        <aside class="panel">
-          <header class="panel-header"><div><h2>实时事件</h2><span>SSE /api/events</span></div></header>
-          <div id="events" class="event-list"><div class="empty">等待服务器事件…</div></div>
-        </aside>
-      </div>
-      <p class="footer">NovelForge 基于 ainovel-cli 二次开发。此工作台不在浏览器中保存或暴露 API Key。</p>
-    </main>
-  </div>
-
-  <script src="/app.js" defer></script>
-</body>
+<html lang="zh-CN" data-theme="novelforge-dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="NovelForge local long-form fiction workspace" />
+    <title>NovelForge Workspace</title>
+    <script type="module" crossorigin src="./assets/app.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/app.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
 </html>
