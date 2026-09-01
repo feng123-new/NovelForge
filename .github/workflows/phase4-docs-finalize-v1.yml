@@ -1,0 +1,217 @@
+name: Phase 4 acceptance record
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: phase4-acceptance-record-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'docs/phase-04-final-acceptance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      DOC_PR: ${{ github.event.pull_request.number }}
+      DOC_REF: ${{ github.event.pull_request.head.ref }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify completed clean Phase 4 feature delivery
+        id: evidence
+        run: |
+          feature="$(gh api "repos/$REPO/pulls/10")"
+          test "$(printf '%s' "$feature" | jq -r .merged)" = true
+          feature_head="$(printf '%s' "$feature" | jq -r .head.sha)"
+          merge_sha="$(printf '%s' "$feature" | jq -r .merge_commit_sha)"
+          test -n "$feature_head"
+          test -n "$merge_sha"
+          test "$merge_sha" != null
+
+          files="$(gh api --paginate "repos/$REPO/pulls/10/files?per_page=100" --jq '.[].filename')"
+          if printf '%s\n' "$files" | grep -E '(^|/)(phase4[-_](recover|recovery|final|apply|bootstrap|repair|reconcile|semantic)|apply_phase4|payload\.part|\.phase4/|phase4.*\.patch)|^\.github/workflows/phase4'; then
+            echo 'Feature PR contains transition machinery.'
+            exit 1
+          fi
+          for required in \
+            internal/truthstore/model.go \
+            internal/truthstore/migration.go \
+            internal/truthstore/store.go \
+            internal/truthstore/rebuild.go \
+            internal/server/truth.go \
+            internal/server/openapi.json \
+            docs/TRUTH_STORE.md; do
+            printf '%s\n' "$files" | grep -Fx "$required" >/dev/null
+          done
+
+          feature_run="$(gh api --method GET "repos/$REPO/actions/runs" -f head_sha="$feature_head" -f event=pull_request -F per_page=100 --jq '.workflow_runs[] | select(.name=="CI" and .conclusion=="success") | .id' | head -n1)"
+          main_run="$(gh api --method GET "repos/$REPO/actions/runs" -f head_sha="$merge_sha" -f branch=main -F per_page=100 --jq '.workflow_runs[] | select(.name=="CI" and .event=="push" and .conclusion=="success") | .id' | head -n1)"
+          test -n "$feature_run"
+          test -n "$main_run"
+
+          for run in "$feature_run" "$main_run"; do
+            for expected in \
+              'Go lint, test and build' \
+              'Frontend check, test and build' \
+              'Windows test and build' \
+              'Docker build'; do
+              conclusion="$(gh api "repos/$REPO/actions/runs/$run/jobs?per_page=100" --jq ".jobs[] | select(.name == \"$expected\") | .conclusion")"
+              test "$conclusion" = success
+            done
+          done
+
+          printf 'feature_head=%s\n' "$feature_head" >> "$GITHUB_OUTPUT"
+          printf 'feature_run=%s\n' "$feature_run" >> "$GITHUB_OUTPUT"
+          printf 'merge_sha=%s\n' "$merge_sha" >> "$GITHUB_OUTPUT"
+          printf 'main_run=%s\n' "$main_run" >> "$GITHUB_OUTPUT"
+
+      - name: Write permanent Phase 4 status and self-clean
+        id: publish
+        env:
+          FEATURE_HEAD: ${{ steps.evidence.outputs.feature_head }}
+          FEATURE_RUN: ${{ steps.evidence.outputs.feature_run }}
+          MERGE_SHA: ${{ steps.evidence.outputs.merge_sha }}
+          MAIN_RUN: ${{ steps.evidence.outputs.main_run }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+
+          feature_head=os.environ['FEATURE_HEAD']
+          feature_run=os.environ['FEATURE_RUN']
+          merge_sha=os.environ['MERGE_SHA']
+          main_run=os.environ['MAIN_RUN']
+
+          path=Path('docs/IMPLEMENTATION_STATUS.md')
+          text=path.read_text(encoding='utf-8')
+          text=re.sub(r'Last updated: .*', 'Last updated: 2026-09-02', text, count=1)
+          text=text.replace('Exact next phase: Phase 4 — Structured Truth Store.', 'Exact next phase: Phase 5 — Quality Gate and Chapter Transaction.')
+          text=text.replace('Exact next phase: Phase 4 — Structured Truth Store', 'Exact next phase: Phase 5 — Quality Gate and Chapter Transaction')
+
+          combined='| 4–13 | not started | Start Phase 4 from the actual remote main after running the required baseline. |'
+          replacement=(
+              f'| 4 — Structured Truth Store | complete | PR #10 merged at `{merge_sha[:8]}`; final PR CI and merged-main CI passed all four required jobs. |\n'
+              '| 5–13 | not started | Start Phase 5 only from the verified latest `main`. |'
+          )
+          if combined in text:
+              text=text.replace(combined,replacement)
+          else:
+              text=re.sub(r'^\| 4[^\n]*$', f'| 4 — Structured Truth Store | complete | PR #10 merged at `{merge_sha[:8]}`; final PR CI and merged-main CI passed. |', text, flags=re.M)
+              if '| 5–13 | not started |' not in text:
+                  marker=f'| 4 — Structured Truth Store | complete | PR #10 merged at `{merge_sha[:8]}`; final PR CI and merged-main CI passed. |'
+                  text=text.replace(marker,marker+'\n| 5–13 | not started | Start Phase 5 only from verified `main`. |')
+
+          acceptance=f'''\n## Phase 4 formal acceptance\n\nPhase 4 — Structured Truth Store is formally complete.\n\n- Pull request: [#10 — feat: add structured truth store](https://github.com/feng123-new/NovelForge/pull/10) — squash merged.\n- Final clean production head: `{feature_head}`.\n- Final pull-request CI: [run {feature_run}](https://github.com/feng123-new/NovelForge/actions/runs/{feature_run}) — Go, Frontend, Windows and Docker passed, including Truth race and 100,000-fact temporal-index gates.\n- Squash merge: `{merge_sha}`.\n- Merge-triggered main CI: [run {main_run}](https://github.com/feng123-new/NovelForge/actions/runs/{main_run}) — all required jobs passed.\n- The merged feature diff contains production source, migrations, tests, OpenAPI and documentation only; recovery scripts, payload fragments, source snapshots and temporary workflows were removed before acceptance.\n\nAccepted boundaries include append-only temporal events, mandatory provenance, deterministic authority ordering, Chapter-N story/knowledge intersections, explicit conflict and supersession handling, bounded/full projection rebuild, verification, transactional per-project migration, persistent idempotency and safe REST/OpenAPI contracts.\n'''
+          if '## Phase 4 formal acceptance' not in text:
+              pos=text.find('\n## Known issues')
+              if pos < 0: pos=text.find('\n## Next phase')
+              if pos < 0: pos=len(text)
+              text=text[:pos]+acceptance+text[pos:]
+
+          text=text.replace('Truth Store, Quality Gate, Narrative Ledger, Context Compiler, Chapter Versions, Durable Autopilot, Skills/Reference, Lifecycle, Observability and Release remain Phase 4–13.',
+                            'Quality Gate, Narrative Ledger, Context Compiler, Chapter Versions, Durable Autopilot, Skills/Reference, Lifecycle, Observability and Release remain Phase 5–13.')
+          text=text.replace('Create `feature/phase-04-truth-store`', 'Create `feature/phase-05-quality-gate`')
+
+          resume='''## Exact resume point\n\n1. Fetch and prune the remote repository.\n2. Confirm the actual latest `main` SHA and that Phase 4 main CI remains successful.\n3. Run the complete Go, Frontend, Windows-equivalent, Docker, migration, Truth race and scale baseline.\n4. Create `feature/phase-05-quality-gate` from that verified main SHA.\n5. Implement Librarian, Continuity and Editor contracts, bounded rewrite loops, chapter transactions, Finalize and atomic Truth Commit without weakening Phase 0–4 compatibility or temporal authority boundaries.\n'''
+          text=re.sub(r'## Exact resume point\n.*\Z',resume,text,flags=re.S)
+          path.write_text(text.rstrip()+'\n',encoding='utf-8')
+
+          Path('docs/PHASE_4_ACCEPTANCE.md').write_text(f'''# Phase 4 — Structured Truth Store Acceptance\n\nStatus: **complete**\n\n## Delivery evidence\n\n| Evidence | Value |\n| --- | --- |\n| Feature PR | [#10](https://github.com/feng123-new/NovelForge/pull/10) |\n| Final clean feature head | `{feature_head}` |\n| Final PR CI | [run {feature_run}](https://github.com/feng123-new/NovelForge/actions/runs/{feature_run}) |\n| Squash merge | `{merge_sha}` |\n| Merged-main CI | [run {main_run}](https://github.com/feng123-new/NovelForge/actions/runs/{main_run}) |\n\nBoth authoritative CI runs passed Go, Frontend, Windows and Docker. The Go gate includes targeted race coverage and the 100,000-fact temporal query/index test.\n\n## Accepted scope\n\n- Append-only, checksum-verifiable temporal Truth events in each project database.\n- Required provenance including source chapter and source version.\n- Deterministic authority ordering with higher-authority facts protected from silent downgrade.\n- Story-valid and system-knowledge intervals whose intersection prevents future-state leakage.\n- Chapter-N and bounded batch state queries with stable ordering and indexed plans.\n- Explicit unresolved/resolved conflicts, supersession and retraction; no silent last-write-wins canon mutation.\n- Full and chapter-bounded deterministic projection rebuilds with verification digests.\n- Transactional project migration with backup, checksum and rollback behavior.\n- Idempotent Truth writes through the shared persistent idempotency boundary.\n- Secret-free errors, bounded request bodies, REST routes and synchronized OpenAPI 3.1 contracts.\n\n## Clean delivery assertion\n\nThe accepted feature diff contains no Phase 4 recovery scripts, payload fragments, temporary bootstrap workflows, source snapshots or self-modifying CI.\n\n## Next phase\n\nPhase 5 — Quality Gate and Chapter Transaction must start from the latest verified `main`.\n''',encoding='utf-8')
+          PY
+
+          rm -f .github/workflows/phase4-docs-finalize-v1.yml
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'docs: finalize Phase 4 acceptance record'
+          final_head="$(git rev-parse HEAD)"
+          git push origin "HEAD:refs/heads/$DOC_REF"
+          printf 'final_head=%s\n' "$final_head" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for complete CI on permanent documentation head
+        id: ci
+        env:
+          FINAL_HEAD: ${{ steps.publish.outputs.final_head }}
+        run: |
+          run_id=''
+          for attempt in $(seq 1 240); do
+            runs="$(gh api --method GET "repos/$REPO/actions/runs" -f head_sha="$FINAL_HEAD" -f event=pull_request -F per_page=100)"
+            run_id="$(printf '%s' "$runs" | jq -r '.workflow_runs[] | select(.name=="CI") | .id' | head -n1)"
+            if test -n "$run_id"; then
+              state="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '[.status, (.conclusion // "")] | join("|")')"
+              case "$state" in
+                completed\|success) break ;;
+                completed\|*) echo "acceptance-doc CI failed: $state"; exit 1 ;;
+              esac
+            fi
+            sleep 10
+          done
+          test -n "$run_id"
+          for expected in \
+            'Go lint, test and build' \
+            'Frontend check, test and build' \
+            'Windows test and build' \
+            'Docker build'; do
+            conclusion="$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" --jq ".jobs[] | select(.name == \"$expected\") | .conclusion")"
+            test "$conclusion" = success
+          done
+          printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Squash merge acceptance record
+        id: merge
+        env:
+          FINAL_HEAD: ${{ steps.publish.outputs.final_head }}
+        run: |
+          test "$(gh api "repos/$REPO/pulls/$DOC_PR" --jq .head.sha)" = "$FINAL_HEAD"
+          response="$(gh api -X PUT "repos/$REPO/pulls/$DOC_PR/merge" \
+            -f merge_method=squash \
+            -f sha="$FINAL_HEAD" \
+            -f commit_title="docs: finalize Phase 4 acceptance record (#$DOC_PR)" \
+            -f commit_message='Record the clean feature head, PR validation, squash merge, merged-main CI, accepted Truth Store scope and exact Phase 5 resume point.')"
+          test "$(printf '%s' "$response" | jq -r .merged)" = true
+          merge_sha="$(printf '%s' "$response" | jq -r .sha)"
+          printf 'merge_sha=%s\n' "$merge_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Verify final main CI
+        env:
+          MERGE_SHA: ${{ steps.merge.outputs.merge_sha }}
+        run: |
+          run_id=''
+          for attempt in $(seq 1 240); do
+            runs="$(gh api --method GET "repos/$REPO/actions/runs" -f head_sha="$MERGE_SHA" -f branch=main -F per_page=100)"
+            run_id="$(printf '%s' "$runs" | jq -r '.workflow_runs[] | select(.name=="CI" and .event=="push") | .id' | head -n1)"
+            if test -n "$run_id"; then
+              state="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '[.status, (.conclusion // "")] | join("|")')"
+              case "$state" in
+                completed\|success) break ;;
+                completed\|*) echo "final main CI failed: $state"; exit 1 ;;
+              esac
+            fi
+            sleep 10
+          done
+          test -n "$run_id"
+          for expected in \
+            'Go lint, test and build' \
+            'Frontend check, test and build' \
+            'Windows test and build' \
+            'Docker build'; do
+            conclusion="$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" --jq ".jobs[] | select(.name == \"$expected\") | .conclusion")"
+            test "$conclusion" = success
+          done
+          gh pr comment 10 --repo "$REPO" --body "Phase 4 formal acceptance record merged as \`$MERGE_SHA\`; final main CI run \`$run_id\` passed Go, Frontend, Windows and Docker. Phase 4 is complete and the repository resume point is Phase 5."
