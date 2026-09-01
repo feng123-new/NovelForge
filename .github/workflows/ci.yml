@@ -5,10 +5,8 @@ on:
     branches: [main]
   pull_request:
 
-# The temporary write grant below is guarded to the Phase 3 branch and is
-# removed immediately after the exact CI-generated artifacts are committed.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -133,34 +131,6 @@ jobs:
             web/package-lock.json
             web/dist
             .generated/FRONTEND_DEPENDENCY_LICENSES.md
-      - name: Commit exact generated Phase 3 artifacts
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name == github.repository &&
-          github.event.pull_request.head.ref == 'feature/phase-03-web-workspace'
-        env:
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: |
-          artifact_dir="$(mktemp -d)"
-          cp web/package-lock.json "$artifact_dir/package-lock.json"
-          cp -R web/dist "$artifact_dir/dist"
-          cp .generated/FRONTEND_DEPENDENCY_LICENSES.md "$artifact_dir/FRONTEND_DEPENDENCY_LICENSES.md"
-
-          git fetch origin "$HEAD_REF"
-          git checkout --force -B "$HEAD_REF" "origin/$HEAD_REF"
-          cp "$artifact_dir/package-lock.json" web/package-lock.json
-          rm -rf web/dist
-          cp -R "$artifact_dir/dist" web/dist
-          cp "$artifact_dir/FRONTEND_DEPENDENCY_LICENSES.md" docs/FRONTEND_DEPENDENCY_LICENSES.md
-
-          git add web/package-lock.json web/dist docs/FRONTEND_DEPENDENCY_LICENSES.md
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: commit generated frontend artifacts"
-          git push origin "HEAD:$HEAD_REF"
       - name: Verify lockfile and embedded build are committed
         run: |
           changes="$(git status --porcelain -- web/package-lock.json web/dist)"
