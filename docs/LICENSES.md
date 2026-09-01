@@ -44,9 +44,30 @@ The corresponding reviews:
 
 Any additional review requires equivalent version-specific evidence, a written review in this file, and a dedicated regression test.
 
+## Phase 3 frontend toolchain
+
+Phase 3 adds a build-time-only Svelte 5, Vite 6, TypeScript, Tailwind CSS, DaisyUI, Vitest, jsdom and Testing Library toolchain. The browser bundle has no runtime package manager and is served from the embedded `web/dist` filesystem.
+
+The exact graph is locked by `web/package-lock.json`. After `npm ci`, CI traverses every installed top-level, scoped and nested package and records the package name, exact version and declared license in `docs/FRONTEND_DEPENDENCY_LICENSES.md`.
+
+```sh
+cd web
+npm ci
+npm run check
+npm test
+npm run build
+cd ..
+node scripts/frontend_dependency_license_inventory.mjs > docs/FRONTEND_DEPENDENCY_LICENSES.md
+node scripts/frontend_dependency_license_inventory.mjs --check docs/FRONTEND_DEPENDENCY_LICENSES.md
+```
+
+The frontend policy fails closed for missing license metadata and rejects GPL, AGPL, LGPL, SSPL, BUSL and Commons Clause identifiers. A future exception requires exact package-version evidence, a written review here and a regression test; broad package-name exceptions are prohibited.
+
+No JavaScript, CSS, component or test source was copied from the MIT product reference. The Phase 3 interface is an original implementation of the NovelForge requirements.
+
 ## MIT code policy
 
-`Nigh/show-me-the-story` is MIT-licensed. The NovelForge server, project repository, migrations, API, tests, and Web foundation are original implementations based on requirements and public product behavior; no source from that repository is copied in Phase 2.
+`Nigh/show-me-the-story` is MIT-licensed. The NovelForge server, project repository, migrations, API, tests, and Web foundation are original implementations based on requirements and public product behavior; no source from that repository is copied in Phases 2 or 3.
 
 Before incorporating MIT code in a future change, the author must:
 
@@ -61,7 +82,7 @@ Before incorporating MIT code in a future change, the author must:
 
 Allowed inputs are public documentation, high-level architecture concepts, and observable product behavior. NovelForge design documents define independent interfaces and tests first; implementation is written without consulting or transcribing copyleft source.
 
-No code, SQL, component, test, or prompt in the Phase 2 implementation was copied from either clean-room reference repository.
+No code, SQL, component, test, prompt or generated asset in the Phase 2 or Phase 3 implementation was copied from either clean-room reference repository.
 
 ## Review checklist
 
@@ -72,7 +93,8 @@ Every pull request that touches third-party-derived material must answer:
 - Is its license compatible with Apache-2.0 distribution?
 - Are required notices present?
 - Does the change cross the GPL/AGPL clean-room boundary?
-- Does `docs/DEPENDENCY_LICENSES.md` exactly match the resolved lockfile?
+- Does `docs/DEPENDENCY_LICENSES.md` exactly match the resolved Go lockfile?
+- Does `docs/FRONTEND_DEPENDENCY_LICENSES.md` exactly match the npm lockfile?
 - Does the CGo-disabled release build still pass?
 
 When uncertain, do not merge the copied implementation until the boundary is resolved.
