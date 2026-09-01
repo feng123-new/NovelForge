@@ -1,0 +1,255 @@
+name: Apply and accept Phase 4
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: apply-and-accept-phase-04
+  cancel-in-progress: false
+
+jobs:
+  apply-test-merge-record:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'feature/phase-04-truth-store'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HEAD_REF: feature/phase-04-truth-store
+      PHASE_PR: "10"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/phase-04-truth-store
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Apply deterministic Phase 4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply_phase4.py
+          gofmt -w internal/truth internal/project/truth.go internal/project/truth_test.go internal/server/truth.go internal/server/truth_test.go internal/project/repository.go internal/server/server.go internal/server/openapi_test.go
+
+      - name: Restore permanent CI and add Truth gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/ci.yml')
+          text = p.read_text()
+          text = text.replace(
+              './internal/db/migrate ./internal/project ./internal/server/...',
+              './internal/db/migrate ./internal/project ./internal/truth/... ./internal/server/...',
+          )
+          marker = "      - name: Validate OpenAPI routes and schemas\n"
+          heavy = """      - name: Truth 100k-row temporal index regression
+        env:
+          GOWORK: \"off\"
+          NOVELFORGE_HEAVY_TESTS: \"1\"
+        run: go test -buildvcs=false -count=1 ./internal/truth -run '^TestQueryPlanAt100K$'
+"""
+          if 'Truth 100k-row temporal index regression' not in text:
+              text = text.replace(marker, heavy + marker, 1)
+          p.write_text(text)
+          PY
+          rm -f .github/workflows/phase4-bootstrap.yml
+          rm -f .github/workflows/phase4-finalize.yml
+          rm -f .github/workflows/phase4-apply.yml
+          rm -f scripts/apply_phase4.py
+
+      - name: Commit auditable production implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          forbidden="$(git diff --cached --name-only | grep -E '(^vendor/|^\.generated/|\.db$|\.sqlite$|\.pem$|\.key$)' || true)"
+          test -z "$forbidden" || { printf 'forbidden generated or sensitive files:\n%s\n' "$forbidden"; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: implement structured temporal truth store'
+          git push origin "HEAD:$HEAD_REF"
+          echo "FINAL_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Go formatting, vet, full tests, race and CGo-free build
+        shell: bash
+        env:
+          GOWORK: "off"
+        run: |
+          set -euo pipefail
+          go mod tidy
+          go mod download all
+          unformatted="$(gofmt -l .)"
+          test -z "$unformatted" || { printf 'gofmt required for:\n%s\n' "$unformatted"; exit 1; }
+          go vet ./...
+          go test -buildvcs=false -count=1 ./...
+          go test -race -buildvcs=false -count=1 ./internal/db/migrate ./internal/project ./internal/truth/... ./internal/server/...
+          NOVELFORGE_HEAVY_TESTS=1 go test -buildvcs=false -count=1 ./internal/truth -run '^TestQueryPlanAt100K$'
+          CGO_ENABLED=0 go build -trimpath ./cmd/novelforge
+          git diff --exit-code -- go.mod go.sum
+          go run ./scripts/dependency_license_inventory.go -check docs/DEPENDENCY_LICENSES.md
+
+      - name: Frontend and release-boundary gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd web
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          npm test
+          npm run build
+          npm audit --audit-level=high
+          cd ..
+          node scripts/frontend_dependency_license_inventory.mjs --check docs/FRONTEND_DEPENDENCY_LICENSES.md
+          git diff --exit-code -- web/package-lock.json web/dist
+          sh -n scripts/install.sh scripts/uninstall.sh scripts/install_lifecycle_smoke.sh scripts/brand_audit.sh
+          sh scripts/install_lifecycle_smoke.sh
+          sh scripts/brand_audit.sh
+          test -s web/dist/index.html
+
+      - name: Dispatch and require permanent PR CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run ci.yml --ref "$HEAD_REF"
+          run_id=""
+          status=""
+          conclusion=""
+          for _ in $(seq 1 180); do
+            runs="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$FINAL_HEAD&event=workflow_dispatch&per_page=20")"
+            run_id="$(jq -r '.workflow_runs[] | select(.name == "CI") | .id' <<<"$runs" | head -1)"
+            if [[ -n "$run_id" ]]; then
+              status="$(jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status' <<<"$runs")"
+              conclusion="$(jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion' <<<"$runs")"
+              if [[ "$status" == completed ]]; then
+                [[ "$conclusion" == success ]] || exit 1
+                break
+              fi
+            fi
+            sleep 10
+          done
+          test -n "$run_id"
+          test "$status" = completed
+          test "$conclusion" = success
+          echo "PR_CI_RUN=$run_id" >> "$GITHUB_ENV"
+
+      - name: Ready and squash-merge PR 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr ready "$PHASE_PR" --repo "$GITHUB_REPOSITORY" || true
+          response="$(gh api --method PUT "/repos/$GITHUB_REPOSITORY/pulls/$PHASE_PR/merge" \
+            -f merge_method=squash \
+            -f sha="$FINAL_HEAD" \
+            -f commit_title='feat: add structured truth store (#10)' \
+            -f commit_message='Complete Phase 4 with append-only temporal Truth events, deterministic projections, Chapter-N safe reads, provenance and authority controls, durable conflicts, explicit supersede, bounded rebuilds, REST/OpenAPI contracts and cross-platform regression gates.')"
+          jq -e '.merged == true' <<<"$response"
+          echo "PHASE_MERGE_SHA=$(jq -r '.sha' <<<"$response")" >> "$GITHUB_ENV"
+
+      - name: Dispatch and require main CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run ci.yml --ref main
+          run_id=""
+          status=""
+          conclusion=""
+          for _ in $(seq 1 180); do
+            runs="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$PHASE_MERGE_SHA&event=workflow_dispatch&per_page=20")"
+            run_id="$(jq -r '.workflow_runs[] | select(.name == "CI") | .id' <<<"$runs" | head -1)"
+            if [[ -n "$run_id" ]]; then
+              status="$(jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status' <<<"$runs")"
+              conclusion="$(jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion' <<<"$runs")"
+              if [[ "$status" == completed ]]; then
+                [[ "$conclusion" == success ]] || exit 1
+                break
+              fi
+            fi
+            sleep 10
+          done
+          test -n "$run_id"
+          test "$status" = completed
+          test "$conclusion" = success
+          echo "MAIN_CI_RUN=$run_id" >> "$GITHUB_ENV"
+
+      - name: Create acceptance record PR
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout -B docs/phase-04-acceptance origin/main
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          p = Path('docs/IMPLEMENTATION_STATUS.md')
+          text = p.read_text()
+          text = text.replace(
+              '| 4 — Structured Truth Store | implementation complete; acceptance pending | Temporal event log, projections, provenance, conflicts, supersede, rebuild and Truth APIs are implemented on PR #10. |',
+              '| 4 — Structured Truth Store | complete | PR #10 merged; final PR CI and merged-main CI passed. |',
+          )
+          text = text.replace(
+              '| 5–13 | not started | Begin only after Phase 4 PR and merged-main CI pass. |',
+              '| 5–13 | not started | Begin Phase 5 from the verified Phase 4 main commit. |',
+          )
+          evidence = f'''\n## Phase 4 acceptance evidence\n\n- Pull request: [#10](https://github.com/{os.environ['GITHUB_REPOSITORY']}/pull/10) — squash merged.\n- Final PR head: `{os.environ['FINAL_HEAD']}`.\n- Final PR CI: run `{os.environ['PR_CI_RUN']}` — success.\n- Main merge commit: `{os.environ['PHASE_MERGE_SHA']}`.\n- Merged-main CI: run `{os.environ['MAIN_CI_RUN']}` — success.\n- Next phase: Phase 5 — Quality Gate and chapter transaction.\n'''
+          if '## Phase 4 acceptance evidence' not in text:
+              text += evidence
+          p.write_text(text)
+          PY
+          git add docs/IMPLEMENTATION_STATUS.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'docs: finalize Phase 4 acceptance record'
+          git push --force origin HEAD:docs/phase-04-acceptance
+          docs_head="$(git rev-parse HEAD)"
+          url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head docs/phase-04-acceptance --title 'docs: finalize Phase 4 acceptance record' --body "Records PR #10, final PR CI $PR_CI_RUN, squash merge $PHASE_MERGE_SHA and merged-main CI $MAIN_CI_RUN. This PR changes only the implementation status record.")"
+          docs_pr="${url##*/}"
+          gh workflow run ci.yml --ref docs/phase-04-acceptance
+          run_id=""
+          status=""
+          conclusion=""
+          for _ in $(seq 1 180); do
+            runs="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$docs_head&event=workflow_dispatch&per_page=20")"
+            run_id="$(jq -r '.workflow_runs[] | select(.name == "CI") | .id' <<<"$runs" | head -1)"
+            if [[ -n "$run_id" ]]; then
+              status="$(jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status' <<<"$runs")"
+              conclusion="$(jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion' <<<"$runs")"
+              [[ "$status" != completed ]] || { [[ "$conclusion" == success ]] || exit 1; break; }
+            fi
+            sleep 10
+          done
+          test "$status" = completed
+          test "$conclusion" = success
+          response="$(gh api --method PUT "/repos/$GITHUB_REPOSITORY/pulls/$docs_pr/merge" -f merge_method=squash -f sha="$docs_head" -f commit_title="docs: finalize Phase 4 acceptance record (#$docs_pr)")"
+          jq -e '.merged == true' <<<"$response"
+          docs_merge_sha="$(jq -r '.sha' <<<"$response")"
+          gh workflow run ci.yml --ref main
+          for _ in $(seq 1 180); do
+            runs="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$docs_merge_sha&event=workflow_dispatch&per_page=20")"
+            run_id="$(jq -r '.workflow_runs[] | select(.name == "CI") | .id' <<<"$runs" | head -1)"
+            if [[ -n "$run_id" ]]; then
+              status="$(jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status' <<<"$runs")"
+              conclusion="$(jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion' <<<"$runs")"
+              [[ "$status" != completed ]] || { [[ "$conclusion" == success ]] || exit 1; break; }
+            fi
+            sleep 10
+          done
+          test "$status" = completed
+          test "$conclusion" = success
