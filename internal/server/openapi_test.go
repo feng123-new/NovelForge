@@ -26,14 +26,18 @@ func TestOpenAPICoversImplementedRoutesAndUniqueOperations(t *testing.T) {
 		t.Fatalf("openapi = %q", document.OpenAPI)
 	}
 	expected := map[string][]string{
-		"/api/health":                  {"get"},
-		"/api/openapi.json":            {"get"},
-		"/api/events":                  {"get"},
-		"/api/projects":                {"get", "post"},
-		"/api/projects/{id}":           {"get", "patch", "delete"},
-		"/api/projects/{id}/archive":   {"post"},
-		"/api/projects/{id}/unarchive": {"post"},
-		"/api/projects/{id}/duplicate": {"post"},
+		"/api/health":                   {"get"},
+		"/api/openapi.json":             {"get"},
+		"/api/events":                   {"get"},
+		"/api/models":                   {"get"},
+		"/api/settings":                 {"get"},
+		"/api/projects":                 {"get", "post"},
+		"/api/projects/{id}":            {"get", "patch", "delete"},
+		"/api/projects/{id}/archive":    {"post"},
+		"/api/projects/{id}/unarchive":  {"post"},
+		"/api/projects/{id}/duplicate":  {"post"},
+		"/api/projects/{id}/chapters":   {"get"},
+		"/api/projects/{id}/foundation": {"get", "post"},
 	}
 	seenOperations := make(map[string]string)
 	for path, methods := range expected {
