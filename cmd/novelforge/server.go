@@ -42,6 +42,11 @@ func runServerCommand(argv []string) int {
 		fmt.Fprintf(os.Stderr, "server: %v\n", err)
 		return 1
 	}
+	defer func() {
+		if err := app.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "server close: %v\n", err)
+		}
+	}()
 	if !isLoopbackHost(*host) {
 		fmt.Fprintln(os.Stderr, "警告：NovelForge 正在监听非回环地址。请使用防火墙或可信反向代理限制访问，且不要把未受保护的本地工作区暴露到公网。")
 	}
