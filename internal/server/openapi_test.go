@@ -46,6 +46,12 @@ func TestOpenAPICoversImplementedRoutesAndUniqueOperations(t *testing.T) {
 		"/api/projects/{id}/duplicate":  {"post"},
 		"/api/projects/{id}/chapters":   {"get"},
 		"/api/projects/{id}/foundation": {"get", "post"},
+		"/api/truth/events":             {"get", "post"},
+		"/api/truth/state":              {"get"},
+		"/api/truth/state:batch":        {"post"},
+		"/api/truth/conflicts":          {"get"},
+		"/api/truth/rebuild":            {"post"},
+		"/api/truth/verify":             {"get"},
 	}
 	seenOperations := make(map[string]string)
 	for path, methods := range expected {
@@ -112,4 +118,94 @@ func TestOpenAPIErrorEnvelopeDoesNotExposeInternalFields(t *testing.T) {
 		!strings.Contains(serialized, `"trace_id"`) {
 		t.Fatal("OpenAPI is missing the common error envelope")
 	}
+}
+
+func TestOpenAPITruthContractsMatchProductionTypes(t *testing.T) {
+	t.Parallel()
+	var document struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Ref  string `json:"$ref"`
+				Name string `json:"name"`
+			} `json:"parameters"`
+			RequestBody struct {
+				Content map[string]struct {
+					Schema struct {
+						Ref string `json:"$ref"`
+					} `json:"schema"`
+				} `json:"content"`
+			} `json:"requestBody"`
+		} `json:"paths"`
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string `json:"required"`
+				Properties map[string]struct {
+					Type     any      `json:"type"`
+					Enum     []string `json:"enum"`
+					Ref      string   `json:"$ref"`
+					MaxItems int      `json:"maxItems"`
+				} `json:"properties"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(openAPISpec, &document); err != nil {
+		t.Fatal(err)
+	}
+
+	authority := document.Components.Schemas["TruthEventInput"].Properties["authority"].Enum
+	wantAuthority := []string{
+		"llm_suggestion",
+		"story_compass",
+		"volume_plan",
+		"arc_plan",
+		"chapter_plan",
+		"generated_final",
+		"human_final",
+	}
+	if strings.Join(authority, ",") != strings.Join(wantAuthority, ",") {
+		t.Fatalf("truth authority enum = %v, want %v", authority, wantAuthority)
+	}
+
+	source := document.Components.Schemas["TruthSource"]
+	for _, field := range []string{"type", "id", "chapter", "version"} {
+		if !containsString(source.Required, field) {
+			t.Errorf("TruthSource is missing required field %q", field)
+		}
+	}
+	conflict := document.Components.Schemas["TruthConflict"]
+	if !containsString(conflict.Required, "status") || strings.Join(conflict.Properties["status"].Enum, ",") != "unresolved,resolved" {
+		t.Fatalf("TruthConflict status contract is incomplete: %#v", conflict.Properties["status"])
+	}
+	batch := document.Components.Schemas["TruthBatchRequest"]
+	if batch.Properties["queries"].MaxItems != 100 {
+		t.Fatalf("TruthBatchRequest maxItems = %d, want 100", batch.Properties["queries"].MaxItems)
+	}
+	if ref := document.Paths["/api/truth/state:batch"]["post"].RequestBody.Content["application/json"].Schema.Ref; ref != "#/components/schemas/TruthBatchRequest" {
+		t.Fatalf("batch request schema = %q", ref)
+	}
+	for _, route := range []string{"/api/truth/events", "/api/truth/state:batch", "/api/truth/rebuild"} {
+		operation := document.Paths[route]["post"]
+		if len(operation.Parameters) != 1 || operation.Parameters[0].Ref != "#/components/parameters/IdempotencyKey" {
+			t.Fatalf("%s does not reuse IdempotencyKey: %#v", route, operation.Parameters)
+		}
+	}
+
+	eventParameters := map[string]bool{}
+	for _, parameter := range document.Paths["/api/truth/events"]["get"].Parameters {
+		eventParameters[parameter.Name] = true
+	}
+	for _, name := range []string{"project_id", "after_sequence", "through_chapter", "subject_type", "subject_id", "predicate", "limit"} {
+		if !eventParameters[name] {
+			t.Errorf("GET /api/truth/events is missing %q", name)
+		}
+	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

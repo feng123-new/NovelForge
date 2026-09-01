@@ -224,6 +224,17 @@ func (s *Server) executeIdempotent(
 		writeFailure(w, r, *bodyFailure)
 		return
 	}
+	s.executeIdempotentBody(w, r, operation, projectID, body, handler)
+}
+
+func (s *Server) executeIdempotentBody(
+	w http.ResponseWriter,
+	r *http.Request,
+	operation string,
+	projectID string,
+	body []byte,
+	handler idempotentOperation,
+) {
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if key == "" {
 		writeAPIError(
