@@ -4,6 +4,12 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   base: './',
   plugins: [svelte()],
+  resolve: {
+    // Component tests run in jsdom and must use Svelte's browser entry.
+    // Without this explicit condition, Vitest can resolve the SSR entry,
+    // where mount() is deliberately unavailable.
+    conditions: ['browser']
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
