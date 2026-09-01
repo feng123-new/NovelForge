@@ -64,7 +64,12 @@ jobs:
       - name: Targeted race tests
         env:
           GOWORK: "off"
-        run: go test -race -buildvcs=false -count=1 ./internal/db/migrate ./internal/project ./internal/server/...
+        run: go test -race -buildvcs=false -count=1 ./internal/db/migrate ./internal/project ./internal/truthstore ./internal/server/...
+      - name: Truth Store 100k temporal index gate
+        env:
+          GOWORK: "off"
+          NOVELFORGE_SCALE_TEST: "1"
+        run: go test -buildvcs=false -count=1 ./internal/truthstore -run '^TestHundredThousandFactTemporalQueryUsesIndex$'
       - name: Validate OpenAPI routes and schemas
         env:
           GOWORK: "off"
