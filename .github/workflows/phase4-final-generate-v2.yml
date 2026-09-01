@@ -1,0 +1,89 @@
+name: Phase 4 corrected final generation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: phase4-authoritative-generation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  generate-test-publish:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feature/phase-04-truth-store'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Preserve generator and cancel superseded recovery runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          cp .github/scripts/phase4_recover_generate.py /tmp/phase4_recover_generate.py
+          cp .github/scripts/phase4_recover_patch_all.py /tmp/phase4_recover_patch_all.py
+          cp .github/scripts/phase4_recover_patch_root.py /tmp/phase4_recover_patch_root.py
+          cp .github/scripts/phase4_recover_patch_migrations.py /tmp/phase4_recover_patch_migrations.py
+          cp .github/scripts/phase4_recover_patch_temporal.py /tmp/phase4_recover_patch_temporal.py
+          cp .github/scripts/phase4_recover_patch_dispatch_v3.py /tmp/phase4_recover_patch_dispatch_v3.py
+          cp .github/scripts/phase4_recover_patch_acceptance_v2.py /tmp/phase4_recover_patch_acceptance_v2.py
+
+          runs="$(gh api --method GET "repos/$REPO/actions/runs" \
+            -f branch='feature/phase-04-truth-store' -F per_page=100)"
+          printf '%s' "$runs" | jq -r ".workflow_runs[] | select(.id != $GITHUB_RUN_ID) | select(.status == \"queued\" or .status == \"in_progress\") | select(.name | startswith(\"Phase 4\")) | .id" |
+            while read -r run_id; do
+              test -z "$run_id" || gh api -X POST "repos/$REPO/actions/runs/$run_id/cancel" >/dev/null 2>&1 || true
+            done
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Generate and validate clean implementation
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GOWORK: "off"
+        run: |
+          python3 /tmp/phase4_recover_patch_all.py /tmp/phase4_recover_generate.py
+          python3 /tmp/phase4_recover_patch_root.py /tmp/phase4_recover_generate.py
+          python3 /tmp/phase4_recover_patch_migrations.py /tmp/phase4_recover_generate.py
+          python3 /tmp/phase4_recover_patch_temporal.py /tmp/phase4_recover_generate.py
+          python3 /tmp/phase4_recover_patch_dispatch_v3.py /tmp/phase4_recover_generate.py
+          python3 /tmp/phase4_recover_patch_acceptance_v2.py /tmp/phase4_recover_generate.py
+          python3 -m py_compile /tmp/phase4_recover_generate.py
+
+          git fetch origin main "$HEAD_REF"
+          git reset --hard origin/main
+          python3 /tmp/phase4_recover_generate.py "$GITHUB_WORKSPACE"
+
+          gofmt -w \
+            internal/truthstore \
+            internal/project/truth.go \
+            internal/project/truth_migration.go \
+            internal/project/truth_test.go \
+            internal/server/truth.go \
+            internal/server/truth_test.go \
+            internal/server/server.go \
+            internal/server/openapi_test.go
+
+          go test -buildvcs=false -count=1 ./internal/truthstore ./internal/project ./internal/server/...
+          NOVELFORGE_SCALE_TEST=1 go test -buildvcs=false -count=1 ./internal/truthstore -run '^TestHundredThousandFactTemporalQueryUsesIndex$'
+          go test -race -buildvcs=false -count=1 ./internal/truthstore ./internal/project ./internal/server/...
+          go vet ./...
+          go test -buildvcs=false -count=1 ./...
+          CGO_ENABLED=0 go build -trimpath ./cmd/novelforge
+          git diff --check
+
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat: implement temporal structured truth store"
+          git push --force origin "HEAD:$HEAD_REF"
