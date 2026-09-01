@@ -1,0 +1,18 @@
+name: Phase 4 ready transition
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  mark-ready:
+    if: github.head_ref == 'ops/phase4-ready'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark Phase 4 PR ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr ready 10 --repo "$GITHUB_REPOSITORY"
