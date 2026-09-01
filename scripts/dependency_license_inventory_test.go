@@ -11,7 +11,9 @@ func TestClassifyLicense(t *testing.T) {
 	tests := map[string]string{
 		"Apache License Version 2.0": "Apache-2.0",
 		"Permission is hereby granted, free of charge, to any person obtaining a copy":       "MIT",
+		"SQLite Is Public Domain and dedicated to the public domain":                        "Public-Domain",
 		"Redistribution and use in source and binary forms ... Neither the name of X":        "BSD-3-Clause",
+		"Redistribution and use in source and binary forms ... Neither the names of X and Y": "BSD-3-Clause",
 		"Redistribution and use in source and binary forms are permitted":                    "BSD-2-Clause",
 		"Permission to use, copy, modify, and/or distribute this software for any purpose":   "ISC",
 		"GNU AFFERO GENERAL PUBLIC LICENSE":                                                  "AGPL",
@@ -34,7 +36,7 @@ func TestClassifyLicense(t *testing.T) {
 
 func TestValidatePolicy(t *testing.T) {
 	t.Parallel()
-	if err := validatePolicy([]inventoryEntry{{Module: "safe", License: "MIT"}}); err != nil {
+	if err := validatePolicy([]inventoryEntry{{Module: "safe", License: "MIT OR Public-Domain"}}); err != nil {
 		t.Fatalf("safe policy: %v", err)
 	}
 	if err := validatePolicy([]inventoryEntry{{Module: "unsafe", License: "MIT OR GPL"}}); err == nil {
