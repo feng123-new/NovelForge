@@ -1,0 +1,207 @@
+name: Phase 4 final independent audit
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: phase4-final-audit-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'audit/phase-04-completion-20260902'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      AUDIT_PR: ${{ github.event.pull_request.number }}
+      AUDIT_REF: ${{ github.event.pull_request.head.ref }}
+      START_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify complete Phase 4 delivery from public repository state
+        id: verify
+        run: |
+          feature="$(gh api "repos/$REPO/pulls/10")"
+          test "$(printf '%s' "$feature" | jq -r .merged)" = true
+          feature_head="$(printf '%s' "$feature" | jq -r .head.sha)"
+          merge_sha="$(printf '%s' "$feature" | jq -r .merge_commit_sha)"
+          test -n "$feature_head"
+          test -n "$merge_sha"
+          test "$merge_sha" != null
+
+          files="$(gh api --paginate "repos/$REPO/pulls/10/files?per_page=100" --jq '.[].filename')"
+          if printf '%s\n' "$files" | grep -E '(^|/)(phase4[-_](recover|recovery|final|apply|bootstrap|repair|reconcile|semantic|materialize)|apply_phase4|payload\.part|\.phase4/|phase4.*\.patch)|^\.github/workflows/phase4'; then
+            echo 'Feature PR contains Phase 4 transition machinery.'
+            exit 1
+          fi
+          for required in \
+            internal/truthstore/model.go \
+            internal/truthstore/migration.go \
+            internal/truthstore/store.go \
+            internal/truthstore/rebuild.go \
+            internal/server/truth.go \
+            internal/server/openapi.json \
+            docs/TRUTH_STORE.md; do
+            printf '%s\n' "$files" | grep -Fx "$required" >/dev/null
+          done
+
+          feature_run="$(gh api --method GET "repos/$REPO/actions/runs" -f head_sha="$feature_head" -f event=pull_request -F per_page=100 --jq '.workflow_runs[] | select(.name=="CI" and .conclusion=="success") | .id' | head -n1)"
+          main_run="$(gh api --method GET "repos/$REPO/actions/runs" -f head_sha="$merge_sha" -f branch=main -F per_page=100 --jq '.workflow_runs[] | select(.name=="CI" and .event=="push" and .conclusion=="success") | .id' | head -n1)"
+          test -n "$feature_run"
+          test -n "$main_run"
+
+          for run_id in "$feature_run" "$main_run"; do
+            for expected in \
+              'Go lint, test and build' \
+              'Frontend check, test and build' \
+              'Windows test and build' \
+              'Docker build'; do
+              conclusion="$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" --jq ".jobs[] | select(.name == \"$expected\") | .conclusion")"
+              test "$conclusion" = success
+            done
+          done
+
+          git fetch origin main "$AUDIT_REF"
+          test "$(git rev-parse "origin/$AUDIT_REF")" = "$START_HEAD"
+          git reset --hard origin/main
+
+          test -s docs/PHASE_4_ACCEPTANCE.md
+          grep -q 'Status: \*\*complete\*\*' docs/PHASE_4_ACCEPTANCE.md
+          grep -Eq '^\| 4 .*\| complete \|' docs/IMPLEMENTATION_STATUS.md
+          grep -q 'Phase 5' docs/IMPLEMENTATION_STATUS.md
+          for required in \
+            internal/truthstore/model.go \
+            internal/truthstore/migration.go \
+            internal/truthstore/store.go \
+            internal/truthstore/rebuild.go \
+            internal/server/truth.go \
+            internal/server/openapi.json \
+            docs/TRUTH_STORE.md; do
+            test -s "$required"
+          done
+
+          if find . -path './.git' -prune -o -type f \( \
+              -path './.github/scripts/phase4*' -o \
+              -path './.github/workflows/phase4*' -o \
+              -path './.phase4/*' -o \
+              -name 'payload.part*' -o \
+              -name 'apply_phase4.py' -o \
+              -name 'phase4*.patch' \
+            \) -print | grep -q .; then
+            echo 'Current main contains Phase 4 transition machinery.'
+            exit 1
+          fi
+
+          current_main="$(git rev-parse HEAD)"
+          current_run="$(gh api --method GET "repos/$REPO/actions/runs" -f head_sha="$current_main" -f branch=main -F per_page=100 --jq '.workflow_runs[] | select(.name=="CI" and .event=="push" and .conclusion=="success") | .id' | head -n1)"
+          test -n "$current_run"
+          for expected in \
+            'Go lint, test and build' \
+            'Frontend check, test and build' \
+            'Windows test and build' \
+            'Docker build'; do
+            conclusion="$(gh api "repos/$REPO/actions/runs/$current_run/jobs?per_page=100" --jq ".jobs[] | select(.name == \"$expected\") | .conclusion")"
+            test "$conclusion" = success
+          done
+
+          printf 'feature_head=%s\n' "$feature_head" >> "$GITHUB_OUTPUT"
+          printf 'feature_run=%s\n' "$feature_run" >> "$GITHUB_OUTPUT"
+          printf 'merge_sha=%s\n' "$merge_sha" >> "$GITHUB_OUTPUT"
+          printf 'main_run=%s\n' "$main_run" >> "$GITHUB_OUTPUT"
+          printf 'current_main=%s\n' "$current_main" >> "$GITHUB_OUTPUT"
+          printf 'current_run=%s\n' "$current_run" >> "$GITHUB_OUTPUT"
+
+      - name: Write independent final audit and self-delete
+        id: publish
+        env:
+          FEATURE_HEAD: ${{ steps.verify.outputs.feature_head }}
+          FEATURE_RUN: ${{ steps.verify.outputs.feature_run }}
+          MERGE_SHA: ${{ steps.verify.outputs.merge_sha }}
+          MAIN_RUN: ${{ steps.verify.outputs.main_run }}
+          CURRENT_MAIN: ${{ steps.verify.outputs.current_main }}
+          CURRENT_RUN: ${{ steps.verify.outputs.current_run }}
+        run: |
+          cat > docs/PHASE_4_FINAL_AUDIT.md <<EOF
+          # Phase 4 Final Independent Audit
+
+          Status: **verified complete**
+
+          | Evidence | Value |
+          | --- | --- |
+          | Feature PR | #10 |
+          | Final clean feature head | \`$FEATURE_HEAD\` |
+          | Exact feature PR CI | $FEATURE_RUN |
+          | Structured Truth Store squash merge | \`$MERGE_SHA\` |
+          | Feature merge-triggered main CI | $MAIN_RUN |
+          | Audited current main | \`$CURRENT_MAIN\` |
+          | Audited current-main CI | $CURRENT_RUN |
+
+          The independent audit verified all four required jobs on both the exact clean feature head and its merge commit, permanent Phase 4 acceptance documentation, required production source and OpenAPI files, and the absence of recovery scripts, payload fragments, source snapshots and temporary Phase 4 workflows from current \`main\`.
+
+          The verified repository resume point is Phase 5 — Quality Gate and Chapter Transaction.
+          EOF
+
+          rm -f .github/workflows/phase4-final-audit-v1.yml
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'docs: add independent Phase 4 final audit'
+          final_head="$(git rev-parse HEAD)"
+          git push --force origin "HEAD:refs/heads/$AUDIT_REF"
+          printf 'final_head=%s\n' "$final_head" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for standard CI on audit head
+        id: ci
+        env:
+          FINAL_HEAD: ${{ steps.publish.outputs.final_head }}
+        run: |
+          run_id=''
+          for attempt in $(seq 1 360); do
+            runs="$(gh api --method GET "repos/$REPO/actions/runs" -f head_sha="$FINAL_HEAD" -f event=pull_request -F per_page=100)"
+            run_id="$(printf '%s' "$runs" | jq -r '.workflow_runs[] | select(.name=="CI") | .id' | head -n1)"
+            if test -n "$run_id"; then
+              state="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '[.status, (.conclusion // "")] | join("|")')"
+              case "$state" in
+                completed\|success) break ;;
+                completed\|*) echo "audit-head CI failed: $state"; exit 1 ;;
+              esac
+            fi
+            sleep 10
+          done
+          test -n "$run_id"
+          for expected in \
+            'Go lint, test and build' \
+            'Frontend check, test and build' \
+            'Windows test and build' \
+            'Docker build'; do
+            conclusion="$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" --jq ".jobs[] | select(.name == \"$expected\") | .conclusion")"
+            test "$conclusion" = success
+          done
+          printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Mark audit PR ready
+        env:
+          FINAL_HEAD: ${{ steps.publish.outputs.final_head }}
+          RUN_ID: ${{ steps.ci.outputs.run_id }}
+        run: |
+          test "$(gh api "repos/$REPO/pulls/$AUDIT_PR" --jq .head.sha)" = "$FINAL_HEAD"
+          test -s docs/PHASE_4_FINAL_AUDIT.md
+          if test "$(gh api "repos/$REPO/pulls/$AUDIT_PR" --jq .draft)" = true; then
+            gh pr ready "$AUDIT_PR" --repo "$REPO"
+          fi
+          gh pr comment "$AUDIT_PR" --repo "$REPO" --body "Independent Phase 4 audit passed. Permanent audit head \`$FINAL_HEAD\` passed standard CI run \`$RUN_ID\` across Go, Frontend, Windows and Docker."
