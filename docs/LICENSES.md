@@ -28,20 +28,21 @@ The scanner recognizes `LICENSE`, `LICENSE.*`, `LICENSE-*`, `COPYING`, `COPYING.
 
 MPL-2.0 is classified before GPL-family references because the MPL text names GPL, LGPL, and AGPL only as possible secondary licenses. `github.com/hashicorp/golang-lru/v2@v2.0.7` is therefore correctly inventoried as MPL-2.0 rather than GPL.
 
-Two exact module-version reviews cover published snapshots whose module-cache root does not expose a classifiable license file:
+Two exact module-version reviews cover published snapshots whose module-cache root includes an unclassifiable grant component or does not expose a classifiable license file:
 
 - `github.com/mattn/go-localereader@v0.0.1` — MIT. The published snapshot predates the repository's MIT `LICENSE` file, while its source-bearing files and the currently MIT-licensed upstream source have identical Git blob IDs.
 - `modernc.org/memory@v1.11.0` — BSD-3-Clause. The authoritative Go package record for the exact version reports BSD-3-Clause and identifies `gitlab.com/cznic/memory` as the source repository; the source headers also state that use is governed by the BSD-style license in the upstream `LICENSE` file.
 
-The corresponding overrides:
+The corresponding reviews:
 
 - are keyed to the complete `module@version` string;
-- apply only when cache-file detection returns `UNKNOWN`;
-- cannot hide a detected incompatible license;
+- replace only an `UNKNOWN` component in the scanner result;
+- preserve every already detected license component, including incompatible ones;
+- cannot hide GPL, AGPL, LGPL, SSPL, or another detected policy violation;
 - do not apply to future or replacement versions;
-- are covered by regression tests that reject broader version matching.
+- are covered by regression tests that reject broader version matching and verify incompatible components remain blocked.
 
-Any additional override requires equivalent version-specific evidence, a written review in this file, and a dedicated regression test.
+Any additional review requires equivalent version-specific evidence, a written review in this file, and a dedicated regression test.
 
 ## MIT code policy
 
