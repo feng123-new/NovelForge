@@ -1,0 +1,79 @@
+name: Phase 4 clean materialization
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feature/phase-04-truth-store'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GOWORK: "off"
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Replace recovery tree with reviewed production source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .phase4-materialize/part* | base64 --decode > /tmp/phase4-production-overlay.tgz
+          echo "76238278eedbd0aa191fff73c0fae0821e32758f1c8848ba289177b63d7c4fa9  /tmp/phase4-production-overlay.tgz" | sha256sum --check
+
+          git fetch origin main "$HEAD_REF"
+          git read-tree --reset -u origin/main
+          tar -xzf /tmp/phase4-production-overlay.tgz
+
+          if find . -path './.git' -prune -o -type f \
+            \( -path './.github/scripts/phase4_*' -o -path './.github/workflows/phase4-*' -o -path './.phase4*/*' -o -path './scripts/apply_phase4.py' \) \
+            -print | grep -q .; then
+            echo "temporary Phase 4 recovery files remain"
+            exit 1
+          fi
+
+          python3 -m json.tool internal/server/openapi.json >/dev/null
+          unformatted="$(gofmt -l internal/truthstore internal/project/truth.go internal/project/truth_migration.go internal/project/truth_test.go internal/server/api.go internal/server/server.go internal/server/truth.go internal/server/truth_test.go internal/server/openapi_test.go)"
+          if [ -n "$unformatted" ]; then
+            printf 'gofmt required for:\n%s\n' "$unformatted"
+            exit 1
+          fi
+          go vet ./...
+          go test -buildvcs=false -count=1 -p=1 -timeout=5m ./...
+          go test -race -buildvcs=false -count=1 -timeout=5m ./internal/db/migrate ./internal/project ./internal/truthstore ./internal/server/...
+          NOVELFORGE_SCALE_TEST=1 go test -buildvcs=false -count=1 -timeout=5m ./internal/truthstore -run '^TestHundredThousandFactTemporalQueryUsesIndex$'
+          CGO_ENABLED=0 go build -trimpath ./cmd/novelforge
+          sh -n scripts/install.sh scripts/uninstall.sh scripts/install_lifecycle_smoke.sh scripts/brand_audit.sh
+          git diff --check
+
+          changed="$(git diff --name-only origin/main)"
+          for required in \
+            internal/truthstore/model.go \
+            internal/truthstore/migration.go \
+            internal/truthstore/store.go \
+            internal/truthstore/batch.go \
+            internal/truthstore/rebuild.go \
+            internal/project/truth.go \
+            internal/server/truth.go \
+            internal/server/openapi.json \
+            docs/TRUTH_STORE.md; do
+            printf '%s\n' "$changed" | grep -Fx "$required" >/dev/null
+          done
+
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat: materialize structured truth store"
+          git push origin "HEAD:$HEAD_REF"

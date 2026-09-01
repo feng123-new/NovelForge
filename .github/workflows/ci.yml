@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,15 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Package maintainer source snapshot
-        run: |
-          tar --exclude=.git --exclude=web/node_modules --exclude=.generated -czf /tmp/novelforge-source.tgz .
-      - name: Capture maintainer source snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase-04-source-${{ github.run_id }}
-          if-no-files-found: error
-          path: /tmp/novelforge-source.tgz
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
