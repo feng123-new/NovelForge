@@ -10,7 +10,7 @@ NovelForge is licensed under Apache License 2.0. The root `LICENSE` file is reta
 
 ## Phase 2 SQLite dependency
 
-Phase 2 adds `modernc.org/sqlite` as the SQLite driver. It is distributed under BSD-3-Clause terms and provides the required CGo-free build path. The exact selected module version and all transitive modules are recorded in `docs/DEPENDENCY_LICENSES.md` after `go mod tidy` resolves the committed graph.
+Phase 2 adds `modernc.org/sqlite` as the SQLite driver. Version `v1.57.0` provides the required CGo-free build path and ships permissive BSD-3-Clause, MIT, and SQLite public-domain notices. The exact selected module version and all transitive modules are recorded in `docs/DEPENDENCY_LICENSES.md` after `go mod tidy` resolves the committed graph.
 
 The dependency inventory is generated from the real module graph and module-cache license files:
 
@@ -28,14 +28,20 @@ The scanner recognizes `LICENSE`, `LICENSE.*`, `LICENSE-*`, `COPYING`, `COPYING.
 
 MPL-2.0 is classified before GPL-family references because the MPL text names GPL, LGPL, and AGPL only as possible secondary licenses. `github.com/hashicorp/golang-lru/v2@v2.0.7` is therefore correctly inventoried as MPL-2.0 rather than GPL.
 
-`github.com/mattn/go-localereader@v0.0.1` is the only exact-version reviewed override. Its published module snapshot predates the repository's MIT `LICENSE` file, while the source-bearing files in the tagged snapshot and the currently MIT-licensed upstream branch have identical Git blob IDs. The maintainer's upstream MIT grant is therefore recorded for that exact snapshot. The override:
+Two exact module-version reviews cover published snapshots whose module-cache root does not expose a classifiable license file:
 
-- is keyed to `github.com/mattn/go-localereader@v0.0.1` only;
-- applies only when cache-file detection returns `UNKNOWN`;
+- `github.com/mattn/go-localereader@v0.0.1` — MIT. The published snapshot predates the repository's MIT `LICENSE` file, while its source-bearing files and the currently MIT-licensed upstream source have identical Git blob IDs.
+- `modernc.org/memory@v1.11.0` — BSD-3-Clause. The authoritative Go package record for the exact version reports BSD-3-Clause and identifies `gitlab.com/cznic/memory` as the source repository; the source headers also state that use is governed by the BSD-style license in the upstream `LICENSE` file.
+
+The corresponding overrides:
+
+- are keyed to the complete `module@version` string;
+- apply only when cache-file detection returns `UNKNOWN`;
 - cannot hide a detected incompatible license;
-- does not apply to any future or replacement version.
+- do not apply to future or replacement versions;
+- are covered by regression tests that reject broader version matching.
 
-Any additional override requires equivalent source-identity evidence, a written review in this file, and a dedicated regression test.
+Any additional override requires equivalent version-specific evidence, a written review in this file, and a dedicated regression test.
 
 ## MIT code policy
 

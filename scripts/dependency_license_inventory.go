@@ -47,6 +47,7 @@ var forbiddenLicenses = map[string]struct{}{
 // docs/LICENSES.md; broad module- or vendor-level overrides are prohibited.
 var reviewedLicenseOverrides = map[string]string{
 	"github.com/mattn/go-localereader@v0.0.1": "MIT",
+	"modernc.org/memory@v1.11.0":              "BSD-3-Clause",
 }
 
 func main() {

@@ -88,12 +88,20 @@ func TestDetectModuleLicenseRecognizesHyphenatedGrantFiles(t *testing.T) {
 	}
 }
 
-func TestReviewedLicenseOverrideIsExact(t *testing.T) {
+func TestReviewedLicenseOverridesAreExact(t *testing.T) {
 	t.Parallel()
 	if reviewedLicenseOverrides["github.com/mattn/go-localereader@v0.0.1"] != "MIT" {
 		t.Fatal("expected reviewed exact-version MIT override")
 	}
-	if _, ok := reviewedLicenseOverrides["github.com/mattn/go-localereader@v0.0.2"]; ok {
-		t.Fatal("license override must not cover unreviewed versions")
+	if reviewedLicenseOverrides["modernc.org/memory@v1.11.0"] != "BSD-3-Clause" {
+		t.Fatal("expected reviewed exact-version BSD-3-Clause override")
+	}
+	for _, unreviewed := range []string{
+		"github.com/mattn/go-localereader@v0.0.2",
+		"modernc.org/memory@v1.12.0",
+	} {
+		if _, ok := reviewedLicenseOverrides[unreviewed]; ok {
+			t.Fatalf("license override must not cover unreviewed version %s", unreviewed)
+		}
 	}
 }
