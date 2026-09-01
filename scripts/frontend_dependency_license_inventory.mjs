@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -14,23 +14,45 @@ const checkPath = checkIndex >= 0 ? process.argv[checkIndex + 1] : '';
 const forbidden = /(?:^|[^A-Z])(AGPL|LGPL|GPL|SSPL|BUSL)(?:-|\b)|COMMONS CLAUSE/i;
 const records = new Map();
 
-async function walk(directory) {
+async function scanNodeModules(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name === '.bin') continue;
+    if (!entry.isDirectory() || entry.name === '.bin') continue;
     const full = join(directory, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name.startsWith('@') || relative(modulesRoot, full).split(/[\\/]/).length % 2 === 1) {
-        await walk(full);
-      }
+    if (entry.name.startsWith('@')) {
+      await scanScope(full);
       continue;
     }
-    if (!entry.isFile() || entry.name !== 'package.json') continue;
-    const data = JSON.parse(await readFile(full, 'utf8'));
-    if (!data.name || !data.version) continue;
-    const license = normalizeLicense(data.license ?? data.licenses);
-    const key = `${data.name}@${data.version}`;
-    records.set(key, { name: data.name, version: data.version, license });
+    await scanPackage(full);
+  }
+}
+
+async function scanScope(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory()) await scanPackage(join(directory, entry.name));
+  }
+}
+
+async function scanPackage(directory) {
+  let data;
+  try {
+    data = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+  } catch (error) {
+    console.error(`cannot inspect npm package at ${directory}: ${error.message}`);
+    process.exit(1);
+  }
+  if (!data.name || !data.version) {
+    console.error(`npm package metadata is incomplete at ${directory}`);
+    process.exit(1);
+  }
+  const license = normalizeLicense(data.license ?? data.licenses);
+  const key = `${data.name}@${data.version}`;
+  records.set(key, { name: data.name, version: data.version, license });
+  try {
+    await scanNodeModules(join(directory, 'node_modules'));
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
   }
 }
 
@@ -48,7 +70,7 @@ function escapeCell(value) {
   return String(value).replaceAll('|', '\\|').replaceAll('\n', ' ');
 }
 
-await walk(modulesRoot);
+await scanNodeModules(modulesRoot);
 const dependencies = [...records.values()].sort((left, right) =>
   `${left.name}@${left.version}`.localeCompare(`${right.name}@${right.version}`, 'en')
 );
@@ -82,7 +104,7 @@ if (checkPath) {
   let committed = '';
   try {
     committed = await readFile(resolve(root, checkPath), 'utf8');
-  } catch (error) {
+  } catch {
     console.error(`frontend license inventory is missing: ${checkPath}`);
     process.exit(1);
   }
