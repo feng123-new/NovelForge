@@ -40,6 +40,7 @@ jobs:
         with:
           name: dependency-metadata-${{ github.run_id }}
           if-no-files-found: warn
+          include-hidden-files: true
           path: |
             go.mod
             go.sum
@@ -86,6 +87,55 @@ jobs:
         run: sh scripts/install_lifecycle_smoke.sh
       - name: NovelForge brand audit
         run: sh scripts/brand_audit.sh
+
+  frontend:
+    name: Frontend check, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Resolve lockfile and install exact graph
+        working-directory: web
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts
+          fi
+          npm ci --ignore-scripts
+      - name: Type and Svelte checks
+        working-directory: web
+        run: npm run check
+      - name: Frontend tests
+        working-directory: web
+        run: npm test
+      - name: Production build
+        working-directory: web
+        run: npm run build
+      - name: Generate frontend dependency license inventory
+        run: |
+          mkdir -p .generated
+          node scripts/frontend_dependency_license_inventory.mjs > .generated/FRONTEND_DEPENDENCY_LICENSES.md
+      - name: Capture lockfile, build and license inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-metadata-${{ github.run_id }}
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            web/package-lock.json
+            web/dist
+            .generated/FRONTEND_DEPENDENCY_LICENSES.md
+      - name: Verify lockfile and embedded build are committed
+        run: |
+          changes="$(git status --porcelain -- web/package-lock.json web/dist)"
+          if [ -n "$changes" ]; then
+            printf 'Commit the exact generated frontend artifacts:\n%s\n' "$changes"
+            exit 1
+          fi
+      - name: Verify frontend dependency licenses
+        run: node scripts/frontend_dependency_license_inventory.mjs --check docs/FRONTEND_DEPENDENCY_LICENSES.md
 
   windows:
     name: Windows test and build
