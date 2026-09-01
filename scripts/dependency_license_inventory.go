@@ -41,6 +41,14 @@ var forbiddenLicenses = map[string]struct{}{
 	"REVIEW":  {},
 }
 
+// reviewedLicenseOverrides is intentionally exact and may only be used when a
+// published module snapshot omits a license file but an auditable upstream
+// grant covers the identical source. Every entry needs a written review in
+// docs/LICENSES.md; broad module- or vendor-level overrides are prohibited.
+var reviewedLicenseOverrides = map[string]string{
+	"github.com/mattn/go-localereader@v0.0.1": "MIT",
+}
+
 func main() {
 	checkPath := flag.String("check", "", "compare generated inventory with this file")
 	flag.Parse()
@@ -84,6 +92,11 @@ func buildInventory() ([]byte, []inventoryEntry, error) {
 		license, err := detectModuleLicense(effective.Dir)
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", item.Path, err)
+		}
+		if license == "UNKNOWN" {
+			if reviewed, ok := reviewedLicenseOverrides[item.Path+"@"+item.Version]; ok {
+				license = reviewed
+			}
 		}
 		version := item.Version
 		if item.Replace != nil {
@@ -165,10 +178,10 @@ func detectModuleLicense(root string) (string, error) {
 		name := strings.ToLower(item.Name())
 		path := filepath.Join(root, item.Name())
 		switch {
-		case name == "license" || strings.HasPrefix(name, "license."),
-			name == "copying" || strings.HasPrefix(name, "copying."):
+		case name == "license" || strings.HasPrefix(name, "license.") || strings.HasPrefix(name, "license-"),
+			name == "copying" || strings.HasPrefix(name, "copying.") || strings.HasPrefix(name, "copying-"):
 			primary = append(primary, path)
-		case name == "copyright" || strings.HasPrefix(name, "copyright."):
+		case name == "copyright" || strings.HasPrefix(name, "copyright.") || strings.HasPrefix(name, "copyright-"):
 			// COPYRIGHT files often contain notices rather than grant terms.
 			// Treat them only as a fallback when the module ships no primary
 			// LICENSE/COPYING file, otherwise an unrelated notice can turn a
@@ -205,14 +218,16 @@ func classifyLicense(text string) string {
 	switch {
 	case strings.Contains(lower, "server side public license"):
 		return "SSPL"
+	// MPL-2.0 names GPL-family licenses as optional secondary licenses. Check
+	// its own grant first so those references cannot create a false GPL result.
+	case strings.Contains(lower, "mozilla public license") && strings.Contains(lower, "version 2.0"):
+		return "MPL-2.0"
 	case strings.Contains(lower, "gnu affero general public license"):
 		return "AGPL"
 	case strings.Contains(lower, "gnu lesser general public license"):
 		return "LGPL"
 	case strings.Contains(lower, "gnu general public license"):
 		return "GPL"
-	case strings.Contains(lower, "mozilla public license") && strings.Contains(lower, "version 2.0"):
-		return "MPL-2.0"
 	case strings.Contains(lower, "eclipse public license"):
 		return "REVIEW"
 	case strings.Contains(lower, "apache license") && strings.Contains(lower, "version 2.0"):
