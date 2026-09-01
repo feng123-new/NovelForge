@@ -17,7 +17,11 @@ const records = new Map();
 async function scanNodeModules(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name === '.bin') continue;
+    // npm and build tools may create implementation caches such as .bin and
+    // .vite inside node_modules. They are not package roots and have no
+    // package.json, so exclude hidden tool state while still scanning every
+    // top-level, scoped, and nested installed package directory.
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
     const full = join(directory, entry.name);
     if (entry.name.startsWith('@')) {
       await scanScope(full);
@@ -30,7 +34,9 @@ async function scanNodeModules(directory) {
 async function scanScope(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.isDirectory()) await scanPackage(join(directory, entry.name));
+    if (entry.isDirectory() && !entry.name.startsWith('.')) {
+      await scanPackage(join(directory, entry.name));
+    }
   }
 }
 
