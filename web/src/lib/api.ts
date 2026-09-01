@@ -29,7 +29,7 @@ type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
 export class APIClient {
   constructor(
     private readonly baseURL = '/api',
-    private readonly fetcher: FetchLike = fetch
+    private readonly fetcher?: FetchLike
   ) {}
 
   health(): Promise<Health> {
@@ -97,7 +97,11 @@ export class APIClient {
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await this.fetcher(`${this.baseURL}${path}`, {
+    // Resolve the browser implementation when the request starts rather than
+    // when the module is imported. This keeps the singleton client compatible
+    // with browser instrumentation, test isolation, and future fetch wrappers.
+    const fetcher = this.fetcher ?? globalThis.fetch.bind(globalThis);
+    const response = await fetcher(`${this.baseURL}${path}`, {
       credentials: 'same-origin',
       ...init,
       headers: {
