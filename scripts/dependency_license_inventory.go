@@ -41,10 +41,10 @@ var forbiddenLicenses = map[string]struct{}{
 	"REVIEW":  {},
 }
 
-// reviewedLicenseOverrides is intentionally exact and may only be used when a
-// published module snapshot omits a license file but an auditable upstream
-// grant covers the identical source. Every entry needs a written review in
-// docs/LICENSES.md; broad module- or vendor-level overrides are prohibited.
+// reviewedLicenseOverrides is intentionally exact and may only replace an
+// UNKNOWN component when auditable upstream evidence covers the identical
+// source snapshot. Every entry needs a written review in docs/LICENSES.md;
+// broad module- or vendor-level overrides are prohibited.
 var reviewedLicenseOverrides = map[string]string{
 	"github.com/mattn/go-localereader@v0.0.1": "MIT",
 	"modernc.org/memory@v1.11.0":              "BSD-3-Clause",
@@ -94,10 +94,8 @@ func buildInventory() ([]byte, []inventoryEntry, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", item.Path, err)
 		}
-		if license == "UNKNOWN" {
-			if reviewed, ok := reviewedLicenseOverrides[item.Path+"@"+item.Version]; ok {
-				license = reviewed
-			}
+		if reviewed, ok := reviewedLicenseOverrides[item.Path+"@"+item.Version]; ok {
+			license = applyReviewedLicense(license, reviewed)
 		}
 		version := item.Version
 		if item.Replace != nil {
@@ -206,12 +204,44 @@ func detectModuleLicense(root string) (string, error) {
 		}
 		licenses[classifyLicense(string(data))] = struct{}{}
 	}
+	return joinLicenses(licenses), nil
+}
+
+func applyReviewedLicense(detected, reviewed string) string {
+	licenses := make(map[string]struct{})
+	replacedUnknown := false
+	for _, license := range strings.Split(detected, " OR ") {
+		license = strings.TrimSpace(license)
+		if license == "UNKNOWN" {
+			replacedUnknown = true
+			continue
+		}
+		if license != "" {
+			licenses[license] = struct{}{}
+		}
+	}
+	if !replacedUnknown {
+		return detected
+	}
+	for _, license := range strings.Split(reviewed, " OR ") {
+		license = strings.TrimSpace(license)
+		if license != "" {
+			licenses[license] = struct{}{}
+		}
+	}
+	if len(licenses) == 0 {
+		return "UNKNOWN"
+	}
+	return joinLicenses(licenses)
+}
+
+func joinLicenses(licenses map[string]struct{}) string {
 	result := make([]string, 0, len(licenses))
 	for license := range licenses {
 		result = append(result, license)
 	}
 	sort.Strings(result)
-	return strings.Join(result, " OR "), nil
+	return strings.Join(result, " OR ")
 }
 
 func classifyLicense(text string) string {
@@ -264,7 +294,7 @@ func validatePolicy(entries []inventoryEntry) error {
 	for _, entry := range entries {
 		for _, license := range strings.Split(entry.License, " OR ") {
 			if _, forbidden := forbiddenLicenses[license]; forbidden {
-				violations = append(violations, entry.Module+" ("+license+")")
+				violations = append(violations, entry.Module+"@"+entry.Version+" ("+license+")")
 			}
 		}
 	}
