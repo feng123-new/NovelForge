@@ -58,7 +58,8 @@ jobs:
           sh -n scripts/install.sh scripts/uninstall.sh scripts/install_lifecycle_smoke.sh scripts/brand_audit.sh
           git diff --check
 
-          changed="$(git diff --name-only origin/main)"
+          git add -A
+          changed="$(git diff --cached --name-only origin/main)"
           for required in \
             internal/truthstore/model.go \
             internal/truthstore/migration.go \
@@ -72,7 +73,6 @@ jobs:
             printf '%s\n' "$changed" | grep -Fx "$required" >/dev/null
           done
 
-          git add -A
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "feat: materialize structured truth store"
