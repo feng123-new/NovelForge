@@ -13,7 +13,6 @@ const projectPage = {
 describe('Projects page', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.resetModules();
   });
 
   it('loads real projects and sends archive writes through the API client', async () => {

@@ -9,7 +9,6 @@ const health = {
 describe('Dashboard page states', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.resetModules();
   });
 
   it('renders the real empty project state', async () => {
