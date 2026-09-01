@@ -4,14 +4,15 @@ Last updated: 2026-09-01
 
 ## Repository state
 
-- Actual remote base: `main@d7e9992d3bf21f58e0ca379eacc3851457c886fb`
+- Actual remote base: `main@d7e9992d3bf21f58e0ca379eacc3851457c886fb`.
 - Latest verified base CI: [run 33411404325](https://github.com/feng123-new/NovelForge/actions/runs/33411404325) — Linux, Windows, and Docker jobs passed.
-- Current delivery branch: `feature/phase-02-project-api`
-- Phase 2 implementation commit: not created yet at this document revision.
-- Pull request: not created yet at this document revision.
-- Phase 2 CI: not run yet at this document revision.
-- Main merge commit: not applicable; Phase 2 is not merged.
-- Exact next phase after Phase 2 acceptance: Phase 3 — formal Web Workspace.
+- Current delivery branch: `feature/phase-02-project-api`.
+- Validated Phase 2 implementation head: `8b0adfa33e286adefc6b5d6ea79e90e9601f8a89`.
+- Pull request: [#7 — feat: complete project and API foundation](https://github.com/feng123-new/NovelForge/pull/7).
+- Successful Phase 2 PR acceptance CI: [run 33462527697](https://github.com/feng123-new/NovelForge/actions/runs/33462527697).
+- Main merge commit: not applicable at this document revision; Phase 2 has not been merged.
+- Main CI result: not applicable at this document revision.
+- Exact next phase after merged-main acceptance: Phase 3 — formal Web Workspace.
 
 ## Phase status
 
@@ -19,35 +20,59 @@ Last updated: 2026-09-01
 | --- | --- | --- |
 | 0 — upstream baseline | complete | Imported ainovel-cli baseline and retained provenance. |
 | 1 — compatibility | complete | Dual-path runtime, setup/write routing, doctor, migration rollback, lifecycle smoke, branding and cross-platform gates are complete. |
-| 2 — project/API foundation | implementation in progress | Project lifecycle, API, SQLite migration runner, idempotency, durable SSE, engine adapter, tests, OpenAPI, and docs are implemented on the feature branch; real dependency resolution and GitHub Actions acceptance remain. |
-| 3–13 | not started | Must begin only after Phase 2 PR and merged-main CI pass. |
+| 2 — project/API foundation | PR acceptance passed; merge pending | All PR #7 Linux, Windows, and Docker jobs passed at implementation head `8b0adfa`; this status-only commit must pass the same gates before merge. Phase 2 is not complete until merged-main CI succeeds. |
+| 3–13 | not started | Must begin only after Phase 2 is merged and the resulting `main` CI passes. |
 
-## Phase 2 completed in the working implementation
+## Completed
 
-- Added a workspace-bounded Project Repository with create, explicit skeleton import, detail, metadata update, archive, unarchive, duplicate, default trash deletion, and explicit permanent deletion.
+### Project lifecycle
+
+- Added a workspace-bounded Project Repository with create, explicit skeleton import, detail, metadata update, archive, unarchive, duplicate, default trash deletion, and separately explicit permanent deletion.
 - Preserved read compatibility for existing ainovel projects without implicit conversion.
 - Added opaque random IDs for new projects and stable opaque IDs for legacy projects.
 - Added the `.novelforge` project layout and per-project `project.db`.
-- Added path containment, Windows/UNC/traversal rejection, symlink escape rejection, workspace/root/home/current-directory protection, Git repository root protection, explicit delete confirmation, and workspace-private trash.
-- Added duplicate-time secret scrubbing and exclusion of runtime config, `.env*`, credential-like files, backups, trash, WAL/SHM files, and symlinks.
-- Added the workspace `server.db` with durable events and idempotency records.
-- Added versioned SQLite migrations with checksums, UTC timestamps, foreign keys, busy timeout, WAL, pre-migration backup, and transaction rollback.
-- Added the CGo-free `modernc.org/sqlite` driver boundary.
-- Added the unified error envelope and request trace IDs without raw paths, SQL, stack traces, or credentials.
-- Added required `Idempotency-Key` handling and exact status/body replay for all write routes.
-- Added durable SSE replay by `Last-Event-ID`, project filtering, heartbeats, restart recovery, and bounded slow-client handling.
-- Added `EngineService` and a legacy host adapter so HTTP code does not duplicate engine logic.
-- Expanded OpenAPI 3.1 to every Phase 2 route and added drift/operation-ID tests.
-- Added API, repository, migration, idempotency, event replay, path security, legacy compatibility, and Windows-path tests.
-- Expanded CI with targeted race tests, OpenAPI validation, CGo-disabled builds, dependency lock drift, and generated license inventory checks.
+- Added path containment, traversal rejection, Windows drive/UNC rejection, symlink escape rejection, Workspace/root/HOME/current-directory protection, Git repository root protection, exact delete confirmation, and Workspace-private trash.
+- Added duplicate-time secret scrubbing and exclusion of runtime config, `.env*`, credential-like files, backups, trash, SQLite WAL/SHM files, and symlinks.
+
+### API durability and safety
+
+- Added required `Idempotency-Key` handling for every Phase 2 write route.
+- Persisted operation, project, request hash, status, exact response status/body, creation time, and expiry.
+- Replays an identical completed request and returns a conflict when the key is reused with a different request hash.
+- Added a unified safe error envelope with stable code, message, details, retryability, and trace ID.
+- Prevented error responses from exposing host absolute paths, SQL, stack traces, authorization headers, API keys, or provider secrets.
+- Added stable project collection ordering, filtering, archived filtering, offset pagination, and `limit <= 100`.
+- Added strict JSON decoding, bounded request bodies, and method validation.
+
+### Durable events
+
+- Added the Workspace `.novelforge/server.db` with durable event and idempotency storage.
+- Added SQLite-backed event append and replay.
+- Added `Last-Event-ID` replay, project filtering, heartbeats, restart recovery, and bounded slow-client fan-out.
+- Events are committed before process-local delivery; a slow subscriber does not block state producers.
+
+### Architecture and storage
+
+- Added a versioned SQLite migration runner with immutable checksums, UTC timestamps, foreign keys, busy timeout, WAL, pre-migration backup, transactional application, rollback, unknown-version rejection, and applied-checksum validation.
+- Added a CGo-free `modernc.org/sqlite` driver boundary; release builds can run with `CGO_ENABLED=0`.
+- Added `EngineService` and a legacy `host.Host` adapter so HTTP handlers do not copy engine behavior.
+- Kept Workspace control state separate from project story state: `.novelforge/server.db` owns API durability and each project owns `.novelforge/project.db`.
+- Added a Windows-safe SQLite file URI encoder and Windows-only regression coverage.
+
+### OpenAPI and contracts
+
+- Expanded OpenAPI 3.1 to every Phase 2 route.
+- Added unique operation ID checks, route drift checks, schema/reference checks, error envelope definitions, pagination definitions, and `Idempotency-Key` headers.
+- Added route-level HTTP tests for project lifecycle, idempotency, errors, replay, request limits, strict JSON, and absolute-path redaction.
 
 ## Changed files
 
-Planned Phase 2 commit paths:
+Major Phase 2 paths:
 
 - `.github/workflows/ci.yml`
 - `cmd/novelforge/server.go`
 - `go.mod`
+- `go.sum`
 - `internal/db/migrate/*`
 - `internal/project/*`
 - `internal/server/api.go`
@@ -64,30 +89,30 @@ Planned Phase 2 commit paths:
 - `scripts/dependency_license_inventory.go`
 - `scripts/dependency_license_inventory_test.go`
 - `docs/PROJECT_API.md`
+- `docs/DEPENDENCY_LICENSES.md`
 - `docs/LICENSES.md`
 - `docs/IMPLEMENTATION_STATUS.md`
-- `docs/DEPENDENCY_LICENSES.md` after CI resolves the exact module graph
-- `go.sum` after CI resolves the exact module graph
 
 ## Architecture decisions
 
-- Workspace control state is separated from per-project story state: `.novelforge/server.db` holds API durability while each project owns `.novelforge/project.db`.
 - Existing ainovel projects remain readable in place. Adding NovelForge metadata is an explicit import operation.
 - Filesystem mutation is owned by `internal/project`; HTTP handlers pass opaque IDs and typed inputs rather than host paths.
-- Default deletion is a reversible move to workspace trash. Permanent deletion is separately explicit and uses the same confirmation and boundary checks.
+- Default deletion is a reversible move to Workspace trash. Permanent deletion is separately explicit and uses the same confirmation and boundary checks.
 - A completed idempotent request stores and replays the exact response; a reused key with a different request hash is a conflict.
 - Events are committed before fan-out. A slow SSE subscriber is disconnected instead of blocking a state producer.
-- The existing runtime remains authoritative behind an Engine adapter. Phase 2 does not copy or replace its planning/writing logic.
+- The existing runtime remains authoritative behind an Engine adapter. Phase 2 does not copy or replace planning/writing logic.
 - SQLite uses a pure-Go driver so official builds can set `CGO_ENABLED=0`.
+- License reviews are exact to `module@version` and can replace only an `UNKNOWN` scanner component; already detected incompatible components remain blocking.
 
 ## Database / migration changes
 
 - Added generic `schema_migrations(version, name, checksum, applied_at)` support.
-- Added workspace migrations for durable `events` and `idempotency_records`.
-- Added project migration for `project_metadata`.
+- Added Workspace migrations for durable `events` and `idempotency_records`.
+- Added the project migration for `project_metadata`.
 - Existing databases with pending migrations are checkpointed and backed up before the transaction.
 - A failed migration rolls back all pending schema and migration-record writes.
 - An applied checksum mismatch or unknown applied version fails closed.
+- Database timestamps are UTC and SQLite connections enable foreign keys, bounded busy timeout, and WAL.
 
 ## API changes
 
@@ -111,46 +136,78 @@ All write routes require `Idempotency-Key`. Project collections have stable orde
 
 ## UI changes
 
-None in Phase 2. The existing embedded transitional Web asset remains intact. Formal Svelte/Vite/TypeScript source begins in Phase 3; no fake Web actions were added.
+None in Phase 2. The existing embedded transitional Web asset remains intact. Formal Svelte/Vite/TypeScript source begins in Phase 3; no fake Web action was added.
 
-## Tests executed before the first remote commit
+## Tests executed
 
-The connected execution environment cannot resolve external GitHub/module hosts, so it cannot download the new SQLite module locally. The following checks were nevertheless run against the implementation with a temporary, uncommitted compile-only SQLite/bootstrap/host/Web stub boundary:
+PR acceptance run [33462527697](https://github.com/feng123-new/NovelForge/actions/runs/33462527697) executed:
 
 ```text
-gofmt over all changed Go files: PASS
-compile-only go test for internal/db/migrate: PASS
-targeted compile-only go test for internal/project: PASS
-targeted compile-only go test for internal/server and subpackages: PASS
-scripts package unit tests: PASS
-OpenAPI JSON parse: PASS
-engine adapter signatures checked against the real host.Host source: PASS
+go mod tidy: PASS
+go mod download all: PASS
+dependency license inventory generation: PASS
+gofmt drift check: PASS
+go vet ./...: PASS
+go test -buildvcs=false -count=1 ./...: PASS
+targeted race tests for migrations/project/server: PASS
+OpenAPI route and schema tests: PASS
+CGO_ENABLED=0 novelforge build: PASS
+module lock drift check: PASS
+dependency license policy and inventory check: PASS
+embedded Web asset validation: PASS
+lifecycle shell syntax: PASS
+install -> upgrade -> dry-run uninstall -> uninstall smoke: PASS
+NovelForge brand audit: PASS
+Windows full repository tests with CGO_ENABLED=0: PASS
+Windows novelforge build with CGO_ENABLED=0: PASS
+Docker build: PASS
 ```
 
-The temporary stubs are outside the planned commit. Real module resolution, SQLite runtime tests, full repository tests, race tests, Windows, Docker, and CGo-disabled builds must pass in GitHub Actions before merge.
+## Test results
+
+All three PR #7 jobs completed successfully at `8b0adfa33e286adefc6b5d6ea79e90e9601f8a89`:
+
+- Go lint, test and build: PASS.
+- Windows test and build: PASS.
+- Docker build: PASS.
+
+Earlier evidence-based CI failures exposed and led to fixes for case-sensitive module checksums, an uncommitted tidy graph, deterministic fixture ID reuse, Windows SQLite URI authority parsing, and incomplete license-file classification. Assertions and production behavior were not weakened to obtain a pass.
 
 ## Performance
 
-No Phase 2 performance claim is recorded before the real CI run. Project listing is a deterministic single workspace scan with bounded API pagination. Event replay is indexed by `(project_id, id)` and idempotency expiry is indexed by `expires_at`.
+No Phase 2 performance claim is recorded. Project listing is a deterministic Workspace scan with bounded API pagination. Event replay is indexed by `(project_id, id)` and idempotency expiry is indexed by `expires_at`. Formal 100/500/1000-chapter and 100,000-event benchmarks belong to Phase 13.
 
 ## License review
 
-- Added `modernc.org/sqlite`; the resolved version and complete transitive graph must be locked and inventoried before merge.
-- Added a standard-library-only license inventory generator and CI policy gate.
+- Added `modernc.org/sqlite v1.57.0` and committed the tidy-normalized module graph.
+- Added a deterministic dependency license inventory and fail-closed CI policy gate.
+- Added exact-version evidence for module snapshots whose cache license set contains an unresolved component; reviews cannot replace detected GPL/AGPL/LGPL/SSPL components.
 - No source was copied from the MIT UI reference.
 - No source, SQL, components, prompts, or tests were copied from GPL/AGPL clean-room references.
 
-## Known issues / remaining acceptance work
+## Known issues
 
-- The exact `go.sum`, tidy-normalized `go.mod`, and generated dependency inventory require a real networked Go toolchain. The first PR CI run will publish these generated files as a workflow artifact; they must be committed and revalidated before merge.
-- Phase 2 is not complete until every PR job passes, the PR is merged, and the merged `main` CI passes.
-- Phase 3–13 are untouched in this branch.
+- Phase 2 is not complete until this status-only commit passes PR CI, PR #7 is merged, and the resulting `main` CI succeeds.
+- The Web UI remains the transitional embedded dashboard; Phase 3 has not started.
+- Structured Truth Store, quality gate, narrative ledger, context compiler, chapter versions, durable Autopilot, skills/reference libraries, lifecycle tooling, production diagnostics, benchmarks, and v0.1.0 release work remain Phase 4–13 deliverables.
+
+## Next phase
+
+After Phase 2 merged-main acceptance, start `feature/phase-03-web-workspace` from the verified `main` merge commit and implement the rebuildable Svelte/Vite/TypeScript Workspace with real backend-backed pages and frontend CI gates.
+
+## Delivery evidence
+
+- Functional implementation head: `8b0adfa33e286adefc6b5d6ea79e90e9601f8a89`.
+- Pull request: [#7](https://github.com/feng123-new/NovelForge/pull/7).
+- PR acceptance CI: [33462527697](https://github.com/feng123-new/NovelForge/actions/runs/33462527697) — success.
+- Main merge commit: pending.
+- Main CI: pending.
 
 ## Exact resume point
 
-1. Create `feat: complete project and API foundation` on `feature/phase-02-project-api` from `main@d7e9992d3bf21f58e0ca379eacc3851457c886fb`.
-2. Open the Phase 2 pull request.
-3. Inspect every GitHub Actions job and download the dependency metadata artifact.
-4. Commit the exact tidy-normalized `go.mod`, `go.sum`, and `docs/DEPENDENCY_LICENSES.md`.
-5. Fix evidence-based test, race, Windows, Docker, OpenAPI, or license failures without lowering assertions.
-6. Merge only after all PR jobs pass; then verify the merged-main CI before marking Phase 2 complete or starting Phase 3.
+1. Verify the CI run triggered by this status-only commit completes successfully for Linux, Windows, and Docker.
+2. Update PR #7 description with final acceptance evidence.
+3. Squash-merge PR #7 into `main`; do not bypass the successful checks.
+4. Verify the merge-triggered `main` CI completes successfully for every job.
+5. Create `feature/phase-03-web-workspace` from that exact verified `main` commit.
+6. Record the Phase 2 merge commit and main CI in this file on the Phase 3 branch, then begin the formal Web Workspace.
