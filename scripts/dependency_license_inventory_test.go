@@ -10,14 +10,14 @@ func TestClassifyLicense(t *testing.T) {
 	t.Parallel()
 	tests := map[string]string{
 		"Apache License Version 2.0": "Apache-2.0",
-		"Permission is hereby granted, free of charge, to any person obtaining a copy":     "MIT",
-		"Redistribution and use in source and binary forms ... Neither the name of X":      "BSD-3-Clause",
-		"Redistribution and use in source and binary forms are permitted":                  "BSD-2-Clause",
-		"Permission to use, copy, modify, and/or distribute this software for any purpose": "ISC",
-		"GNU AFFERO GENERAL PUBLIC LICENSE":                                                "AGPL",
-		"GNU LESSER GENERAL PUBLIC LICENSE":                                                "LGPL",
-		"GNU GENERAL PUBLIC LICENSE":                                                       "GPL",
-		"Mozilla Public License Version 2.0":                                               "MPL-2.0",
+		"Permission is hereby granted, free of charge, to any person obtaining a copy":       "MIT",
+		"Redistribution and use in source and binary forms ... Neither the name of X":        "BSD-3-Clause",
+		"Redistribution and use in source and binary forms are permitted":                    "BSD-2-Clause",
+		"Permission to use, copy, modify, and/or distribute this software for any purpose":   "ISC",
+		"GNU AFFERO GENERAL PUBLIC LICENSE":                                                  "AGPL",
+		"GNU LESSER GENERAL PUBLIC LICENSE":                                                  "LGPL",
+		"GNU GENERAL PUBLIC LICENSE":                                                         "GPL",
+		"Mozilla Public License Version 2.0":                                                 "MPL-2.0",
 		"Mozilla Public License Version 2.0 with GNU General Public License secondary terms": "MPL-2.0",
 		"unrecognized terms": "UNKNOWN",
 	}
