@@ -315,7 +315,9 @@ func newTestRepository(t *testing.T) *Repository {
 	repository.now = func() time.Time {
 		return time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
 	}
-	repository.random = strings.NewReader(strings.Repeat("0123456789abcdef", 64))
+	// The deterministic stream is deliberately not aligned to the 16-byte ID
+	// read size, so consecutive generated IDs remain reproducible but distinct.
+	repository.random = strings.NewReader(strings.Repeat("0123456789abcdefg", 64))
 	return repository
 }
 
