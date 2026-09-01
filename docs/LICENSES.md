@@ -22,6 +22,21 @@ GOWORK=off go run ./scripts/dependency_license_inventory.go -check docs/DEPENDEN
 
 CI rejects a stale inventory and rejects dependencies detected as GPL, AGPL, LGPL, SSPL, unknown, or requiring manual review. The inventory generator itself uses only the Go standard library so it does not introduce a hidden audit dependency.
 
+### Reviewed dependency edge cases
+
+The scanner recognizes `LICENSE`, `LICENSE.*`, `LICENSE-*`, `COPYING`, `COPYING.*`, and `COPYING-*` grant files. This is required for dual-licensed modules such as `github.com/aymanbagabas/go-udiff@v0.3.1`, which ships separate `LICENSE-BSD` and `LICENSE-MIT` files.
+
+MPL-2.0 is classified before GPL-family references because the MPL text names GPL, LGPL, and AGPL only as possible secondary licenses. `github.com/hashicorp/golang-lru/v2@v2.0.7` is therefore correctly inventoried as MPL-2.0 rather than GPL.
+
+`github.com/mattn/go-localereader@v0.0.1` is the only exact-version reviewed override. Its published module snapshot predates the repository's MIT `LICENSE` file, while the source-bearing files in the tagged snapshot and the currently MIT-licensed upstream branch have identical Git blob IDs. The maintainer's upstream MIT grant is therefore recorded for that exact snapshot. The override:
+
+- is keyed to `github.com/mattn/go-localereader@v0.0.1` only;
+- applies only when cache-file detection returns `UNKNOWN`;
+- cannot hide a detected incompatible license;
+- does not apply to any future or replacement version.
+
+Any additional override requires equivalent source-identity evidence, a written review in this file, and a dedicated regression test.
+
 ## MIT code policy
 
 `Nigh/show-me-the-story` is MIT-licensed. The NovelForge server, project repository, migrations, API, tests, and Web foundation are original implementations based on requirements and public product behavior; no source from that repository is copied in Phase 2.
