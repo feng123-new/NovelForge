@@ -96,13 +96,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Resolve lockfile and install exact graph
+      - name: Resolve lockfile and prove exact replay
         working-directory: web
         run: |
           if [ ! -f package-lock.json ]; then
-            npm install --package-lock-only --ignore-scripts
+            npm install --ignore-scripts --no-audit --no-fund
+            rm -rf node_modules
           fi
-          npm ci --ignore-scripts
+          npm ci --ignore-scripts --no-audit --no-fund
       - name: Type and Svelte checks
         working-directory: web
         run: npm run check
@@ -112,11 +113,14 @@ jobs:
       - name: Production build
         working-directory: web
         run: npm run build
+      - name: Dependency vulnerability audit
+        working-directory: web
+        run: npm audit --audit-level=high
       - name: Generate frontend dependency license inventory
         run: |
           mkdir -p .generated
           node scripts/frontend_dependency_license_inventory.mjs > .generated/FRONTEND_DEPENDENCY_LICENSES.md
-      - name: Capture lockfile, build and license inventory
+      - name: Capture lockfile, build, audit and license inventory
         if: always()
         uses: actions/upload-artifact@v4
         with:
