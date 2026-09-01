@@ -34,12 +34,56 @@ func TestClassifyLicense(t *testing.T) {
 	}
 }
 
+func TestApplyReviewedLicenseReplacesOnlyUnknownComponents(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		detected string
+		reviewed string
+		expected string
+	}{
+		{
+			name:     "unknown only",
+			detected: "UNKNOWN",
+			reviewed: "MIT",
+			expected: "MIT",
+		},
+		{
+			name:     "deduplicate reviewed component",
+			detected: "BSD-3-Clause OR UNKNOWN",
+			reviewed: "BSD-3-Clause",
+			expected: "BSD-3-Clause",
+		},
+		{
+			name:     "preserve incompatible component",
+			detected: "GPL OR UNKNOWN",
+			reviewed: "BSD-3-Clause",
+			expected: "BSD-3-Clause OR GPL",
+		},
+		{
+			name:     "do not override known result",
+			detected: "BSD-3-Clause",
+			reviewed: "MIT",
+			expected: "BSD-3-Clause",
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if actual := applyReviewedLicense(test.detected, test.reviewed); actual != test.expected {
+				t.Fatalf("applyReviewedLicense(%q, %q) = %q, want %q", test.detected, test.reviewed, actual, test.expected)
+			}
+		})
+	}
+}
+
 func TestValidatePolicy(t *testing.T) {
 	t.Parallel()
-	if err := validatePolicy([]inventoryEntry{{Module: "safe", License: "MIT OR Public-Domain"}}); err != nil {
+	if err := validatePolicy([]inventoryEntry{{Module: "safe", Version: "v1", License: "MIT OR Public-Domain"}}); err != nil {
 		t.Fatalf("safe policy: %v", err)
 	}
-	if err := validatePolicy([]inventoryEntry{{Module: "unsafe", License: "MIT OR GPL"}}); err == nil {
+	if err := validatePolicy([]inventoryEntry{{Module: "unsafe", Version: "v1", License: "MIT OR GPL"}}); err == nil {
 		t.Fatal("expected GPL policy failure")
 	}
 }
