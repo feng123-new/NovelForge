@@ -66,11 +66,11 @@ GOWORK=off go run ./scripts/dependency_license_inventory.go > docs/DEPENDENCY_LI
 | `modernc.org/gc/v2` | `v2.6.5` | BSD-3-Clause |
 | `modernc.org/gc/v3` | `v3.1.4` | BSD-3-Clause |
 | `modernc.org/goabi0` | `v0.2.0` | BSD-3-Clause |
-| `modernc.org/libc` | `v1.74.4` | BSD-3-Clause |
+| `modernc.org/libc` | `v1.74.4` | BSD-3-Clause OR MIT |
 | `modernc.org/mathutil` | `v1.7.1` | BSD-3-Clause |
 | `modernc.org/memory` | `v1.11.0` | BSD-3-Clause |
 | `modernc.org/opt` | `v0.2.0` | BSD-3-Clause |
 | `modernc.org/sortutil` | `v1.2.1` | BSD-3-Clause |
-| `modernc.org/sqlite` | `v1.57.0` | BSD-3-Clause |
+| `modernc.org/sqlite` | `v1.57.0` | BSD-3-Clause OR MIT OR Public-Domain |
 | `modernc.org/strutil` | `v1.2.1` | BSD-3-Clause |
 | `modernc.org/token` | `v1.1.0` | BSD-3-Clause |
