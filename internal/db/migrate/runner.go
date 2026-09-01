@@ -216,9 +216,16 @@ func DSN(path string, busyTimeout time.Duration) (string, error) {
 	if timeoutMS <= 0 {
 		timeoutMS = defaultBusyTimeout.Milliseconds()
 	}
+	uriPath := filepath.ToSlash(absolute)
+	// A Windows drive path such as C:/data/project.db must be represented as
+	// file:///C:/data/project.db. Without the leading slash, SQLite interprets
+	// C: as the URI authority and rejects the DSN.
+	if filepath.VolumeName(absolute) != "" && !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
 	u := &url.URL{
 		Scheme: "file",
-		Path:   filepath.ToSlash(absolute),
+		Path:   uriPath,
 	}
 	query := u.Query()
 	query.Add("_pragma", "foreign_keys(1)")
