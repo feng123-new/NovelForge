@@ -234,8 +234,11 @@ func classifyLicense(text string) string {
 		return "Apache-2.0"
 	case strings.Contains(lower, "permission is hereby granted, free of charge"):
 		return "MIT"
+	case strings.Contains(lower, "sqlite is public domain") ||
+		strings.Contains(lower, "dedicated to the public domain"):
+		return "Public-Domain"
 	case strings.Contains(lower, "redistribution and use in source and binary forms") &&
-		strings.Contains(lower, "neither the name"):
+		(strings.Contains(lower, "neither the name") || strings.Contains(lower, "neither the names")):
 		return "BSD-3-Clause"
 	case strings.Contains(lower, "redistribution and use in source and binary forms"):
 		return "BSD-2-Clause"
@@ -262,7 +265,6 @@ func validatePolicy(entries []inventoryEntry) error {
 			if _, forbidden := forbiddenLicenses[license]; forbidden {
 				violations = append(violations, entry.Module+" ("+license+")")
 			}
-		}
 	}
 	if len(violations) > 0 {
 		sort.Strings(violations)
