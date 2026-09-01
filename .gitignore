@@ -17,12 +17,15 @@ coverage.*
 *.coverprofile
 profile.cov
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
+# Dependency directories
+web/node_modules/
 
 # Go workspace file
 go.work
 go.work.sum
+
+# Generated metadata staging
+.generated/
 
 # env file
 .env
@@ -37,8 +40,8 @@ go.work.sum
 .cache
 .DS_Store
 
-# GoReleaser artifacts
-dist/
+# GoReleaser artifacts. web/dist is intentionally tracked for go:embed.
+/dist/
 release-notes.md
 /ainovel-cli
 /novelforge
