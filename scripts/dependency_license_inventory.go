@@ -265,6 +265,7 @@ func validatePolicy(entries []inventoryEntry) error {
 			if _, forbidden := forbiddenLicenses[license]; forbidden {
 				violations = append(violations, entry.Module+" ("+license+")")
 			}
+		}
 	}
 	if len(violations) > 0 {
 		sort.Strings(violations)
