@@ -1,0 +1,151 @@
+name: Temporary Phase 6 final acceptance record staging
+
+on:
+  push:
+    branches:
+      - ops/phase6-final-record-stage
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      STAGING_BRANCH: staging/phase6-final-record-ready
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Discover evidence PR and stage final record
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          wait_ci() {
+            local sha="$1"
+            local event="$2"
+            local label="$3"
+            for _ in $(seq 1 360); do
+              runs=$(gh api --method GET "repos/${REPO}/actions/runs" -f head_sha="$sha" -f event="$event" -f per_page=100)
+              run=$(jq -c '[.workflow_runs[] | select(.name == "CI" and .path == ".github/workflows/ci.yml")] | sort_by(.created_at) | last // empty' <<<"$runs")
+              if [[ -z "$run" || $(jq -r '.status' <<<"$run") != completed ]]; then
+                echo "waiting for ${label} CI" >&2
+                sleep 10
+                continue
+              fi
+              id=$(jq -r '.id' <<<"$run")
+              [[ $(jq -r '.conclusion' <<<"$run") == success ]] || exit 1
+              jobs=$(gh api "repos/${REPO}/actions/runs/${id}/jobs?per_page=100")
+              for name in 'Go lint, test and build' 'Frontend check, test and build' 'Windows test and build' 'Docker build'; do
+                [[ $(jq --arg name "$name" '[.jobs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length' <<<"$jobs") -eq 1 ]] || exit 1
+              done
+              printf '%s\n' "$id"
+              return 0
+            done
+            exit 1
+          }
+
+          evidence=''
+          for _ in $(seq 1 360); do
+            candidates='[]'
+            for number in $(seq 22 45); do
+              if pr=$(gh api "repos/${REPO}/pulls/${number}" 2>/dev/null); then
+                if [[ $(jq -r '.merged_at // ""' <<<"$pr") != '' \
+                  && $(jq -r '.base.ref' <<<"$pr") == main \
+                  && $(jq -r '.title' <<<"$pr") == 'docs: record Phase 6 production acceptance evidence' ]]; then
+                  candidates=$(jq --argjson pr "$pr" '. + [$pr]' <<<"$candidates")
+                fi
+              fi
+            done
+            evidence=$(jq -c 'sort_by(.merged_at) | last // empty' <<<"$candidates")
+            [[ -n "$evidence" ]] && break
+            echo 'waiting for merged Phase 6 evidence PR' >&2
+            sleep 10
+          done
+          [[ -n "$evidence" ]]
+
+          evidence_pr=$(jq -r '.number' <<<"$evidence")
+          evidence_head=$(jq -r '.head.sha' <<<"$evidence")
+          evidence_merge=$(jq -r '.merge_commit_sha' <<<"$evidence")
+          evidence_pr_ci=$(wait_ci "$evidence_head" pull_request 'Phase 6 evidence PR')
+          evidence_main_ci=$(wait_ci "$evidence_merge" push 'Phase 6 evidence merged main')
+
+          git fetch --prune origin main
+          git merge-base --is-ancestor "$evidence_merge" origin/main
+          git checkout -B "$STAGING_BRANCH" "$evidence_merge"
+          grep -q '^## Phase 6 Acceptance Evidence$' docs/IMPLEMENTATION_STATUS.md
+          grep -Eq '^\| 6 .*Narrative Ledger .*\| complete \|' docs/IMPLEMENTATION_STATUS.md
+          [[ -z $(find .github/workflows -maxdepth 1 -type f -iname '*phase6*' -print) ]]
+
+          export EVIDENCE_PR="$evidence_pr"
+          export EVIDENCE_HEAD="$evidence_head"
+          export EVIDENCE_PR_CI="$evidence_pr_ci"
+          export EVIDENCE_MERGE="$evidence_merge"
+          export EVIDENCE_MAIN_CI="$evidence_main_ci"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          path = Path('docs/IMPLEMENTATION_STATUS.md')
+          text = path.read_text(encoding='utf-8')
+          pr = os.environ['EVIDENCE_PR']
+          head = os.environ['EVIDENCE_HEAD']
+          pr_ci = os.environ['EVIDENCE_PR_CI']
+          merge = os.environ['EVIDENCE_MERGE']
+          main_ci = os.environ['EVIDENCE_MAIN_CI']
+
+          bullet = (
+              f"- Phase 6 acceptance evidence PR #{pr} exact-head CI `{pr_ci}` succeeded; "
+              f"its squash merge `{merge}` passed main CI `{main_ci}`.\n"
+          )
+          marker = '## Phase status\n'
+          if bullet not in text:
+              idx = text.find(marker)
+              if idx >= 0:
+                  text = text[:idx].rstrip() + '\n' + bullet + '\n' + text[idx:]
+              else:
+                  text = text.rstrip() + '\n' + bullet
+
+          anchor = '### Authority Boundary\n'
+          record = f'''### Acceptance Record\n\n- Evidence PR: [#{pr} — docs: record Phase 6 production acceptance evidence](https://github.com/{os.environ.get('GITHUB_REPOSITORY','feng123-new/NovelForge')}/pull/{pr})\n- Evidence head: `{head}`\n- Evidence PR CI: `{pr_ci}` — success across Go, Frontend, Windows and Docker\n- Evidence squash merge: `{merge}`\n- Evidence merged-main CI: `{main_ci}` — success across Go, Frontend, Windows and Docker\n\n'''
+          if '### Acceptance Record\n' in text:
+              start = text.index('### Acceptance Record\n')
+              end = text.find(anchor, start)
+              if end < 0:
+                  raise SystemExit('authority boundary anchor missing')
+              text = text[:start] + record + text[end:]
+          else:
+              idx = text.find(anchor)
+              if idx < 0:
+                  raise SystemExit('authority boundary anchor missing')
+              text = text[:idx] + record + text[idx:]
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          git config user.name 'feng123-new'
+          git config user.email '3494617655@qq.com'
+          git add docs/IMPLEMENTATION_STATUS.md
+          [[ $(git diff --cached --name-only | wc -l) -eq 1 ]]
+          [[ $(git diff --cached --name-only) == docs/IMPLEMENTATION_STATUS.md ]]
+          git commit -m 'docs: finalize Phase 6 acceptance record'
+          gh api --method DELETE "repos/${REPO}/git/refs/heads/${STAGING_BRANCH}" >/dev/null 2>&1 || true
+          gh api --method DELETE "repos/${REPO}/git/refs/heads/docs/phase-06-final-record" >/dev/null 2>&1 || true
+          git push --force origin "HEAD:${STAGING_BRANCH}"
+          {
+            echo '## Phase 6 final record staging ready'
+            echo
+            echo "- Evidence PR: #${evidence_pr}"
+            echo "- Evidence PR CI: \`${evidence_pr_ci}\`"
+            echo "- Evidence merge: \`${evidence_merge}\`"
+            echo "- Evidence main CI: \`${evidence_main_ci}\`"
+            echo "- Final record staging: \`$(git rev-parse HEAD)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
