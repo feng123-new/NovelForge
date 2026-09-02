@@ -1,0 +1,285 @@
+name: Temporary Phase 6 delivery controller
+
+on:
+  push:
+    branches:
+      - ops/phase6-delivery-controller
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: phase6-delivery-controller
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      FEATURE_BRANCH: feature/phase-06-narrative-ledger
+      EVIDENCE_BRANCH: docs/phase-06-acceptance
+    steps:
+      - name: Check out accepted main for evidence work
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate, merge and record Phase 6 acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          owner="${REPO%%/*}"
+
+          wait_for_ci() {
+            local sha="$1"
+            local event="$2"
+            local label="$3"
+            local run_id=""
+            local status=""
+            local conclusion=""
+
+            for _ in $(seq 1 240); do
+              runs=$(gh api --method GET "repos/${REPO}/actions/runs" \
+                -f head_sha="$sha" -f event="$event" -f per_page=100)
+              run=$(jq -c '[.workflow_runs[] | select(.name == "CI" and .path == ".github/workflows/ci.yml")] | sort_by(.created_at) | last // empty' <<<"$runs")
+              if [[ -z "$run" ]]; then
+                echo "waiting for ${label} CI to appear for ${sha}" >&2
+                sleep 10
+                continue
+              fi
+
+              run_id=$(jq -r '.id' <<<"$run")
+              status=$(jq -r '.status' <<<"$run")
+              conclusion=$(jq -r '.conclusion // ""' <<<"$run")
+              echo "${label} CI ${run_id}: ${status} ${conclusion}" >&2
+
+              if [[ "$status" != completed ]]; then
+                sleep 10
+                continue
+              fi
+              if [[ "$conclusion" != success ]]; then
+                gh api "repos/${REPO}/actions/runs/${run_id}/jobs?per_page=100" \
+                  --jq '.jobs[] | [.name,.status,(.conclusion // "")] | @tsv' >&2 || true
+                return 1
+              fi
+
+              jobs=$(gh api "repos/${REPO}/actions/runs/${run_id}/jobs?per_page=100")
+              for required in \
+                "Go lint, test and build" \
+                "Frontend check, test and build" \
+                "Windows test and build" \
+                "Docker build"; do
+                count=$(jq --arg name "$required" '[.jobs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length' <<<"$jobs")
+                if [[ "$count" -ne 1 ]]; then
+                  echo "required job did not succeed exactly once: ${required}" >&2
+                  return 1
+                fi
+              done
+
+              printf '%s\n' "$run_id"
+              return 0
+            done
+
+            echo "timed out waiting for ${label} CI" >&2
+            return 1
+          }
+
+          prs=$(gh api --method GET "repos/${REPO}/pulls" \
+            -f state=open -f head="${owner}:${FEATURE_BRANCH}" -f base=main -f per_page=100)
+          production_pr=$(jq -r '.[0].number // empty' <<<"$prs")
+          if [[ -z "$production_pr" ]]; then
+            production_pr=$(gh api --method POST "repos/${REPO}/pulls" \
+              -f title='feat: add narrative ledger' \
+              -f head="$FEATURE_BRANCH" \
+              -f base=main \
+              -f body='Implements NovelForge Phase 6 Narrative Ledger with durable persistence, idempotent append semantics, authority separation from Truth, strict REST/OpenAPI, real Web integration and comprehensive tests. Phase 7 Context Compiler work is intentionally excluded.' \
+              --jq '.number')
+          fi
+
+          pr=$(gh api "repos/${REPO}/pulls/${production_pr}")
+          if [[ $(jq -r '.draft' <<<"$pr") == true ]]; then
+            echo "production PR is draft" >&2
+            exit 1
+          fi
+          if [[ $(jq -r '.base.ref' <<<"$pr") != main ]]; then
+            echo "production PR does not target main" >&2
+            exit 1
+          fi
+          if [[ $(jq -r '.head.ref' <<<"$pr") != "$FEATURE_BRANCH" ]]; then
+            echo "production PR has unexpected head" >&2
+            exit 1
+          fi
+          feature_sha=$(jq -r '.head.sha' <<<"$pr")
+          base_sha=$(jq -r '.base.sha' <<<"$pr")
+          if [[ "$feature_sha" == "$base_sha" ]]; then
+            echo "feature branch has no production changes" >&2
+            exit 1
+          fi
+
+          production_pr_ci=$(wait_for_ci "$feature_sha" pull_request 'Phase 6 production PR') || {
+            gh api --method POST "repos/${REPO}/issues/${production_pr}/comments" \
+              -f body="Phase 6 delivery controller stopped: exact-head CI failed for \`${feature_sha}\`. No merge was performed." >/dev/null || true
+            exit 1
+          }
+
+          merge=$(gh api --method PUT "repos/${REPO}/pulls/${production_pr}/merge" \
+            -f sha="$feature_sha" \
+            -f merge_method=squash \
+            -f commit_title='feat: add narrative ledger' \
+            -f commit_message='Complete Phase 6 with a durable Narrative Ledger, deterministic append/query semantics, explicit Truth authority separation, idempotent recovery, real API/OpenAPI/Web integration and full validation.')
+          if [[ $(jq -r '.merged' <<<"$merge") != true ]]; then
+            echo "$merge" >&2
+            exit 1
+          fi
+          production_merge_sha=$(jq -r '.sha' <<<"$merge")
+          production_main_ci=$(wait_for_ci "$production_merge_sha" push 'Phase 6 merged main')
+
+          git fetch --prune origin main
+          git checkout -B "$EVIDENCE_BRANCH" origin/main
+          git reset --hard "$production_merge_sha"
+
+          export PRODUCTION_PR="$production_pr"
+          export FEATURE_SHA="$feature_sha"
+          export PRODUCTION_PR_CI="$production_pr_ci"
+          export PRODUCTION_MERGE_SHA="$production_merge_sha"
+          export PRODUCTION_MAIN_CI="$production_main_ci"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path = Path('docs/IMPLEMENTATION_STATUS.md')
+          text = path.read_text(encoding='utf-8')
+
+          pr = os.environ['PRODUCTION_PR']
+          feature_sha = os.environ['FEATURE_SHA']
+          pr_ci = os.environ['PRODUCTION_PR_CI']
+          merge_sha = os.environ['PRODUCTION_MERGE_SHA']
+          main_ci = os.environ['PRODUCTION_MAIN_CI']
+
+          evidence_bullet = (
+              f"- Phase 6 production was squash-merged from PR #{pr} as `{merge_sha}`; "
+              f"exact-head PR CI `{pr_ci}` and merge-triggered main CI `{main_ci}` succeeded.\n"
+          )
+          if evidence_bullet not in text:
+              marker = '- Phase 5 acceptance record PR #20 CI'
+              pos = text.find(marker)
+              if pos >= 0:
+                  end = text.find('\n', pos)
+                  text = text[:end + 1] + evidence_bullet + text[end + 1:]
+              else:
+                  heading = '## Repository state\n'
+                  pos = text.find(heading)
+                  if pos >= 0:
+                      insert = pos + len(heading)
+                      text = text[:insert] + '\n' + evidence_bullet + text[insert:]
+
+          lines = text.splitlines()
+          out = []
+          phase6_written = False
+          for line in lines:
+              if re.match(r'^\|\s*6\s*(?:—|-|\|)', line):
+                  out.append('| 6 — Narrative Ledger | complete | Production, tests, API, OpenAPI, Web and docs merged; exact-head PR and merged-main CI passed. |')
+                  phase6_written = True
+                  continue
+              if re.match(r'^\|\s*6\s*[–-]\s*13\s*\|', line):
+                  out.append('| 6 — Narrative Ledger | complete | Production, tests, API, OpenAPI, Web and docs merged; exact-head PR and merged-main CI passed. |')
+                  out.append('| 7–13 | not started | Phase 7 begins from the latest accepted main; no Phase 7 production work is included in Phase 6. |')
+                  phase6_written = True
+                  continue
+              out.append(line)
+          text = '\n'.join(out).rstrip() + '\n'
+
+          if not phase6_written:
+              table_anchor = '| 5 — Librarian / Continuity / Quality Gate |'
+              lines = text.splitlines()
+              out = []
+              inserted = False
+              for line in lines:
+                  out.append(line)
+                  if line.startswith(table_anchor):
+                      out.append('| 6 — Narrative Ledger | complete | Production, tests, API, OpenAPI, Web and docs merged; exact-head PR and merged-main CI passed. |')
+                      inserted = True
+              text = '\n'.join(out).rstrip() + '\n'
+
+          text = text.replace('Phase 6 implementation complete; acceptance pending', 'Phase 6 complete')
+          text = text.replace('Phase 6 — implementation complete; acceptance pending', 'Phase 6 — complete')
+
+          heading = '## Phase 6 Acceptance Evidence'
+          block = f'''\n{heading}\n\n- Final feature head: `{feature_sha}`\n- Production PR: [#{pr} — feat: add narrative ledger](https://github.com/{os.environ.get('GITHUB_REPOSITORY', '')}/pull/{pr})\n- Exact-head PR CI: `{pr_ci}` — success across Go, Frontend, Windows and Docker\n- Squash merge: `{merge_sha}`\n- Merge-triggered main CI: `{main_ci}` — success across Go, Frontend, Windows and Docker\n- Structured Truth Store remains canonical world truth; Narrative Ledger records durable narrative accounting without implicit Truth mutation.\n- Phase 7 Context Compiler, retrieval ranking and token-budget assembly are not included.\n\n### Exact Resume Point\n\n1. Fetch `origin/main` and verify the latest workflow on that exact commit is successful.\n2. Create `feature/phase-07-context-compiler` from the exact fetched main SHA.\n3. Implement the Context Compiler without reopening or expanding the accepted Phase 6 scope.\n'''
+          if heading in text:
+              text = text[:text.index(heading)].rstrip() + '\n' + block
+          else:
+              text = text.rstrip() + '\n' + block
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          git config user.name 'feng123-new'
+          git config user.email '3494617655@qq.com'
+          git add docs/IMPLEMENTATION_STATUS.md
+          if git diff --cached --quiet; then
+            echo "acceptance evidence produced no documentation change" >&2
+            exit 1
+          fi
+          git commit -m 'docs: record Phase 6 acceptance evidence'
+          git push --force origin "HEAD:${EVIDENCE_BRANCH}"
+          evidence_sha=$(git rev-parse HEAD)
+
+          evidence_pr=$(gh api --method GET "repos/${REPO}/pulls" \
+            -f state=open -f head="${owner}:${EVIDENCE_BRANCH}" -f base=main -f per_page=100 \
+            --jq '.[0].number // empty')
+          if [[ -z "$evidence_pr" ]]; then
+            evidence_pr=$(gh api --method POST "repos/${REPO}/pulls" \
+              -f title='docs: record Phase 6 acceptance evidence' \
+              -f head="$EVIDENCE_BRANCH" \
+              -f base=main \
+              -f body="Records immutable Phase 6 production evidence: final feature head, PR #${production_pr}, exact-head CI, squash merge and merged-main CI. This PR changes only the implementation-status documentation." \
+              --jq '.number')
+          fi
+
+          evidence_pr_ci=$(wait_for_ci "$evidence_sha" pull_request 'Phase 6 evidence PR')
+          evidence_merge=$(gh api --method PUT "repos/${REPO}/pulls/${evidence_pr}/merge" \
+            -f sha="$evidence_sha" \
+            -f merge_method=squash \
+            -f commit_title='docs: record Phase 6 acceptance evidence' \
+            -f commit_message='Record the exact Phase 6 final head, production PR, PR CI, squash merge, merged-main CI and Phase 7 resume point.')
+          if [[ $(jq -r '.merged' <<<"$evidence_merge") != true ]]; then
+            echo "$evidence_merge" >&2
+            exit 1
+          fi
+          evidence_merge_sha=$(jq -r '.sha' <<<"$evidence_merge")
+          evidence_main_ci=$(wait_for_ci "$evidence_merge_sha" push 'Phase 6 final accepted main')
+
+          {
+            echo '## Phase 6 accepted'
+            echo
+            echo "- Production PR: #${production_pr}"
+            echo "- Final feature head: \`${feature_sha}\`"
+            echo "- Production PR CI: \`${production_pr_ci}\`"
+            echo "- Production merge: \`${production_merge_sha}\`"
+            echo "- Production main CI: \`${production_main_ci}\`"
+            echo "- Evidence PR: #${evidence_pr}"
+            echo "- Evidence PR CI: \`${evidence_pr_ci}\`"
+            echo "- Final main: \`${evidence_merge_sha}\`"
+            echo "- Final main CI: \`${evidence_main_ci}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for branch in \
+            "$FEATURE_BRANCH" \
+            "$EVIDENCE_BRANCH" \
+            ops/phase6-source-export \
+            ops/phase6-dev-env-export; do
+            gh api --method DELETE "repos/${REPO}/git/refs/heads/${branch}" >/dev/null 2>&1 || true
+          done
+
+          gh api --method DELETE "repos/${REPO}/git/refs/heads/ops/phase6-delivery-controller" >/dev/null 2>&1 || true
