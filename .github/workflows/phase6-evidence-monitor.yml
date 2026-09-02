@@ -1,0 +1,83 @@
+name: Temporary Phase 6 evidence PR monitor
+
+on:
+  push:
+    branches:
+      - ops/phase6-evidence-ci-monitor
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Verify evidence-only diff and exact PR CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: '23'
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${REPOSITORY}"
+          header=(-H "Authorization: Bearer ${GH_TOKEN}" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
+
+          pr="$(curl -fsSL "${header[@]}" "${api}/pulls/${PR_NUMBER}")"
+          test "$(jq -r '.state' <<<"${pr}")" = open
+          test "$(jq -r '.head.ref' <<<"${pr}")" = docs/phase-06-acceptance
+          head_sha="$(jq -r '.head.sha' <<<"${pr}")"
+
+          files="$(curl -fsSL "${header[@]}" "${api}/pulls/${PR_NUMBER}/files?per_page=100")"
+          test "$(jq 'length' <<<"${files}")" = 1
+          test "$(jq -r '.[0].filename' <<<"${files}")" = docs/IMPLEMENTATION_STATUS.md
+
+          run=''
+          run_id=''
+          for _ in $(seq 1 150); do
+            runs="$(curl -fsSL "${header[@]}" "${api}/actions/runs?event=pull_request&head_sha=${head_sha}&per_page=20")"
+            run="$(jq -c --arg sha "${head_sha}" --argjson pr "${PR_NUMBER}" '[.workflow_runs[] | select(.name == "CI" and .head_sha == $sha and any(.pull_requests[]?; .number == $pr))] | sort_by(.created_at) | last // empty' <<<"${runs}")"
+            if [[ -n "${run}" ]]; then
+              status="$(jq -r '.status' <<<"${run}")"
+              run_id="$(jq -r '.id' <<<"${run}")"
+              if [[ "${status}" = completed ]]; then
+                test "$(jq -r '.conclusion' <<<"${run}")" = success
+                break
+              fi
+            fi
+            sleep 8
+          done
+          test -n "${run_id}"
+          test "$(jq -r '.status' <<<"${run}")" = completed
+          test "$(jq -r '.conclusion' <<<"${run}")" = success
+
+          jobs="$(curl -fsSL "${header[@]}" "${api}/actions/runs/${run_id}/jobs?per_page=100")"
+          jq -e '
+            def succeeded($name): any(.jobs[]; .name == $name and .status == "completed" and .conclusion == "success");
+            succeeded("Go lint, test and build") and
+            succeeded("Frontend check, test and build") and
+            succeeded("Windows test and build") and
+            succeeded("Docker build")
+          ' <<<"${jobs}" >/dev/null
+
+          git init work
+          cd work
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
+          git fetch --depth=1 origin "${head_sha}"
+          git checkout --detach FETCH_HEAD
+          git checkout -B ops/phase6-evidence-ready
+          mkdir -p .phase6
+          jq -n --arg sha "${head_sha}" --arg run "${run_id}" --arg checked "$(date -u +%FT%TZ)" \
+            '{pr:23, head_sha:$sha, pr_ci_run:$run, evidence_only:true, required_jobs_success:true, checked_at:$checked}' \
+            > .phase6/evidence-ready.json
+          git add .phase6/evidence-ready.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore: mark Phase 6 evidence PR ready'
+          git push --force origin HEAD:refs/heads/ops/phase6-evidence-ready
+
+          cd ..
+          curl -fsSL -X DELETE "${header[@]}" "${api}/git/refs/heads/ops%2Fphase6-evidence-ci-monitor" || true
