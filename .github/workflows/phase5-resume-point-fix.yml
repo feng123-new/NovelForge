@@ -23,48 +23,34 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('docs/IMPLEMENTATION_STATUS.md')
           text = path.read_text(encoding='utf-8')
-
-          old = "- Draft PR #18 was closed without merge and superseded by the normal non-draft delivery PR #19 on the same final production head.\n"
-          new = old + "- Phase 5 acceptance record PR #20 CI `33591592779` succeeded; its squash merge `0934fc98bcedd7aa7a33baa84984e5cdef0196ed` passed main CI `33591712938`.\n"
-          if old not in text:
-              raise SystemExit('repository evidence anchor not found')
-          text = text.replace(old, new, 1)
-
-          old = "| 6–13 | not started | Phase 6 begins from the exact accepted main after this evidence record is merged and validated. |"
-          new = "| 6–13 | not started | Phase 6 begins from the latest accepted main; no Phase 6 production work is included in Phase 5. |"
-          if old not in text:
+          anchor = '- Draft PR #18 was closed without merge and superseded by the normal non-draft delivery PR #19 on the same final production head.\n'
+          addition = '- Phase 5 acceptance record PR #20 CI `33591592779` succeeded; its squash merge `0934fc98bcedd7aa7a33baa84984e5cdef0196ed` passed main CI `33591712938`.\n'
+          if addition not in text:
+              if anchor not in text:
+                  raise SystemExit('repository evidence anchor not found')
+              text = text.replace(anchor, anchor + addition, 1)
+          old_status = '| 6–13 | not started | Phase 6 begins from the exact accepted main after this evidence record is merged and validated. |'
+          new_status = '| 6–13 | not started | Phase 6 begins from the latest accepted main; no Phase 6 production work is included in Phase 5. |'
+          if old_status in text:
+              text = text.replace(old_status, new_status, 1)
+          elif new_status not in text:
               raise SystemExit('phase status anchor not found')
-          text = text.replace(old, new, 1)
-
-          old = "- Draft PR #18 was closed without merge after the connector could not transition its draft flag; it is not used as acceptance evidence.\n"
-          new = old + "- Acceptance record PR #20 CI run `33591592779`: **success**; squash merge `0934fc98bcedd7aa7a33baa84984e5cdef0196ed` and resulting main CI run `33591712938`: **success**.\n"
-          if old not in text:
-              raise SystemExit('test evidence anchor not found')
-          text = text.replace(old, new, 1)
-
-          old = """### Exact Resume Point
-
-1. Merge this evidence-only status PR after its complete CI succeeds and verify its merge-triggered main CI.
-2. Fetch the resulting exact `origin/main` commit.
-3. Create `feature/phase-06-narrative-ledger` from that exact accepted main.
-4. Implement Narrative Ledger without reopening or expanding the accepted Phase 5 scope.
-"""
-          new = """### Exact Resume Point
-
-1. Fetch `origin/main` and verify the latest workflow on that exact commit is successful.
-2. Create `feature/phase-06-narrative-ledger` from the exact fetched main SHA.
-3. Implement Narrative Ledger without reopening or expanding the accepted Phase 5 scope.
-"""
-          if old not in text:
+          test_anchor = '- Draft PR #18 was closed without merge after the connector could not transition its draft flag; it is not used as acceptance evidence.\n'
+          test_addition = '- Acceptance record PR #20 CI run `33591592779`: **success**; squash merge `0934fc98bcedd7aa7a33baa84984e5cdef0196ed` and resulting main CI run `33591712938`: **success**.\n'
+          if test_addition not in text:
+              if test_anchor not in text:
+                  raise SystemExit('test evidence anchor not found')
+              text = text.replace(test_anchor, test_anchor + test_addition, 1)
+          old_resume = '### Exact Resume Point\n\n1. Merge this evidence-only status PR after its complete CI succeeds and verify its merge-triggered main CI.\n2. Fetch the resulting exact `origin/main` commit.\n3. Create `feature/phase-06-narrative-ledger` from that exact accepted main.\n4. Implement Narrative Ledger without reopening or expanding the accepted Phase 5 scope.\n'
+          new_resume = '### Exact Resume Point\n\n1. Fetch `origin/main` and verify the latest workflow on that exact commit is successful.\n2. Create `feature/phase-06-narrative-ledger` from the exact fetched main SHA.\n3. Implement Narrative Ledger without reopening or expanding the accepted Phase 5 scope.\n'
+          if old_resume in text:
+              text = text.replace(old_resume, new_resume, 1)
+          elif new_resume not in text:
               raise SystemExit('resume-point block not found')
-          text = text.replace(old, new, 1)
-
           path.write_text(text, encoding='utf-8')
           PY
-
           rm .github/workflows/phase5-resume-point-fix.yml
           git add docs/IMPLEMENTATION_STATUS.md .github/workflows/phase5-resume-point-fix.yml
           git config user.name 'github-actions[bot]'
