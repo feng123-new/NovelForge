@@ -1,6 +1,7 @@
 import type {
   APIErrorPayload,
   ChapterList,
+  ChapterPlan,
   CreateProjectInput,
   DeleteProjectResult,
   FoundationRequest,
@@ -9,6 +10,8 @@ import type {
   ModelList,
   ProjectDetail,
   ProjectList,
+  QualityCandidateList,
+  QualityView,
   WorkspaceSettings
 } from './types';
 
@@ -65,6 +68,30 @@ export class APIClient {
 
   listChapters(id: string): Promise<ChapterList> {
     return this.request(`/projects/${encodeURIComponent(id)}/chapters?limit=100`);
+  }
+
+  quality(id: string, chapter: number): Promise<QualityView> {
+    return this.request(`/projects/${encodeURIComponent(id)}/chapters/${chapter}/quality`);
+  }
+
+  qualityCandidates(id: string, chapter: number): Promise<QualityCandidateList> {
+    return this.request(`/projects/${encodeURIComponent(id)}/chapters/${chapter}/candidates`);
+  }
+
+  generateChapter(id: string, chapter: number, plan: ChapterPlan): Promise<QualityView> {
+    return this.write(`/projects/${encodeURIComponent(id)}/chapters/${chapter}/generate`, 'POST', plan);
+  }
+
+  checkChapter(id: string, chapter: number): Promise<QualityView> {
+    return this.write(`/projects/${encodeURIComponent(id)}/chapters/${chapter}/check`, 'POST', {});
+  }
+
+  rewriteChapter(id: string, chapter: number, plan: ChapterPlan): Promise<QualityView> {
+    return this.write(`/projects/${encodeURIComponent(id)}/chapters/${chapter}/rewrite`, 'POST', plan);
+  }
+
+  finalizeChapter(id: string, chapter: number): Promise<QualityView> {
+    return this.write(`/projects/${encodeURIComponent(id)}/chapters/${chapter}/finalize`, 'POST', {});
   }
 
   listModels(query = ''): Promise<ModelList> {
