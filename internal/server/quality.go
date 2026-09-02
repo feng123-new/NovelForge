@@ -179,10 +179,6 @@ func (s *Server) handleQualityGenerate(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, r, *failure)
 		return
 	}
-	if !s.qualityConfigured() {
-		writeFailure(w, r, qualityUnavailable())
-		return
-	}
 	s.executeIdempotent(w, r, "chapter.quality.generate", projectID, func(body []byte) (int, any, *apiFailure) {
 		var plan qualitygate.ChapterPlan
 		if failure := decodeJSONBody(body, &plan, false); failure != nil {
@@ -193,6 +189,10 @@ func (s *Server) handleQualityGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := plan.Validate(); err != nil {
 			return http.StatusBadRequest, nil, &apiFailure{Status: http.StatusBadRequest, Code: "QUALITY_PLAN_INVALID", Message: "chapter plan is invalid"}
+		}
+		if !s.qualityConfigured() {
+			failure := qualityUnavailable()
+			return failure.Status, nil, &failure
 		}
 		coordinator, cleanup, failure := s.qualityCoordinator(r, projectID)
 		if failure != nil {
@@ -209,7 +209,7 @@ func (s *Server) handleQualityGenerate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleQualityCheck(w http.ResponseWriter, r *http.Request) {
-	s.handleQualityEmptyAction(w, r, "chapter.quality.check", func(c *qualitygate.Coordinator, projectID string, chapter int, _ string) (qualitygate.Snapshot, error) {
+	s.handleQualityEmptyAction(w, r, "chapter.quality.check", true, func(c *qualitygate.Coordinator, projectID string, chapter int, _ string) (qualitygate.Snapshot, error) {
 		return c.Check(r.Context(), projectID, chapter)
 	})
 }
@@ -224,10 +224,6 @@ func (s *Server) handleQualityRewrite(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, r, *failure)
 		return
 	}
-	if !s.qualityConfigured() {
-		writeFailure(w, r, qualityUnavailable())
-		return
-	}
 	s.executeIdempotent(w, r, "chapter.quality.rewrite", projectID, func(body []byte) (int, any, *apiFailure) {
 		var plan qualitygate.ChapterPlan
 		if failure := decodeJSONBody(body, &plan, false); failure != nil {
@@ -235,6 +231,10 @@ func (s *Server) handleQualityRewrite(w http.ResponseWriter, r *http.Request) {
 		}
 		if plan.Chapter != chapter || plan.Validate() != nil {
 			return http.StatusBadRequest, nil, &apiFailure{Status: http.StatusBadRequest, Code: "QUALITY_PLAN_INVALID", Message: "chapter plan is invalid for this route"}
+		}
+		if !s.qualityConfigured() {
+			failure := qualityUnavailable()
+			return failure.Status, nil, &failure
 		}
 		coordinator, cleanup, failure := s.qualityCoordinator(r, projectID)
 		if failure != nil {
@@ -251,14 +251,14 @@ func (s *Server) handleQualityRewrite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleQualityFinalize(w http.ResponseWriter, r *http.Request) {
-	s.handleQualityEmptyAction(w, r, "chapter.quality.finalize", func(c *qualitygate.Coordinator, projectID string, chapter int, key string) (qualitygate.Snapshot, error) {
+	s.handleQualityEmptyAction(w, r, "chapter.quality.finalize", false, func(c *qualitygate.Coordinator, projectID string, chapter int, key string) (qualitygate.Snapshot, error) {
 		return c.Finalize(r.Context(), projectID, chapter, key)
 	})
 }
 
 type qualityEmptyAction func(*qualitygate.Coordinator, string, int, string) (qualitygate.Snapshot, error)
 
-func (s *Server) handleQualityEmptyAction(w http.ResponseWriter, r *http.Request, operation string, action qualityEmptyAction) {
+func (s *Server) handleQualityEmptyAction(w http.ResponseWriter, r *http.Request, operation string, requiresAgents bool, action qualityEmptyAction) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, r, http.MethodPost)
 		return
@@ -268,14 +268,14 @@ func (s *Server) handleQualityEmptyAction(w http.ResponseWriter, r *http.Request
 		writeFailure(w, r, *failure)
 		return
 	}
-	if !s.qualityConfigured() {
-		writeFailure(w, r, qualityUnavailable())
-		return
-	}
 	s.executeIdempotent(w, r, operation, projectID, func(body []byte) (int, any, *apiFailure) {
 		var empty struct{}
 		if failure := decodeJSONBody(body, &empty, true); failure != nil {
 			return failure.Status, nil, failure
+		}
+		if requiresAgents && !s.qualityConfigured() {
+			failure := qualityUnavailable()
+			return failure.Status, nil, &failure
 		}
 		coordinator, cleanup, failure := s.qualityCoordinator(r, projectID)
 		if failure != nil {
