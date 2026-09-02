@@ -117,8 +117,8 @@ func (s *Server) qualityActions(snapshot qualitygate.Snapshot) qualityActions {
 	terminal := tx.State == qualitygate.StateCompleted || tx.State == qualitygate.StateFailed
 	return qualityActions{
 		Generate: configured && !terminal && len(snapshot.Candidates) == 0,
-		Check: configured && !terminal && len(snapshot.Candidates) > 0 && tx.State != qualitygate.StateFinalCandidate && tx.State != qualitygate.StateTruthCommitPending && tx.State != qualitygate.StateCheckpointPending,
-		Rewrite: configured && !terminal && len(snapshot.Candidates) > 0 && tx.Attempt < tx.MaxRewrites && (tx.State == qualitygate.StateRewritePending || tx.State == qualitygate.StateContinuityFail || tx.State == qualitygate.StateReviewed),
+		Check:    configured && !terminal && len(snapshot.Candidates) > 0 && tx.State != qualitygate.StateFinalCandidate && tx.State != qualitygate.StateTruthCommitPending && tx.State != qualitygate.StateCheckpointPending,
+		Rewrite:  configured && !terminal && len(snapshot.Candidates) > 0 && tx.Attempt < tx.MaxRewrites && (tx.State == qualitygate.StateRewritePending || tx.State == qualitygate.StateContinuityFail || tx.State == qualitygate.StateReviewed),
 		Finalize: !terminal && tx.FinalCandidateID != "" && snapshot.Continuity != nil && snapshot.Continuity.Status != qualitygate.ContinuityFail,
 	}
 }
