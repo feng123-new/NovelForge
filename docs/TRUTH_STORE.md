@@ -181,3 +181,12 @@ CI runs a 100,000-fact fixture, asserts that SQLite uses `idx_truth_facts_asof`,
 ## Phase boundaries
 
 Phase 4 does not allow an LLM proposal to become authoritative by itself. Phase 5 will connect Librarian proposals, Continuity results, Final chapter selection, and atomic Truth commit. Phase 8 will use `Rebuild(from_chapter)` after an accepted human revision. Phase 9 will invoke the same repository through durable Autopilot jobs.
+
+
+## Narrative Ledger integration
+
+Narrative Ledger migration 4 shares the project database and the existing migration, backup, checksum, WAL, busy-timeout, and rollback guarantees. Ledger rows are optimized projections and audit history for Foreshadows and Secrets; the Structured Truth Store remains the authority for general world facts.
+
+Model-originated Ledger writes are accepted only after the Phase 5 coordinator selects and finalizes a continuity-safe candidate. Each accepted change carries source chapter, source version, authority, confidence, and provenance compatible with Truth events. A replayed Finalize operation returns the existing Ledger commit, while a changed payload under the same transaction/idempotency identity fails closed.
+
+Chapter-N Secret visibility is determined independently from authority truth. Holder ranges and public reveal chapters prevent later knowledge from leaking into earlier Planner or Writer context. Rebuild and future Human Edit synchronization must preserve this boundary together with Truth projections.
