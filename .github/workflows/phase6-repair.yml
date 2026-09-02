@@ -1,0 +1,61 @@
+name: Temporary strict Phase 6 repair
+
+on:
+  push:
+    branches:
+      - ops/phase6-repair
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/phase-06-narrative-ledger
+          fetch-depth: 0
+      - name: Remove strict frontend compatibility risks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path=Path('web/src/lib/narrativeLedger.ts')
+          text=path.read_text()
+          text=text.replace("return requestJSON(`/api/projects/${encode(projectID)}/narrative/state${query.size ? `?${query}` : ''}`, {}, fetcher);", "const suffix = query.toString(); return requestJSON(`/api/projects/${encode(projectID)}/narrative/state${suffix ? `?${suffix}` : ''}`, {}, fetcher);")
+          path.write_text(text)
+          path=Path('web/src/lib/narrativeLedger.test.ts')
+          text=path.read_text().replace(', NarrativeLedgerAPIError,', ',')
+          path.write_text(text)
+          PY
+          gofmt -w internal/narrativeledger/*.go internal/server/narrative_ledger*.go
+          python3 -m json.tool internal/server/openapi_phase5.json >/dev/null
+      - name: Validate backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          GOWORK=off go vet ./...
+          GOWORK=off go test -buildvcs=false -count=1 ./...
+          CGO_ENABLED=0 GOWORK=off go build -buildvcs=false ./...
+      - name: Validate frontend
+        shell: bash
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run check
+          npm test -- --run
+          npm run build
+      - name: Publish repaired feature head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .
+          if git diff --cached --quiet; then git commit --allow-empty -m 'ci: revalidate strict Phase 6 frontend'; else git commit -m 'fix: harden Narrative Ledger frontend compatibility'; fi
+          git push origin HEAD:feature/phase-06-narrative-ledger
+          git push origin --delete ops/phase6-repair || true
