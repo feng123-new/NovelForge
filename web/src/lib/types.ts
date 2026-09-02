@@ -256,3 +256,188 @@ export interface WorkspaceEvent {
   project?: string;
   data?: unknown;
 }
+
+export type ForeshadowStatus = 'planned' | 'planted' | 'progressing' | 'resolved' | 'abandoned' | 'contradicted';
+export type LedgerImportance = 'low' | 'medium' | 'high' | 'critical';
+export type LedgerUrgency = 'low' | 'normal' | 'high' | 'critical';
+export type SecretPublicStatus = 'private' | 'public';
+
+export interface Foreshadow {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string;
+  importance: LedgerImportance;
+  planted_chapter: number;
+  expected_payoff_min: number;
+  expected_payoff_max: number;
+  actual_payoff?: number | null;
+  status: ForeshadowStatus;
+  related_entities: string[];
+  related_arcs: string[];
+  last_progress_chapter: number;
+  urgency: LedgerUrgency;
+  source_version: string;
+  authority: string;
+  overdue: boolean;
+  overdue_by_chapters: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ForeshadowInput {
+  id?: string;
+  title: string;
+  description: string;
+  importance: LedgerImportance;
+  planted_chapter: number;
+  expected_payoff_min: number;
+  expected_payoff_max: number;
+  actual_payoff?: number | null;
+  status: ForeshadowStatus;
+  related_entities: string[];
+  related_arcs: string[];
+  last_progress_chapter: number;
+  urgency: LedgerUrgency;
+  source_version: string;
+}
+
+export interface ForeshadowPatch {
+  title?: string;
+  description?: string;
+  importance?: LedgerImportance;
+  expected_payoff_min?: number;
+  expected_payoff_max?: number;
+  actual_payoff?: number;
+  clear_actual_payoff?: boolean;
+  status?: ForeshadowStatus;
+  last_progress_chapter?: number;
+  urgency?: LedgerUrgency;
+  source_version?: string;
+  chapter: number;
+  reason: string;
+}
+
+export interface ForeshadowPage {
+  foreshadows: Foreshadow[];
+  total: number;
+  limit: number;
+  offset: number;
+  next_offset?: number;
+}
+
+export interface SecretHolder {
+  secret_id: string;
+  entity_id: string;
+  valid_from_chapter: number;
+  valid_to_chapter?: number | null;
+  source_version: string;
+  authority: string;
+  provenance: { type: string; id: string; chapter: number; version: string };
+}
+
+export interface SecretRecord {
+  id: string;
+  project_id: string;
+  description: string;
+  truth?: string;
+  created_chapter: number;
+  revealed_chapter?: number | null;
+  public_status: SecretPublicStatus;
+  related_foreshadow?: string;
+  source_version: string;
+  authority: string;
+  holders: SecretHolder[];
+  public_at_chapter: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SecretInput {
+  id?: string;
+  description: string;
+  truth: string;
+  created_chapter: number;
+  revealed_chapter?: number | null;
+  public_status: SecretPublicStatus;
+  related_foreshadow?: string;
+  source_version: string;
+  holders?: Array<{
+    entity_id: string;
+    valid_from_chapter: number;
+    valid_to_chapter?: number | null;
+    source_version: string;
+    authority: string;
+    provenance: { type: string; id: string; chapter: number; version: string };
+  }>;
+}
+
+export interface SecretPatch {
+  description?: string;
+  truth?: string;
+  revealed_chapter?: number;
+  clear_revealed_chapter?: boolean;
+  public_status?: SecretPublicStatus;
+  related_foreshadow?: string;
+  source_version?: string;
+  chapter: number;
+  reason: string;
+}
+
+export interface SecretPage {
+  secrets: SecretRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+  next_offset?: number;
+}
+
+export interface LedgerDashboard {
+  chapter: number;
+  active_foreshadows: number;
+  overdue_count: number;
+  critical_overdue: number;
+  upcoming_payoffs: number;
+  unrevealed_secrets: number;
+  knowledge_boundary_warnings: number;
+}
+
+export interface LedgerDiagnostic {
+  id: string;
+  code: string;
+  severity: string;
+  project: string;
+  chapter: number;
+  entity: string;
+  message: string;
+  retryable: boolean;
+  evidence: Record<string, unknown>;
+}
+
+export interface LedgerDiagnosticPage {
+  diagnostics: LedgerDiagnostic[];
+  total: number;
+}
+
+export interface LedgerPlannerItem {
+  id: string;
+  kind: string;
+  title: string;
+  summary: string;
+  mandatory: boolean;
+  importance?: LedgerImportance;
+  urgency?: LedgerUrgency;
+  source_chapter: number;
+  source_version: string;
+  authority: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface LedgerPlannerContext {
+  project_id: string;
+  chapter: number;
+  pov?: string;
+  foreshadows: LedgerPlannerItem[];
+  known_secrets: LedgerPlannerItem[];
+  unknown_secret_boundaries: LedgerPlannerItem[];
+}
