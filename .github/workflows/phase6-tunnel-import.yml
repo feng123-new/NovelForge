@@ -1,0 +1,139 @@
+name: Temporary Phase 6 validated source import
+
+on:
+  push:
+    branches:
+      - ops/phase6-tunnel-import
+
+permissions:
+  contents: write
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: phase6-validated-source-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      STAGING_BRANCH: staging/phase6-import-ready
+      FEATURE_BRANCH: feature/phase-06-narrative-ledger
+      BRIDGE_PATH: nf6-9f3c2a1e7b4d
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Download checksum-protected local Phase 6 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/nf6-download /tmp/nf6-source
+          mkdir -p /tmp/nf6-download /tmp/nf6-source
+          found=false
+          for attempt in $(seq 1 120); do
+            for port in 48271 48272 48273 48274 48275; do
+              base="http://bore.pub:${port}/${BRIDGE_PATH}"
+              if curl --connect-timeout 5 --max-time 60 -fsSL "$base/phase6-source.sha256" -o /tmp/nf6-download/expected \
+                && curl --connect-timeout 5 --max-time 180 -fsSL "$base/phase6-source.tar.gz" -o /tmp/nf6-download/source.tar.gz; then
+                expected=$(tr -d '[:space:]' </tmp/nf6-download/expected)
+                actual=$(sha256sum /tmp/nf6-download/source.tar.gz | awk '{print $1}')
+                if [[ "$expected" =~ ^[0-9a-f]{64}$ && "$actual" == "$expected" ]]; then
+                  found=true
+                  break 2
+                fi
+              fi
+            done
+            echo "waiting for validated source bridge (attempt ${attempt})" >&2
+            sleep 5
+          done
+          [[ "$found" == true ]]
+          tar -xzf /tmp/nf6-download/source.tar.gz -C /tmp/nf6-source
+          test -f /tmp/nf6-source/go.mod
+          test -f /tmp/nf6-source/web/package-lock.json
+          grep -RqiE 'Narrative Ledger|NarrativeLedger|narrative_ledger|narrative ledger' /tmp/nf6-source/internal /tmp/nf6-source/docs /tmp/nf6-source/web/src
+
+      - name: Build clean Phase 6 product branch from current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --prune origin main
+          git checkout -B "$STAGING_BRANCH" origin/main
+          rsync -a --delete --exclude='.git/' /tmp/nf6-source/ ./
+          find .github/workflows -maxdepth 1 -type f -iname '*phase6*' -delete
+          find . -name '.DS_Store' -delete
+          rm -rf web/node_modules
+
+          git config user.name 'feng123-new'
+          git config user.email '3494617655@qq.com'
+
+          mapfile -t gofiles < <(find . -type f -name '*.go' -not -path './.git/*' -print)
+          if ((${#gofiles[@]})); then gofmt -w "${gofiles[@]}"; fi
+
+          changed=$(git diff --name-only)
+          [[ -n "$changed" ]]
+          grep -Eiq '(^|/)(narrative|ledger)' <<<"$changed"
+          grep -Eq '^internal/' <<<"$changed"
+          grep -Eq '^web/src/' <<<"$changed"
+          grep -Eq '^docs/' <<<"$changed"
+          ! grep -Eq '^\.github/workflows/phase6-' <<<"$changed"
+
+          GOWORK=off go mod download
+          GOWORK=off go vet ./...
+          GOWORK=off go test -buildvcs=false -count=1 ./...
+          packages=$(GOWORK=off go list ./... | grep -Ei 'narrative|ledger' || true)
+          if [[ -n "$packages" ]]; then
+            GOWORK=off go test -race -buildvcs=false -count=1 $packages
+          fi
+          CGO_ENABLED=0 GOWORK=off go build -buildvcs=false ./...
+
+          npm --prefix web ci
+          npm --prefix web run check
+          npm --prefix web test -- --run
+          npm --prefix web run build
+
+          find .github/workflows -maxdepth 1 -type f -iname '*phase6*' -delete
+          git add -A
+          ! git diff --cached --quiet
+          staged=$(git diff --cached --name-only)
+          ! grep -Eq '^\.github/workflows/phase6-' <<<"$staged"
+          ! grep -Eq '(^|/)(node_modules|\.cache|\.gocache|\.gomodcache)(/|$)' <<<"$staged"
+          git commit -m 'feat: add narrative ledger'
+
+          gh api --method DELETE "repos/${REPO}/git/refs/heads/${STAGING_BRANCH}" >/dev/null 2>&1 || true
+          gh api --method DELETE "repos/${REPO}/git/refs/heads/${FEATURE_BRANCH}" >/dev/null 2>&1 || true
+          git push --force origin "HEAD:${STAGING_BRANCH}"
+          echo "staging_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Remove obsolete import/control branches except staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          branches=$(gh api --paginate "repos/${REPO}/branches?per_page=100" --jq '.[].name')
+          while IFS= read -r branch; do
+            case "$branch" in
+              ops/phase6-*|ops/phase-6-*|ops/phase06-*|docs/phase-06-*|feature/phase-06-*)
+                gh api --method DELETE "repos/${REPO}/git/refs/heads/${branch}" >/dev/null 2>&1 || true
+                ;;
+            esac
+          done <<< "$branches"
+          # Reassert the validated staging ref in case cleanup raced with no matching pattern.
+          git push --force origin "HEAD:${STAGING_BRANCH}"
