@@ -59,7 +59,7 @@ jobs:
         env:
           GOWORK: "off"
         run: |
-          unformatted="$(gofmt -l .)"
+          unformatted="$(find . -type f -name '*.go' -not -path './vendor/*' -print0 | xargs -0 gofmt -l)"
           test -z "$unformatted" || { printf 'gofmt required for:\n%s\n' "$unformatted"; exit 1; }
           go vet ./...
           go test -buildvcs=false -count=1 ./...
