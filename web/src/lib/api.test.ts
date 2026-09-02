@@ -59,4 +59,31 @@ describe('APIClient', () => {
       payload: expect.objectContaining({ code: 'QUALITY_STATE_CONFLICT', trace_id: 'trace-quality' })
     }));
   });
+
+  it('uses real Narrative Ledger routes and idempotency for writes', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init });
+      return new Response(JSON.stringify({ foreshadows: [], secrets: [], total: 0, limit: 100, offset: 0 }), { status: init?.method ? 201 : 200 });
+    });
+    const client = new APIClient('/api', fetcher);
+    await client.listForeshadows('p/1', 135, { overdue: 'true' });
+    await client.createForeshadow('p/1', {
+      title: 'Gate', description: 'Return', importance: 'critical', planted_chapter: 20,
+      expected_payoff_min: 100, expected_payoff_max: 130, status: 'planted',
+      related_entities: [], related_arcs: [], last_progress_chapter: 20,
+      urgency: 'high', source_version: 'v1'
+    });
+    await client.listSecrets('p/1', 4, false);
+    await client.createSecret('p/1', { description: 'Origin', truth: 'Hidden', created_chapter: 1, public_status: 'private', source_version: 'v1' });
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/projects/p%2F1/foreshadows?chapter=135&limit=100&overdue=true',
+      '/api/projects/p%2F1/foreshadows',
+      '/api/projects/p%2F1/secrets?chapter=4&limit=100&include_truth=false',
+      '/api/projects/p%2F1/secrets'
+    ]);
+    expect(calls[1].init?.headers).toMatchObject({ 'Idempotency-Key': expect.stringMatching(/^web-/) });
+    expect(calls[3].init?.headers).toMatchObject({ 'Idempotency-Key': expect.stringMatching(/^web-/) });
+  });
+
 });

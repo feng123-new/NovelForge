@@ -32,3 +32,12 @@ PLAN → DRAFT → FACT PROPOSAL → CONTINUITY → EDITOR
 `max_rewrites` defaults to 2. No agent can create an unbounded self-loop. The coordinator is the only component allowed to turn an accepted proposal into `generated_final` Truth events.
 
 See [QUALITY_GATE.md](QUALITY_GATE.md) for state transitions, recovery and HTTP behavior.
+
+## Narrative Ledger boundaries (Phase 6)
+
+- **Writer** receives no Narrative Ledger repository and cannot create, progress, resolve, or reveal records.
+- **Librarian** may propose `foreshadow_updates` and `secrets`; proposals remain non-authoritative.
+- **ChapterCommitCoordinator** is the only model-to-ledger production boundary and invokes the ledger only for an accepted Final Candidate.
+- **Planner** consumes `NarrativeLedgerContextProvider`; OVERDUE and critical items are mandatory, and Secret truth is filtered by role/Chapter-N knowledge.
+- **Continuity** may use the full authority view for checks, but its result cannot make a character know a Secret.
+- **Retrieval/RAG** is not a writer and never overrides ledger/Truth authority.

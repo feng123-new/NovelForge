@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/voocel/ainovel-cli/internal/narrativeledger"
 	"github.com/voocel/ainovel-cli/internal/truthstore"
 )
 
@@ -155,6 +156,20 @@ func (c *Coordinator) Finalize(ctx context.Context, projectID string, chapter in
 			return Snapshot{}, err
 		}
 	}
+	if c.Ledger != nil {
+		if _, err := c.Ledger.CommitAcceptedFinal(ctx, narrativeledger.AcceptedFinalInput{
+			ProjectID: projectID, TransactionID: tx.ID, ProposalID: proposal.ProposalID,
+			CandidateID: candidate.ID, Chapter: chapter, SourceVersion: candidate.SourceVersion,
+			IdempotencyKey:    idempotencyKey + ":ledger",
+			ForeshadowUpdates: acceptedLedgerChanges(proposal.ForeshadowUpdates),
+			Secrets:           acceptedLedgerChanges(proposal.Secrets),
+		}); err != nil {
+			return c.Store.Snapshot(ctx, projectID, chapter)
+		}
+	}
+	if err := c.fail("after_ledger_commit"); err != nil {
+		return Snapshot{}, err
+	}
 	if err := c.fail("after_truth_commit"); err != nil {
 		return Snapshot{}, err
 	}
@@ -180,6 +195,20 @@ func (c *Coordinator) Finalize(ctx context.Context, projectID string, chapter in
 		return Snapshot{}, err
 	}
 	return c.Store.Snapshot(ctx, projectID, chapter)
+}
+
+func acceptedLedgerChanges(changes []FactChange) []narrativeledger.AcceptedChange {
+	out := make([]narrativeledger.AcceptedChange, 0, len(changes))
+	for _, change := range changes {
+		out = append(out, narrativeledger.AcceptedChange{
+			Subject: change.Subject, Predicate: change.Predicate, Object: append(json.RawMessage(nil), change.Object...),
+			SourceChapter: change.SourceChapter, SourceVersion: change.SourceVersion, SourceSHA: change.SourceSHA,
+			Extractor: change.Extractor, Confidence: change.Confidence, Authority: truthstore.AuthorityGeneratedFinal,
+			ValidFromChapter: change.ValidFromChapter, ValidToChapter: change.ValidToChapter,
+			KnownFromChapter: change.KnownFromChapter, KnownToChapter: change.KnownToChapter, Reason: change.Reason,
+		})
+	}
+	return out
 }
 
 func (c *Coordinator) fail(point string) error {

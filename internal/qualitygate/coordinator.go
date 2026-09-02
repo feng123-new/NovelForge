@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/voocel/ainovel-cli/internal/narrativeledger"
 	"github.com/voocel/ainovel-cli/internal/truthstore"
 )
 
@@ -20,6 +21,7 @@ type FaultInjector interface {
 type Coordinator struct {
 	Store       *Store
 	Truth       truthstore.Repository
+	Ledger      narrativeledger.AcceptedFinalCommitter
 	Writer      WriterService
 	Librarian   LibrarianService
 	Continuity  ContinuityService
