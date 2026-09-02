@@ -1,0 +1,113 @@
+name: Temporary final Phase 6 generation
+
+on:
+  push:
+    branches:
+      - ops/phase6-apply-v5
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Generate or reuse Phase 6 feature sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git fetch origin ops/phase6-apply:refs/remotes/origin/ops/phase6-apply 2>/dev/null && git show origin/ops/phase6-apply:.github/workflows/phase6-apply.yml > /tmp/phase6-source.yml 2>/dev/null; then
+            python3 - <<'PY'
+          from pathlib import Path
+          lines=Path('/tmp/phase6-source.yml').read_text().splitlines()
+          start=next(i for i,l in enumerate(lines) if l.strip()=='- name: Build Narrative Ledger implementation')
+          run=next(i for i in range(start+1,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(run,len(lines)) if lines[i].strip()=='- name: Validate backend')
+          source=[line[10:] if line.startswith('          ') else line for line in lines[run:end]]
+          output=[]; i=0; replaced=False
+          while i<len(source):
+              if source[i].lstrip().startswith("combined = '") and i+4<len(source) and 'type_match = re.search' in source[i+1] and 'server_type = type_match.group(1)' in source[i+4]:
+                  indent=source[i][:len(source[i])-len(source[i].lstrip())]
+                  output.extend([
+                    indent+"combined = '\\n'.join(p.read_text() for p in server_files)",
+                    indent+"type_match = re.search(r'func\\s+\\(\\s*[A-Za-z_]\\w*\\s+\\*([A-Za-z_]\\w*)\\s*\\)\\s*handle[A-Za-z0-9_]*[Ff]inalize[A-Za-z0-9_]*\\s*\\(', combined)",
+                    indent+"if not type_match:",
+                    indent+"    raise SystemExit('finalize receiver type was not found')",
+                    indent+"server_type = type_match.group(1)",
+                  ])
+                  i+=5; replaced=True; continue
+              output.append(source[i]); i+=1
+          if not replaced: raise SystemExit('server type block was not located')
+          Path('/tmp/build-phase6.sh').write_text('\n'.join(output)+'\n')
+          PY
+            bash /tmp/build-phase6.sh
+          else
+            git fetch origin feature/phase-06-narrative-ledger:refs/remotes/origin/feature/phase-06-narrative-ledger
+            git checkout -B feature/phase-06-narrative-ledger origin/feature/phase-06-narrative-ledger
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          source='\n'.join(p.read_text() for p in Path('internal/server').glob('*.go') if p.name!='narrative_ledger.go')
+          match=re.search(r'func\s+\(\s*[A-Za-z_]\w*\s+\*([A-Za-z_]\w*)\s*\)\s*handle[A-Za-z0-9_]*[Ff]inalize[A-Za-z0-9_]*\s*\(',source)
+          if not match: raise SystemExit('concrete finalize receiver unavailable')
+          server_type=match.group(1)
+          path=Path('internal/server/narrative_ledger.go'); text=path.read_text()
+          text=re.sub(r'func \(s \*[A-Za-z_]\w*\)',f'func (s *{server_type})',text)
+          text=text.replace('type narrativeResponseBuffer struct { header http.Header; body bytes.Buffer; status int }','type narrativeResponseBuffer struct { header http.Header; body bytes.Buffer; status int; wroteHeader bool }')
+          text=text.replace('func (b *narrativeResponseBuffer) WriteHeader(status int) { if b.body.Len() == 0 && b.status == http.StatusOK { b.status = status } }','func (b *narrativeResponseBuffer) WriteHeader(status int) { if b.wroteHeader { return }; b.status = status; b.wroteHeader = true }')
+          text=text.replace('func (b *narrativeResponseBuffer) Write(value []byte) (int, error) { return b.body.Write(value) }','func (b *narrativeResponseBuffer) Write(value []byte) (int, error) { if !b.wroteHeader { b.WriteHeader(http.StatusOK) }; return b.body.Write(value) }')
+          path.write_text(text)
+          path=Path('internal/server/narrative_ledger_test.go'); text=path.read_text()
+          text=re.sub(r'func narrativeTestServer\(t \*testing.T\) \(\*[A-Za-z_]\w*, func\(\)\)',f'func narrativeTestServer(t *testing.T) (*{server_type}, func())',text)
+          text=re.sub(r'return &[A-Za-z_]\w*\{\}, setNarrativeRepositoryForTest',f'return &{server_type}{{}}, setNarrativeRepositoryForTest',text)
+          path.write_text(text)
+          path=Path('internal/narrativeledger/repository.go'); text=path.read_text().replace('\n\t"bytes"','').replace('\nvar _ = bytes.MinRead\n','\n'); path.write_text(text)
+          path=Path('web/src/lib/narrativeLedger.ts'); text=path.read_text()
+          text=text.replace("return requestJSON(`/api/projects/${encode(projectID)}/narrative/state${query.size ? `?${query}` : ''}`, {}, fetcher);","const suffix = query.toString(); return requestJSON(`/api/projects/${encode(projectID)}/narrative/state${suffix ? `?${suffix}` : ''}`, {}, fetcher);")
+          path.write_text(text)
+          path=Path('web/src/lib/narrativeLedger.test.ts'); text=path.read_text().replace(' satisfies Partial<NarrativeLedgerAPIError>','').replace(', NarrativeLedgerAPIError,', ','); path.write_text(text)
+          path=Path('web/src/components/NarrativeLedgerPanel.svelte'); text=path.read_text()
+          text=text.replace("const values = <T>(record: Record<string,T> | undefined): T[] => Object.values(record ?? {});\n    const open = <T extends {status:string}>(record: Record<string,T> | undefined): T[] => values(record).filter((value) => value.status === 'open');","function values<T>(record: Record<string, T> | undefined): T[] { return Object.values(record ?? {}); }\n    function open<T extends {status: string}>(record: Record<string, T> | undefined): T[] { return values(record).filter((value) => value.status === 'open'); }")
+          path.write_text(text)
+          path=Path('.github/workflows/ci.yml'); text=path.read_text()
+          if 'workflow_dispatch:' not in text:
+              if '\non:\n' in text: text=text.replace('\non:\n','\non:\n  workflow_dispatch:\n',1)
+              elif text.startswith('on:\n'): text=text.replace('on:\n','on:\n  workflow_dispatch:\n',1)
+              else: raise SystemExit('CI trigger block not found')
+              path.write_text(text)
+          PY
+          gofmt -w internal/narrativeledger/*.go internal/server/narrative_ledger*.go
+          python3 -m json.tool internal/server/openapi_phase5.json >/dev/null
+      - name: Validate full backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          GOWORK=off go vet ./...
+          GOWORK=off go test -buildvcs=false -count=1 ./...
+          CGO_ENABLED=0 GOWORK=off go build -buildvcs=false ./...
+      - name: Validate full frontend
+        shell: bash
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run check
+          npm test -- --run
+          npm run build
+      - name: Publish exact validated Phase 6 head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add .
+          if git diff --cached --quiet; then git commit --allow-empty -m 'ci: validate exact Phase 6 delivery head'; else git commit -m 'feat: add append-only narrative ledger'; fi
+          git push --force origin HEAD:feature/phase-06-narrative-ledger
+          for branch in ops/phase6-apply-v5 ops/phase6-apply-v4 ops/phase6-apply-v3 ops/phase6-apply ops/phase6-polish ops/phase6-repair; do git push origin --delete "$branch" || true; done
