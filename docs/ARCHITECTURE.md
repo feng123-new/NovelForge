@@ -190,3 +190,16 @@ Writer success followed by Librarian failure leaves a Draft. Continuity failure 
 ainovel-cli code is Apache-2.0 and directly reused. show-me-the-story is MIT and is currently a design/UI reference only; any future direct reuse must retain its copyright and full license text. NovelWriter (AGPL-3.0) and AI-Novel-Writer (GPL-3.0) are clean-room design references only. No source, SQL, tests, prompts, or translated implementation from either copyleft project may enter NovelForge's Apache-2.0 tree.
 
 The resolved Go module graph is recorded in `docs/DEPENDENCY_LICENSES.md` and checked by CI together with the CGo-disabled build.
+
+
+## Temporal Truth Store
+
+The project database owns an append-only `truth_events` log and rebuildable `truth_facts` /
+`truth_conflicts` projections. Every event carries separate story-valid and system-knowledge
+chapter ranges; Chapter-N queries use their intersection so later state and discoveries
+cannot leak into earlier context. Conflicting values coexist until an authorized event
+explicitly supersedes or retracts a predecessor. Authority follows Accepted Human Final >
+Generated Final Chapter > Current Chapter Plan > Arc Plan > Volume Plan > Story Compass >
+LLM Suggestion, but ranking never causes a silent overwrite. Every source includes an
+explicit source chapter and source version. See `docs/TRUTH_STORE.md` for the storage,
+rebuild, verification, idempotency, and API contracts.
