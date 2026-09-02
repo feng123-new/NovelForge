@@ -1,0 +1,292 @@
+name: Temporary Phase 6 final acceptance verifier
+
+on:
+  push:
+    branches:
+      - ops/phase6-final-acceptance-verifier-v2
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: phase6-final-acceptance-verifier-v2
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      BASELINE_SHA: ee6eea67da3ab0c1e426053e97bd12e484990310
+      FINAL_RECORD_TITLE: docs: finalize Phase 6 acceptance record
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Verify all Phase 6 delivery and acceptance evidence
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          get_official_ci() {
+            local sha="$1"
+            local event="$2"
+            local label="$3"
+            local expected_id="${4:-}"
+            local run=''
+            for _ in $(seq 1 540); do
+              runs=$(gh api --method GET "repos/${REPO}/actions/runs" \
+                -f head_sha="$sha" -f event="$event" -f per_page=100)
+              if [[ -n "$expected_id" ]]; then
+                run=$(jq -c --arg id "$expected_id" '[.workflow_runs[] | select((.id|tostring) == $id and .name == "CI" and .path == ".github/workflows/ci.yml")] | first // empty' <<<"$runs")
+              else
+                run=$(jq -c '[.workflow_runs[] | select(.name == "CI" and .path == ".github/workflows/ci.yml")] | sort_by(.created_at) | last // empty' <<<"$runs")
+              fi
+              if [[ -z "$run" ]]; then
+                echo "waiting for ${label} CI to appear on ${sha}" >&2
+                sleep 10
+                continue
+              fi
+              run_id=$(jq -r '.id' <<<"$run")
+              status=$(jq -r '.status' <<<"$run")
+              conclusion=$(jq -r '.conclusion // ""' <<<"$run")
+              echo "${label} CI ${run_id}: ${status} ${conclusion}" >&2
+              if [[ "$status" != completed ]]; then
+                sleep 10
+                continue
+              fi
+              [[ "$conclusion" == success ]] || {
+                gh api "repos/${REPO}/actions/runs/${run_id}/jobs?per_page=100" \
+                  --jq '.jobs[] | [.name,.status,(.conclusion // "")] | @tsv' >&2 || true
+                return 1
+              }
+              jobs=$(gh api "repos/${REPO}/actions/runs/${run_id}/jobs?per_page=100")
+              for required in \
+                'Go lint, test and build' \
+                'Frontend check, test and build' \
+                'Windows test and build' \
+                'Docker build'; do
+                count=$(jq --arg name "$required" '[.jobs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length' <<<"$jobs")
+                [[ "$count" -eq 1 ]] || {
+                  echo "required successful job missing or duplicated: ${required}" >&2
+                  return 1
+                }
+              done
+              printf '%s\n' "$run_id"
+              return 0
+            done
+            echo "timed out waiting for ${label} CI" >&2
+            return 1
+          }
+
+          find_merged_pr() {
+            local title="$1"
+            local result=''
+            for _ in $(seq 1 540); do
+              candidates='[]'
+              for number in $(seq 22 60); do
+                if pr=$(gh api "repos/${REPO}/pulls/${number}" 2>/dev/null); then
+                  if [[ $(jq -r '.merged_at // ""' <<<"$pr") != '' \
+                    && $(jq -r '.base.ref' <<<"$pr") == main \
+                    && $(jq -r '.title' <<<"$pr") == "$title" ]]; then
+                    candidates=$(jq --argjson pr "$pr" '. + [$pr]' <<<"$candidates")
+                  fi
+                fi
+              done
+              result=$(jq -c 'sort_by(.merged_at) | last // empty' <<<"$candidates")
+              [[ -n "$result" ]] && { printf '%s\n' "$result"; return 0; }
+              echo "waiting for merged PR titled: ${title}" >&2
+              sleep 10
+            done
+            return 1
+          }
+
+          final_pr_json=$(find_merged_pr "$FINAL_RECORD_TITLE")
+          final_record_pr=$(jq -r '.number' <<<"$final_pr_json")
+          final_record_head=$(jq -r '.head.sha' <<<"$final_pr_json")
+          final_record_merge=$(jq -r '.merge_commit_sha' <<<"$final_pr_json")
+          [[ "$final_record_head" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$final_record_merge" =~ ^[0-9a-f]{40}$ ]]
+
+          ready_ref="phase-06-final-record-pr-${final_record_pr}-ready"
+          ready_sha=$(gh api "repos/${REPO}/git/ref/tags/${ready_ref}" --jq '.object.sha')
+          [[ "$ready_sha" == "$final_record_head" ]]
+
+          final_record_pr_ci=$(get_official_ci "$final_record_head" pull_request 'Phase 6 final-record PR')
+          final_record_main_ci=$(get_official_ci "$final_record_merge" push 'Phase 6 final-record merged main')
+
+          for _ in $(seq 1 180); do
+            git fetch --prune origin main
+            current_main=$(git rev-parse origin/main)
+            [[ "$current_main" == "$final_record_merge" ]] && break
+            echo "waiting for main to equal final-record merge ${final_record_merge}; current ${current_main}" >&2
+            sleep 10
+          done
+          [[ "$current_main" == "$final_record_merge" ]]
+          git checkout --detach "$current_main"
+
+          status_doc=docs/IMPLEMENTATION_STATUS.md
+          grep -q '^## Phase 6 Acceptance Evidence$' "$status_doc"
+          grep -q '^### Production Evidence$' "$status_doc"
+          grep -q '^### Acceptance Record$' "$status_doc"
+          grep -Eq '^\| 6 .*Narrative Ledger .*\| complete \|' "$status_doc"
+          grep -q 'feature/phase-07-context-compiler' "$status_doc"
+          grep -qi 'Structured Truth Store remains canonical' "$status_doc"
+
+          production_feature=$(sed -n 's/^- Final feature head: `\([0-9a-f]\{40\}\)`.*/\1/p' "$status_doc" | tail -1)
+          production_pr=$(sed -n 's/^- Production PR: \[#\([0-9][0-9]*\).*/\1/p' "$status_doc" | tail -1)
+          production_pr_ci_doc=$(sed -n 's/^- Exact-head PR CI: `\([0-9][0-9]*\)`.*/\1/p' "$status_doc" | tail -1)
+          production_merge=$(sed -n 's/^- Squash merge: `\([0-9a-f]\{40\}\)`.*/\1/p' "$status_doc" | tail -1)
+          production_main_ci_doc=$(sed -n 's/^- Merge-triggered main CI: `\([0-9][0-9]*\)`.*/\1/p' "$status_doc" | tail -1)
+          evidence_pr=$(sed -n 's/^- Evidence PR: \[#\([0-9][0-9]*\).*/\1/p' "$status_doc" | tail -1)
+          evidence_head=$(sed -n 's/^- Evidence head: `\([0-9a-f]\{40\}\)`.*/\1/p' "$status_doc" | tail -1)
+          evidence_pr_ci_doc=$(sed -n 's/^- Evidence PR CI: `\([0-9][0-9]*\)`.*/\1/p' "$status_doc" | tail -1)
+          evidence_merge=$(sed -n 's/^- Evidence squash merge: `\([0-9a-f]\{40\}\)`.*/\1/p' "$status_doc" | tail -1)
+          evidence_main_ci_doc=$(sed -n 's/^- Evidence merged-main CI: `\([0-9][0-9]*\)`.*/\1/p' "$status_doc" | tail -1)
+
+          [[ "$production_feature" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$production_pr" =~ ^[0-9]+$ ]]
+          [[ "$production_pr_ci_doc" =~ ^[0-9]+$ ]]
+          [[ "$production_merge" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$production_main_ci_doc" =~ ^[0-9]+$ ]]
+          [[ "$evidence_pr" =~ ^[0-9]+$ ]]
+          [[ "$evidence_head" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$evidence_pr_ci_doc" =~ ^[0-9]+$ ]]
+          [[ "$evidence_merge" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$evidence_main_ci_doc" =~ ^[0-9]+$ ]]
+
+          production_pr_json=$(gh api "repos/${REPO}/pulls/${production_pr}")
+          [[ $(jq -r '.merged' <<<"$production_pr_json") == true ]]
+          [[ $(jq -r '.draft' <<<"$production_pr_json") == false ]]
+          [[ $(jq -r '.head.sha' <<<"$production_pr_json") == "$production_feature" ]]
+          [[ $(jq -r '.merge_commit_sha' <<<"$production_pr_json") == "$production_merge" ]]
+
+          evidence_pr_json=$(gh api "repos/${REPO}/pulls/${evidence_pr}")
+          [[ $(jq -r '.merged' <<<"$evidence_pr_json") == true ]]
+          [[ $(jq -r '.draft' <<<"$evidence_pr_json") == false ]]
+          [[ $(jq -r '.head.sha' <<<"$evidence_pr_json") == "$evidence_head" ]]
+          [[ $(jq -r '.merge_commit_sha' <<<"$evidence_pr_json") == "$evidence_merge" ]]
+
+          production_pr_ci=$(get_official_ci "$production_feature" pull_request 'Phase 6 production PR' "$production_pr_ci_doc")
+          production_main_ci=$(get_official_ci "$production_merge" push 'Phase 6 production merged main' "$production_main_ci_doc")
+          evidence_pr_ci=$(get_official_ci "$evidence_head" pull_request 'Phase 6 evidence PR' "$evidence_pr_ci_doc")
+          evidence_main_ci=$(get_official_ci "$evidence_merge" push 'Phase 6 evidence merged main' "$evidence_main_ci_doc")
+
+          changed=$(git diff --name-only "$BASELINE_SHA..$production_merge")
+          grep -Eq '^internal/' <<<"$changed"
+          grep -Eq '^internal/project/' <<<"$changed"
+          grep -Eq '^internal/server/' <<<"$changed"
+          grep -Eq '^web/src/' <<<"$changed"
+          grep -Eq '^docs/' <<<"$changed"
+          grep -Eiq '(^|/)(narrative|ledger)' <<<"$changed"
+          ! grep -Eq '^\.github/workflows/phase6-' <<<"$changed"
+          git grep -qiE 'Narrative Ledger|NarrativeLedger|narrative_ledger|narrative ledger' "$production_merge" -- internal docs web/src
+          [[ -z $(find .github/workflows -maxdepth 1 -type f -iname '*phase6*' -print) ]]
+
+          open_phase6=$(gh api --method GET "repos/${REPO}/pulls" -f state=open -f per_page=100 \
+            --jq '[.[] | select((.head.ref | test("phase-06|phase6"; "i")) or (.title | test("Phase 6|narrative ledger"; "i")))] | length')
+          [[ "$open_phase6" -eq 0 ]]
+
+          for tag in phase-06-accepted phase-06-verified; do
+            if gh api "repos/${REPO}/git/ref/tags/${tag}" >/dev/null 2>&1; then
+              gh api --method PATCH "repos/${REPO}/git/refs/tags/${tag}" -f sha="$current_main" -F force=true >/dev/null
+            else
+              gh api --method POST "repos/${REPO}/git/refs" -f ref="refs/tags/${tag}" -f sha="$current_main" >/dev/null
+            fi
+          done
+
+          cat > phase6-final-verification.json <<JSON
+          {
+            "status": "accepted",
+            "baseline_sha": "$BASELINE_SHA",
+            "production": {
+              "feature_sha": "$production_feature",
+              "pr": $production_pr,
+              "pr_ci": $production_pr_ci,
+              "merge_sha": "$production_merge",
+              "main_ci": $production_main_ci
+            },
+            "evidence": {
+              "pr": $evidence_pr,
+              "head_sha": "$evidence_head",
+              "pr_ci": $evidence_pr_ci,
+              "merge_sha": "$evidence_merge",
+              "main_ci": $evidence_main_ci
+            },
+            "final_record": {
+              "pr": $final_record_pr,
+              "head_sha": "$final_record_head",
+              "pr_ci": $final_record_pr_ci,
+              "merge_sha": "$final_record_merge",
+              "main_ci": $final_record_main_ci
+            },
+            "final_main_sha": "$current_main",
+            "required_jobs": [
+              "Go lint, test and build",
+              "Frontend check, test and build",
+              "Windows test and build",
+              "Docker build"
+            ],
+            "accepted_tag": "phase-06-accepted",
+            "verified_tag": "phase-06-verified",
+            "next_branch": "feature/phase-07-context-compiler"
+          }
+          JSON
+
+          {
+            echo '## Phase 6 fully accepted and independently verified'
+            echo
+            echo "- Production PR: #${production_pr}"
+            echo "- Production head: \`${production_feature}\`"
+            echo "- Production PR CI: \`${production_pr_ci}\`"
+            echo "- Production merge: \`${production_merge}\`"
+            echo "- Production main CI: \`${production_main_ci}\`"
+            echo "- Evidence PR: #${evidence_pr}"
+            echo "- Evidence PR CI: \`${evidence_pr_ci}\`"
+            echo "- Evidence merge: \`${evidence_merge}\`"
+            echo "- Evidence main CI: \`${evidence_main_ci}\`"
+            echo "- Final-record PR: #${final_record_pr}"
+            echo "- Final-record PR CI: \`${final_record_pr_ci}\`"
+            echo "- Final accepted main: \`${current_main}\`"
+            echo "- Final accepted main CI: \`${final_record_main_ci}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload final Phase 6 verification certificate
+        uses: actions/upload-artifact@v4
+        with:
+          name: NovelForge-phase6-final-verification
+          path: phase6-final-verification.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Clean every temporary Phase 6 ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          branches=$(gh api --paginate "repos/${REPO}/branches?per_page=100" --jq '.[].name')
+          while IFS= read -r branch; do
+            case "$branch" in
+              feature/phase-06-*|docs/phase-06-*|ops/phase6-*|ops/phase-6-*|ops/phase06-*|staging/phase6-*)
+                gh api --method DELETE "repos/${REPO}/git/refs/heads/${branch}" >/dev/null 2>&1 || true
+                ;;
+            esac
+          done <<< "$branches"
+
+          refs=$(gh api "repos/${REPO}/git/matching-refs/tags/phase-06-" --jq '.[].ref' || true)
+          while IFS= read -r ref; do
+            [[ -z "$ref" ]] && continue
+            short=${ref#refs/tags/}
+            case "$short" in
+              phase-06-accepted|phase-06-verified) ;;
+              phase-06-*-ready|phase-06-pr-*|phase-06-evidence-pr-*|phase-06-final-record-pr-*)
+                gh api --method DELETE "repos/${REPO}/git/refs/tags/${short}" >/dev/null 2>&1 || true
+                ;;
+            esac
+          done <<< "$refs"
