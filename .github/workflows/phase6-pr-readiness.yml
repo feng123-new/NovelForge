@@ -1,0 +1,78 @@
+name: Temporary Phase 6 PR readiness gate
+
+on:
+  push:
+    branches:
+      - ops/phase6-pr-readiness
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      FEATURE_BRANCH: feature/phase-06-narrative-ledger
+    steps:
+      - name: Wait for exact-head official PR CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner="${REPO%%/*}"
+          for _ in $(seq 1 240); do
+            prs=$(gh api --method GET "repos/${REPO}/pulls" -f state=open -f head="${owner}:${FEATURE_BRANCH}" -f base=main -f per_page=100)
+            pr=$(jq -c '.[0] // empty' <<<"$prs")
+            if [[ -z "$pr" ]]; then
+              echo 'waiting for open production PR' >&2
+              sleep 10
+              continue
+            fi
+            [[ $(jq -r '.draft' <<<"$pr") == false ]]
+            pr_number=$(jq -r '.number' <<<"$pr")
+            head_sha=$(jq -r '.head.sha' <<<"$pr")
+            base_sha=$(jq -r '.base.sha' <<<"$pr")
+            [[ "$head_sha" != "$base_sha" ]]
+            runs=$(gh api --method GET "repos/${REPO}/actions/runs" -f head_sha="$head_sha" -f event=pull_request -f per_page=100)
+            run=$(jq -c '[.workflow_runs[] | select(.name == "CI" and .path == ".github/workflows/ci.yml")] | sort_by(.created_at) | last // empty' <<<"$runs")
+            if [[ -z "$run" || $(jq -r '.status' <<<"$run") != completed ]]; then
+              echo "waiting for exact-head CI on PR #${pr_number} ${head_sha}" >&2
+              sleep 10
+              continue
+            fi
+            run_id=$(jq -r '.id' <<<"$run")
+            [[ $(jq -r '.conclusion' <<<"$run") == success ]] || {
+              echo "official PR CI ${run_id} failed" >&2
+              exit 1
+            }
+            jobs=$(gh api "repos/${REPO}/actions/runs/${run_id}/jobs?per_page=100")
+            for name in 'Go lint, test and build' 'Frontend check, test and build' 'Windows test and build' 'Docker build'; do
+              [[ $(jq --arg name "$name" '[.jobs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length' <<<"$jobs") -eq 1 ]] || exit 1
+            done
+            if gh api "repos/${REPO}/git/ref/tags/phase-06-pr-ready" >/dev/null 2>&1; then
+              gh api --method PATCH "repos/${REPO}/git/refs/tags/phase-06-pr-ready" -f sha="$head_sha" -F force=true >/dev/null
+            else
+              gh api --method POST "repos/${REPO}/git/refs" -f ref='refs/tags/phase-06-pr-ready' -f sha="$head_sha" >/dev/null
+            fi
+            for candidate in 22 23 24 25 26 27 28 29 30; do
+              gh api --method DELETE "repos/${REPO}/git/refs/tags/phase-06-pr-${candidate}-ready" >/dev/null 2>&1 || true
+            done
+            gh api --method POST "repos/${REPO}/git/refs" -f ref="refs/tags/phase-06-pr-${pr_number}-ready" -f sha="$head_sha" >/dev/null
+            cat > /tmp/phase6-pr-ready.json <<JSON
+            {"pr":${pr_number},"head_sha":"${head_sha}","ci_run":${run_id}}
+            JSON
+            {
+              echo '## Phase 6 production PR ready to merge'
+              echo
+              echo "- PR: #${pr_number}"
+              echo "- Head: \`${head_sha}\`"
+              echo "- PR CI: \`${run_id}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          done
+          echo 'timed out waiting for Phase 6 PR readiness' >&2
+          exit 1
