@@ -1,0 +1,112 @@
+name: Temporary Phase 6 PR CI monitor
+
+on:
+  push:
+    branches:
+      - ops/phase6-pr-ci-monitor
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for exact Phase 6 PR head and classify result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: '22'
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${REPOSITORY}"
+          header=(-H "Authorization: Bearer ${GH_TOKEN}" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
+
+          pr_json="$(curl -fsSL "${header[@]}" "${api}/pulls/${PR_NUMBER}")"
+          head_sha="$(jq -r '.head.sha' <<<"${pr_json}")"
+          head_ref="$(jq -r '.head.ref' <<<"${pr_json}")"
+          state="$(jq -r '.state' <<<"${pr_json}")"
+          test "${state}" = open
+          test "${head_ref}" = feature/phase-06-narrative-ledger
+
+          run_json=''
+          run_id=''
+          conclusion=''
+          for _ in $(seq 1 150); do
+            runs="$(curl -fsSL "${header[@]}" "${api}/actions/runs?event=pull_request&head_sha=${head_sha}&per_page=20")"
+            run_json="$(jq -c --arg sha "${head_sha}" --argjson pr "${PR_NUMBER}" '[.workflow_runs[] | select(.name == "CI" and .head_sha == $sha and any(.pull_requests[]?; .number == $pr))] | sort_by(.created_at) | last // empty' <<<"${runs}")"
+            if [[ -n "${run_json}" ]]; then
+              status="$(jq -r '.status' <<<"${run_json}")"
+              run_id="$(jq -r '.id' <<<"${run_json}")"
+              conclusion="$(jq -r '.conclusion // ""' <<<"${run_json}")"
+              if [[ "${status}" = completed ]]; then
+                break
+              fi
+            fi
+            sleep 8
+          done
+
+          if [[ -z "${run_id}" ]]; then
+            conclusion=no_run
+          elif [[ "$(jq -r '.status' <<<"${run_json}")" != completed ]]; then
+            conclusion=timeout
+          fi
+
+          jobs='{}'
+          required_ok=false
+          if [[ "${conclusion}" = success ]]; then
+            jobs="$(curl -fsSL "${header[@]}" "${api}/actions/runs/${run_id}/jobs?per_page=100")"
+            required_ok="$(jq -r '
+              def succeeded($name): any(.jobs[]; .name == $name and .status == "completed" and .conclusion == "success");
+              succeeded("Go lint, test and build") and
+              succeeded("Frontend check, test and build") and
+              succeeded("Windows test and build") and
+              succeeded("Docker build")
+            ' <<<"${jobs}")"
+          fi
+
+          marker=ops/phase6-pr-failed
+          if [[ "${conclusion}" = success && "${required_ok}" = true ]]; then
+            marker=ops/phase6-pr-green
+          fi
+
+          git fetch origin "${head_sha}"
+          git checkout --detach "${head_sha}"
+          git checkout -B "${marker}"
+          mkdir -p .phase6
+          jq -n \
+            --arg head_sha "${head_sha}" \
+            --arg head_ref "${head_ref}" \
+            --arg run_id "${run_id}" \
+            --arg conclusion "${conclusion}" \
+            --arg required_ok "${required_ok}" \
+            --arg checked_at "$(date -u +%FT%TZ)" \
+            '{pr:22, head_sha:$head_sha, head_ref:$head_ref, run_id:$run_id, conclusion:$conclusion, required_jobs_success:($required_ok == "true"), checked_at:$checked_at}' \
+            > .phase6/pr22-ci.json
+
+          if [[ "${marker}" = ops/phase6-pr-failed && -n "${run_id}" ]]; then
+            jq -r '.jobs[] | [.name, .status, (.conclusion // "")] | @tsv' <<<"${jobs}" > .phase6/pr22-jobs.tsv || true
+            for job in $(jq -r '.jobs[] | select(.conclusion != "success") | .id' <<<"${jobs}" 2>/dev/null); do
+              curl -fsSL "${header[@]}" "${api}/actions/jobs/${job}/logs" >> .phase6/pr22-failed.log || true
+            done
+          fi
+
+          git add .phase6
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "chore: record Phase 6 PR CI ${conclusion}"
+          git push --force origin HEAD:"refs/heads/${marker}"
+
+          curl -fsSL -X DELETE "${header[@]}" "${api}/git/refs/heads/ops%2Fphase6-pr-ci-monitor" || true
+
+          if [[ "${marker}" != ops/phase6-pr-green ]]; then
+            exit 1
+          fi
