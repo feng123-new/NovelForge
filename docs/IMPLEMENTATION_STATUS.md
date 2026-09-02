@@ -13,6 +13,7 @@ Last updated: 2026-09-02
 - Phase 5 exact-head PR CI `33591270069` and merge-triggered main CI `33591405462` both succeeded.
 - Draft PR #18 was closed without merge and superseded by the normal non-draft delivery PR #19 on the same final production head.
 - Phase 5 acceptance record PR #20 CI `33591592779` succeeded; its squash merge `0934fc98bcedd7aa7a33baa84984e5cdef0196ed` passed main CI `33591712938`.
+- Phase 6 production PR #24 exact-head CI `33636642108` succeeded; squash merge `ef3d144567caadcdf16af809c636b3858d9eb8a2` passed merged-main CI `33637529694`.
 
 ## Phase status
 
@@ -24,7 +25,8 @@ Last updated: 2026-09-02
 | 3 — formal Web Workspace | complete | PR #8 merged and main CI passed. |
 | 4 — Structured Truth Store | complete | PR #13 plus merge-triggered main CI passed; evidence correction #14 also passed. |
 | 5 — Librarian / Continuity / Quality Gate | complete | Production code, API, OpenAPI, Web, tests and docs merged in PR #19; PR and merged-main CI passed. |
-| 6–13 | not started | Phase 6 begins from the latest accepted main; no Phase 6 production work is included in Phase 5. |
+| 6 — Narrative Ledger | complete | Production code, API, OpenAPI, Web, tests and docs merged in PR #24; exact-head and merged-main CI passed. |
+| 7–13 | not started | Phase 7 begins from the exact accepted main after this evidence record is merged and validated. |
 
 ## Phase 4 evidence
 
@@ -242,3 +244,97 @@ Docker build
 1. Fetch `origin/main` and verify the latest workflow on that exact commit is successful.
 2. Create `feature/phase-06-narrative-ledger` from the exact fetched main SHA.
 3. Implement Narrative Ledger without reopening or expanding the accepted Phase 5 scope.
+
+
+## Phase 6 — Narrative Ledger
+
+### Completed
+
+- Added project Migration 4 and the `internal/narrativeledger` production package.
+- Added deterministic Foreshadow lifecycle validation, computed Chapter-N OVERDUE, stable pagination, append-only audit events and indexed Scenario E queries.
+- Added independent Secret records, temporal knowledge holders, Chapter-N public state and metadata-only unknown boundaries.
+- Added replay-safe Accepted Final integration without granting Writer, Librarian or retrieval a Ledger write capability.
+- Added real REST/OpenAPI integration, Dashboard metrics, diagnostics, Planner context and Foreshadows/Secrets Web pages.
+
+### Changed Files
+
+Production paths include `internal/narrativeledger/`, `internal/project/ledger*.go`, `internal/qualitygate/coordinator*.go`, `internal/server/ledger*.go`, `internal/server/openapi_phase6.json`, Web API/types/pages, generated Web assets, CI gates and Narrative Ledger documentation.
+
+### Architecture Decisions
+
+- OVERDUE is calculated per Chapter N and cannot be written as a lifecycle state.
+- Truth Store remains world-fact authority; Ledger projections share provenance vocabulary but cannot override Truth.
+- Unknown Secret boundaries expose metadata, never authoritative Secret truth.
+- Phase 5 Finalize calls `AcceptedFinalCommitter` only for the selected safe Final candidate; idempotent replay cannot duplicate Ledger events.
+
+### Database / Migration Changes
+
+Migration 4 adds narrative commit/idempotency records, Foreshadow projection/link/event tables, Secret/holder/event tables, append-only triggers, and bounded schedule/temporal indexes.
+
+### API Changes
+
+Added project-scoped Foreshadow, Secret/holder, Ledger Dashboard, Diagnostics and Planner Context endpoints. All writes use the common strict JSON, body limit, idempotency and safe-error path.
+
+### UI Changes
+
+Added Foreshadows and Secrets routes and real Ledger metrics on Dashboard. Writes show pending/success/structured error states and reload authoritative server state.
+
+### Tests Executed
+
+Deterministic coverage includes lifecycle transitions, OVERDUE computation/index use, stable paging, Secret Chapter-N holders, safe truth omission, Accepted Final replay, concurrent idempotency, Scenario E, HTTP boundaries, OpenAPI drift, frontend loading/error/data states, targeted race, Windows and Docker.
+
+### Test Results
+
+- Final production head: `6e3a7613ebf65ad90ac5bc7952c05c0251d5c934`.
+- Production PR: [#24 — feat: complete Phase 6 Narrative Ledger](https://github.com/feng123-new/NovelForge/pull/24).
+- Exact-head PR CI: `33636642108` — **success**; Go, Frontend, Windows and Docker succeeded.
+- Squash merge: `ef3d144567caadcdf16af809c636b3858d9eb8a2`.
+- Merge-triggered main CI: `33637529694` — **success**; Go, Frontend, Windows and Docker succeeded.
+- Superseded PR #23 was closed without merge and is not acceptance evidence.
+
+### Performance
+
+Foreshadow schedule and Secret holder queries are index-backed and bounded. Context build and hybrid retrieval performance remain Phase 7 work.
+
+### License Review
+
+Phase 6 added no Go or npm dependency. Existing Apache-2.0 dependency inventories and fail-closed Go/npm license gates passed on the exact PR head and merged main.
+
+### Known Issues
+
+No Phase 6 data-integrity, temporal-boundary, OpenAPI, Windows, Docker, dependency-license or generated-asset blocker remains. Context Compiler is intentionally Phase 7 scope.
+
+### Next Phase
+
+`feature/phase-07-context-compiler`
+
+### Feature Branch
+
+`delivery/phase-06-clean`
+
+### Final Head Commit
+
+`6e3a7613ebf65ad90ac5bc7952c05c0251d5c934`
+
+### Pull Request
+
+[#24 — feat: complete Phase 6 Narrative Ledger](https://github.com/feng123-new/NovelForge/pull/24)
+
+### PR CI Result
+
+`33636642108` — success
+
+### Main Merge Commit
+
+`ef3d144567caadcdf16af809c636b3858d9eb8a2`
+
+### Main CI Result
+
+`33637529694` — success
+
+### Exact Resume Point
+
+1. Merge this evidence-only status PR after its complete CI succeeds and verify its merge-triggered main CI.
+2. Fetch the resulting exact `origin/main` commit.
+3. Create `feature/phase-07-context-compiler` from that exact accepted main.
+4. Implement Context Compiler and Hybrid Retrieval without reopening accepted Phase 6 scope.
