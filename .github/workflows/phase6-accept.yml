@@ -1,0 +1,167 @@
+name: Temporary guarded Phase 6 acceptance
+
+on:
+  push:
+    branches:
+      - ops/phase6-accept
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  checks: read
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: '22'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Require exact-head PR CI success
+        id: pr
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr_json=$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")
+          [[ $(jq -r '.state' <<<"$pr_json") == open ]]
+          [[ $(jq -r '.head.ref' <<<"$pr_json") == feature/phase-06-narrative-ledger ]]
+          head_sha=$(jq -r '.head.sha' <<<"$pr_json")
+          [[ -n "$head_sha" && "$head_sha" != null ]]
+          run_id=''
+          for attempt in $(seq 1 120); do
+            runs=$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${head_sha}&event=pull_request&per_page=30")
+            run_id=$(jq -r '[.workflow_runs[] | select(.name=="CI")] | sort_by(.created_at) | last | .id // empty' <<<"$runs")
+            if [[ -n "$run_id" ]]; then
+              status=$(gh api "repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.status')
+              [[ "$status" == completed ]] && break
+            fi
+            sleep 10
+          done
+          [[ -n "$run_id" ]]
+          conclusion=$(gh api "repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.conclusion')
+          [[ "$conclusion" == success ]]
+          jobs=$(gh api "repos/${REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100")
+          for required in 'Go lint, test and build' 'Frontend check, test and build' 'Windows test and build' 'Docker build'; do
+            jq -e --arg name "$required" '.jobs | any(.name==$name and .status=="completed" and .conclusion=="success")' <<<"$jobs" >/dev/null
+          done
+          jq -e '.jobs | all(.status=="completed" and .conclusion=="success")' <<<"$jobs" >/dev/null
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Squash merge exact validated head
+        id: merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          response=$(gh api --method PUT "repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge" \
+            -f merge_method=squash \
+            -f sha='${{ steps.pr.outputs.head_sha }}' \
+            -f commit_title='feat: add append-only narrative ledger' \
+            -f commit_message='Complete Phase 6 with an immutable hash-chained narrative event stream, deterministic lifecycle projection, historical state and audit, recoverable Finalize integration, strict REST/OpenAPI contracts, a real Chapters workspace panel, and cross-platform validation.')
+          jq -e '.merged == true' <<<"$response" >/dev/null
+          merge_sha=$(jq -r '.sha' <<<"$response")
+          [[ -n "$merge_sha" && "$merge_sha" != null ]]
+          echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
+      - name: Run and require full CI on the exact merge SHA
+        id: mainci
+        shell: bash
+        run: |
+          set -euo pipefail
+          merge_sha='${{ steps.merge.outputs.merge_sha }}'
+          for attempt in $(seq 1 30); do
+            current=$(gh api "repos/${REPOSITORY}/branches/main" --jq '.commit.sha')
+            [[ "$current" == "$merge_sha" ]] && break
+            sleep 2
+          done
+          [[ $(gh api "repos/${REPOSITORY}/branches/main" --jq '.commit.sha') == "$merge_sha" ]]
+          gh api --method POST "repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches" -f ref=main
+          run_id=''
+          for attempt in $(seq 1 150); do
+            runs=$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${merge_sha}&event=workflow_dispatch&per_page=30")
+            run_id=$(jq -r '[.workflow_runs[] | select(.name=="CI")] | sort_by(.created_at) | last | .id // empty' <<<"$runs")
+            if [[ -n "$run_id" ]]; then
+              status=$(gh api "repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.status')
+              [[ "$status" == completed ]] && break
+            fi
+            sleep 10
+          done
+          [[ -n "$run_id" ]]
+          [[ $(gh api "repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.conclusion') == success ]]
+          jobs=$(gh api "repos/${REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100")
+          for required in 'Go lint, test and build' 'Frontend check, test and build' 'Windows test and build' 'Docker build'; do
+            jq -e --arg name "$required" '.jobs | any(.name==$name and .status=="completed" and .conclusion=="success")' <<<"$jobs" >/dev/null
+          done
+          jq -e '.jobs | all(.status=="completed" and .conclusion=="success")' <<<"$jobs" >/dev/null
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Record immutable Phase 6 evidence
+        id: evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout -B main origin/main
+          python3 - <<'PY'
+          from pathlib import Path
+          status=Path('docs/IMPLEMENTATION_STATUS.md')
+          text=status.read_text()
+          text=text.replace('| 6 — Narrative Ledger | implementation complete; acceptance pending | Append-only hash-chained narrative events, deterministic projections, REST/OpenAPI/Web integration and Finalize saga are on the Phase 6 PR. |','| 6 — Narrative Ledger | complete | Production code, REST/OpenAPI/Web integration and tests merged from PR #22; exact-head PR CI and post-merge main CI passed. |',1)
+          text=text.replace('Implementation is complete on `feature/phase-06-narrative-ledger`; exact-head PR CI, squash merge and merge-triggered main CI are pending.', '''Phase 6 is accepted.\n\n- Final feature head: `${{ steps.pr.outputs.head_sha }}`\n- Delivery PR: #22 — `feat: add append-only narrative ledger`\n- Exact-head PR CI: `${{ steps.pr.outputs.run_id }}` — success\n- Squash merge: `${{ steps.merge.outputs.merge_sha }}`\n- Exact post-merge main CI: `${{ steps.mainci.outputs.run_id }}` — success''',1)
+          text=text.replace('`feature/phase-07-context-compiler` after Phase 6 merged-main acceptance.','`feature/phase-07-context-compiler`.',1)
+          status.write_text(text)
+          Path('docs/PHASE6_ACCEPTANCE.md').write_text('''# Phase 6 Acceptance Evidence\n\n- Final feature head: `${{ steps.pr.outputs.head_sha }}`\n- Pull request: #22 — `feat: add append-only narrative ledger`\n- Exact-head pull-request CI: `${{ steps.pr.outputs.run_id }}` — success\n- Squash merge commit: `${{ steps.merge.outputs.merge_sha }}`\n- Exact post-merge main CI: `${{ steps.mainci.outputs.run_id }}` — success\n\nThe required Go, Frontend, Windows and Docker jobs all completed successfully. Phase 7 is not included in this delivery.\n''')
+          PY
+          git add docs/IMPLEMENTATION_STATUS.md docs/PHASE6_ACCEPTANCE.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'docs: record Phase 6 acceptance evidence'
+          evidence_sha=$(git rev-parse HEAD)
+          git push origin HEAD:main
+          echo "evidence_sha=$evidence_sha" >> "$GITHUB_OUTPUT"
+      - name: Revalidate final evidence main
+        id: finalci
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha='${{ steps.evidence.outputs.evidence_sha }}'
+          gh api --method POST "repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches" -f ref=main
+          run_id=''
+          for attempt in $(seq 1 150); do
+            runs=$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${sha}&event=workflow_dispatch&per_page=30")
+            run_id=$(jq -r '[.workflow_runs[] | select(.name=="CI")] | sort_by(.created_at) | last | .id // empty' <<<"$runs")
+            if [[ -n "$run_id" ]]; then
+              status=$(gh api "repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.status')
+              [[ "$status" == completed ]] && break
+            fi
+            sleep 10
+          done
+          [[ -n "$run_id" ]]
+          [[ $(gh api "repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.conclusion') == success ]]
+          jobs=$(gh api "repos/${REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100")
+          for required in 'Go lint, test and build' 'Frontend check, test and build' 'Windows test and build' 'Docker build'; do
+            jq -e --arg name "$required" '.jobs | any(.name==$name and .status=="completed" and .conclusion=="success")' <<<"$jobs" >/dev/null
+          done
+          jq -e '.jobs | all(.status=="completed" and .conclusion=="success")' <<<"$jobs" >/dev/null
+          echo "Final evidence CI: $run_id"
+      - name: Clean temporary and merged Phase 6 branches
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for branch in \
+            feature/phase-06-narrative-ledger \
+            ops/phase6-accept \
+            ops/phase6-source-export \
+            ops/phase6-dev-env-export \
+            ops/phase6-apply \
+            ops/phase6-apply-v3 \
+            ops/phase6-apply-v4 \
+            ops/phase6-polish \
+            ops/phase6-main-cleanup; do
+            git push origin --delete "$branch" || true
+          done
