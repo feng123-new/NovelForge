@@ -20,9 +20,13 @@ jobs:
           fetch-depth: 0
       - name: Record immutable Phase 6 evidence
         shell: bash
+        env:
+          PHASE6_SECTION_B64: CgojIyBQaGFzZSA2IOKAlCBOYXJyYXRpdmUgTGVkZ2VyCgojIyMgQ29tcGxldGVkCgotIEFkZGVkIHByb2plY3QgTWlncmF0aW9uIDQgYW5kIHRoZSBgaW50ZXJuYWwvbmFycmF0aXZlbGVkZ2VyYCBwcm9kdWN0aW9uIHBhY2thZ2UuCi0gQWRkZWQgZGV0ZXJtaW5pc3RpYyBGb3Jlc2hhZG93IGxpZmVjeWNsZSB2YWxpZGF0aW9uLCBjb21wdXRlZCBDaGFwdGVyLU4gT1ZFUkRVRSwgc3RhYmxlIHBhZ2luYXRpb24sIGFwcGVuZC1vbmx5IGF1ZGl0IGV2ZW50cyBhbmQgaW5kZXhlZCBTY2VuYXJpbyBFIHF1ZXJpZXMuCi0gQWRkZWQgaW5kZXBlbmRlbnQgU2VjcmV0IHJlY29yZHMsIHRlbXBvcmFsIGtub3dsZWRnZSBob2xkZXJzLCBDaGFwdGVyLU4gcHVibGljIHN0YXRlIGFuZCBtZXRhZGF0YS1vbmx5IHVua25vd24gYm91bmRhcmllcy4KLSBBZGRlZCByZXBsYXktc2FmZSBBY2NlcHRlZCBGaW5hbCBpbnRlZ3JhdGlvbiB3aXRob3V0IGdyYW50aW5nIFdyaXRlciwgTGlicmFyaWFuIG9yIHJldHJpZXZhbCBhIExlZGdlciB3cml0ZSBjYXBhYmlsaXR5LgotIEFkZGVkIHJlYWwgUkVTVC9PcGVuQVBJIGludGVncmF0aW9uLCBEYXNoYm9hcmQgbWV0cmljcywgZGlhZ25vc3RpY3MsIFBsYW5uZXIgY29udGV4dCBhbmQgRm9yZXNoYWRvd3MvU2VjcmV0cyBXZWIgcGFnZXMuCgojIyMgQ2hhbmdlZCBGaWxlcwoKUHJvZHVjdGlvbiBwYXRocyBpbmNsdWRlIGBpbnRlcm5hbC9uYXJyYXRpdmVsZWRnZXIvYCwgYGludGVybmFsL3Byb2plY3QvbGVkZ2VyKi5nb2AsIGBpbnRlcm5hbC9xdWFsaXR5Z2F0ZS9jb29yZGluYXRvciouZ29gLCBgaW50ZXJuYWwvc2VydmVyL2xlZGdlciouZ29gLCBgaW50ZXJuYWwvc2VydmVyL29wZW5hcGlfcGhhc2U2Lmpzb25gLCBXZWIgQVBJL3R5cGVzL3BhZ2VzLCBnZW5lcmF0ZWQgV2ViIGFzc2V0cywgQ0kgZ2F0ZXMgYW5kIE5hcnJhdGl2ZSBMZWRnZXIgZG9jdW1lbnRhdGlvbi4KCiMjIyBBcmNoaXRlY3R1cmUgRGVjaXNpb25zCgotIE9WRVJEVUUgaXMgY2FsY3VsYXRlZCBwZXIgQ2hhcHRlciBOIGFuZCBjYW5ub3QgYmUgd3JpdHRlbiBhcyBhIGxpZmVjeWNsZSBzdGF0ZS4KLSBUcnV0aCBTdG9yZSByZW1haW5zIHdvcmxkLWZhY3QgYXV0aG9yaXR5OyBMZWRnZXIgcHJvamVjdGlvbnMgc2hhcmUgcHJvdmVuYW5jZSB2b2NhYnVsYXJ5IGJ1dCBjYW5ub3Qgb3ZlcnJpZGUgVHJ1dGguCi0gVW5rbm93biBTZWNyZXQgYm91bmRhcmllcyBleHBvc2UgbWV0YWRhdGEsIG5ldmVyIGF1dGhvcml0YXRpdmUgU2VjcmV0IHRydXRoLgotIFBoYXNlIDUgRmluYWxpemUgY2FsbHMgYEFjY2VwdGVkRmluYWxDb21taXR0ZXJgIG9ubHkgZm9yIHRoZSBzZWxlY3RlZCBzYWZlIEZpbmFsIGNhbmRpZGF0ZTsgaWRlbXBvdGVudCByZXBsYXkgY2Fubm90IGR1cGxpY2F0ZSBMZWRnZXIgZXZlbnRzLgoKIyMjIERhdGFiYXNlIC8gTWlncmF0aW9uIENoYW5nZXMKCk1pZ3JhdGlvbiA0IGFkZHMgbmFycmF0aXZlIGNvbW1pdC9pZGVtcG90ZW5jeSByZWNvcmRzLCBGb3Jlc2hhZG93IHByb2plY3Rpb24vbGluay9ldmVudCB0YWJsZXMsIFNlY3JldC9ob2xkZXIvZXZlbnQgdGFibGVzLCBhcHBlbmQtb25seSB0cmlnZ2VycywgYW5kIGJvdW5kZWQgc2NoZWR1bGUvdGVtcG9yYWwgaW5kZXhlcy4KCiMjIyBBUEkgQ2hhbmdlcwoKQWRkZWQgcHJvamVjdC1zY29wZWQgRm9yZXNoYWRvdywgU2VjcmV0L2hvbGRlciwgTGVkZ2VyIERhc2hib2FyZCwgRGlhZ25vc3RpY3MgYW5kIFBsYW5uZXIgQ29udGV4dCBlbmRwb2ludHMuIEFsbCB3cml0ZXMgdXNlIHRoZSBjb21tb24gc3RyaWN0IEpTT04sIGJvZHkgbGltaXQsIGlkZW1wb3RlbmN5IGFuZCBzYWZlLWVycm9yIHBhdGguCgojIyMgVUkgQ2hhbmdlcwoKQWRkZWQgRm9yZXNoYWRvd3MgYW5kIFNlY3JldHMgcm91dGVzIGFuZCByZWFsIExlZGdlciBtZXRyaWNzIG9uIERhc2hib2FyZC4gV3JpdGVzIHNob3cgcGVuZGluZy9zdWNjZXNzL3N0cnVjdHVyZWQgZXJyb3Igc3RhdGVzIGFuZCByZWxvYWQgYXV0aG9yaXRhdGl2ZSBzZXJ2ZXIgc3RhdGUuCgojIyMgVGVzdHMgRXhlY3V0ZWQKCkRldGVybWluaXN0aWMgY292ZXJhZ2UgaW5jbHVkZXMgbGlmZWN5Y2xlIHRyYW5zaXRpb25zLCBPVkVSRFVFIGNvbXB1dGF0aW9uL2luZGV4IHVzZSwgc3RhYmxlIHBhZ2luZywgU2VjcmV0IENoYXB0ZXItTiBob2xkZXJzLCBzYWZlIHRydXRoIG9taXNzaW9uLCBBY2NlcHRlZCBGaW5hbCByZXBsYXksIGNvbmN1cnJlbnQgaWRlbXBvdGVuY3ksIFNjZW5hcmlvIEUsIEhUVFAgYm91bmRhcmllcywgT3BlbkFQSSBkcmlmdCwgZnJvbnRlbmQgbG9hZGluZy9lcnJvci9kYXRhIHN0YXRlcywgdGFyZ2V0ZWQgcmFjZSwgV2luZG93cyBhbmQgRG9ja2VyLgoKIyMjIFRlc3QgUmVzdWx0cwoKLSBGaW5hbCBwcm9kdWN0aW9uIGhlYWQ6IGA2ZTNhNzYxM2ViZjY1YWQ5MGFjNWJjNzk1MmMwNWMwMjUxZDVjOTM0YC4KLSBQcm9kdWN0aW9uIFBSOiBbIzI0IOKAlCBmZWF0OiBjb21wbGV0ZSBQaGFzZSA2IE5hcnJhdGl2ZSBMZWRnZXJdKGh0dHBzOi8vZ2l0aHViLmNvbS9mZW5nMTIzLW5ldy9Ob3ZlbEZvcmdlL3B1bGwvMjQpLgotIEV4YWN0LWhlYWQgUFIgQ0k6IGAzMzYzNjY0MjEwOGAg4oCUICoqc3VjY2VzcyoqOyBHbywgRnJvbnRlbmQsIFdpbmRvd3MgYW5kIERvY2tlciBzdWNjZWVkZWQuCi0gU3F1YXNoIG1lcmdlOiBgZWYzZDE0NDU2N2NhYWRjZGYxNmFmODA5YzYzNmIzODU4ZDllYjhhMmAuCi0gTWVyZ2UtdHJpZ2dlcmVkIG1haW4gQ0k6IGAzMzYzNzUyOTY5NGAg4oCUICoqc3VjY2VzcyoqOyBHbywgRnJvbnRlbmQsIFdpbmRvd3MgYW5kIERvY2tlciBzdWNjZWVkZWQuCi0gU3VwZXJzZWRlZCBQUiAjMjMgd2FzIGNsb3NlZCB3aXRob3V0IG1lcmdlIGFuZCBpcyBub3QgYWNjZXB0YW5jZSBldmlkZW5jZS4KCiMjIyBQZXJmb3JtYW5jZQoKRm9yZXNoYWRvdyBzY2hlZHVsZSBhbmQgU2VjcmV0IGhvbGRlciBxdWVyaWVzIGFyZSBpbmRleC1iYWNrZWQgYW5kIGJvdW5kZWQuIENvbnRleHQgYnVpbGQgYW5kIGh5YnJpZCByZXRyaWV2YWwgcGVyZm9ybWFuY2UgcmVtYWluIFBoYXNlIDcgd29yay4KCiMjIyBMaWNlbnNlIFJldmlldwoKUGhhc2UgNiBhZGRlZCBubyBHbyBvciBucG0gZGVwZW5kZW5jeS4gRXhpc3RpbmcgQXBhY2hlLTIuMCBkZXBlbmRlbmN5IGludmVudG9yaWVzIGFuZCBmYWlsLWNsb3NlZCBHby9ucG0gbGljZW5zZSBnYXRlcyBwYXNzZWQgb24gdGhlIGV4YWN0IFBSIGhlYWQgYW5kIG1lcmdlZCBtYWluLgoKIyMjIEtub3duIElzc3VlcwoKTm8gUGhhc2UgNiBkYXRhLWludGVncml0eSwgdGVtcG9yYWwtYm91bmRhcnksIE9wZW5BUEksIFdpbmRvd3MsIERvY2tlciwgZGVwZW5kZW5jeS1saWNlbnNlIG9yIGdlbmVyYXRlZC1hc3NldCBibG9ja2VyIHJlbWFpbnMuIENvbnRleHQgQ29tcGlsZXIgaXMgaW50ZW50aW9uYWxseSBQaGFzZSA3IHNjb3BlLgoKIyMjIE5leHQgUGhhc2UKCmBmZWF0dXJlL3BoYXNlLTA3LWNvbnRleHQtY29tcGlsZXJgCgojIyMgRmVhdHVyZSBCcmFuY2gKCmBkZWxpdmVyeS9waGFzZS0wNi1jbGVhbmAKCiMjIyBGaW5hbCBIZWFkIENvbW1pdAoKYDZlM2E3NjEzZWJmNjVhZDkwYWM1YmM3OTUyYzA1YzAyNTFkNWM5MzRgCgojIyMgUHVsbCBSZXF1ZXN0CgpbIzI0IOKAlCBmZWF0OiBjb21wbGV0ZSBQaGFzZSA2IE5hcnJhdGl2ZSBMZWRnZXJdKGh0dHBzOi8vZ2l0aHViLmNvbS9mZW5nMTIzLW5ldy9Ob3ZlbEZvcmdlL3B1bGwvMjQpCgojIyMgUFIgQ0kgUmVzdWx0CgpgMzM2MzY2NDIxMDhgIOKAlCBzdWNjZXNzCgojIyMgTWFpbiBNZXJnZSBDb21taXQKCmBlZjNkMTQ0NTY3Y2FhZGNkZjE2YWY4MDljNjM2YjM4NThkOWViOGEyYAoKIyMjIE1haW4gQ0kgUmVzdWx0CgpgMzM2Mzc1Mjk2OTRgIOKAlCBzdWNjZXNzCgojIyMgRXhhY3QgUmVzdW1lIFBvaW50CgoxLiBNZXJnZSB0aGlzIGV2aWRlbmNlLW9ubHkgc3RhdHVzIFBSIGFmdGVyIGl0cyBjb21wbGV0ZSBDSSBzdWNjZWVkcyBhbmQgdmVyaWZ5IGl0cyBtZXJnZS10cmlnZ2VyZWQgbWFpbiBDSS4KMi4gRmV0Y2ggdGhlIHJlc3VsdGluZyBleGFjdCBgb3JpZ2luL21haW5gIGNvbW1pdC4KMy4gQ3JlYXRlIGBmZWF0dXJlL3BoYXNlLTA3LWNvbnRleHQtY29tcGlsZXJgIGZyb20gdGhhdCBleGFjdCBhY2NlcHRlZCBtYWluLgo0LiBJbXBsZW1lbnQgQ29udGV4dCBDb21waWxlciBhbmQgSHlicmlkIFJldHJpZXZhbCB3aXRob3V0IHJlb3BlbmluZyBhY2NlcHRlZCBQaGFzZSA2IHNjb3BlLgo=
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import base64
+          import os
           from pathlib import Path
 
           path = Path('docs/IMPLEMENTATION_STATUS.md')
@@ -42,101 +46,7 @@ jobs:
               raise SystemExit('phase table anchor missing')
 
           if '## Phase 6 — Narrative Ledger' not in text:
-              text += r'''
-
-## Phase 6 — Narrative Ledger
-
-### Completed
-
-- Added project Migration 4 and the `internal/narrativeledger` production package.
-- Added deterministic Foreshadow lifecycle validation, computed Chapter-N OVERDUE, stable pagination, append-only audit events and indexed Scenario E queries.
-- Added independent Secret records, temporal knowledge holders, Chapter-N public state and metadata-only unknown boundaries.
-- Added replay-safe Accepted Final integration without granting Writer, Librarian or retrieval a Ledger write capability.
-- Added real REST/OpenAPI integration, Dashboard metrics, diagnostics, Planner context and Foreshadows/Secrets Web pages.
-
-### Changed Files
-
-Production paths include `internal/narrativeledger/`, `internal/project/ledger*.go`, `internal/qualitygate/coordinator*.go`, `internal/server/ledger*.go`, `internal/server/openapi_phase6.json`, Web API/types/pages, generated Web assets, CI gates and Narrative Ledger documentation.
-
-### Architecture Decisions
-
-- OVERDUE is calculated per Chapter N and cannot be written as a lifecycle state.
-- Truth Store remains world-fact authority; Ledger projections share provenance vocabulary but cannot override Truth.
-- Unknown Secret boundaries expose metadata, never authoritative Secret truth.
-- Phase 5 Finalize calls `AcceptedFinalCommitter` only for the selected safe Final candidate; idempotent replay cannot duplicate Ledger events.
-
-### Database / Migration Changes
-
-Migration 4 adds narrative commit/idempotency records, Foreshadow projection/link/event tables, Secret/holder/event tables, append-only triggers, and bounded schedule/temporal indexes.
-
-### API Changes
-
-Added project-scoped Foreshadow, Secret/holder, Ledger Dashboard, Diagnostics and Planner Context endpoints. All writes use the common strict JSON, body limit, idempotency and safe-error path.
-
-### UI Changes
-
-Added Foreshadows and Secrets routes and real Ledger metrics on Dashboard. Writes show pending/success/structured error states and reload authoritative server state.
-
-### Tests Executed
-
-Deterministic coverage includes lifecycle transitions, OVERDUE computation/index use, stable paging, Secret Chapter-N holders, safe truth omission, Accepted Final replay, concurrent idempotency, Scenario E, HTTP boundaries, OpenAPI drift, frontend loading/error/data states, targeted race, Windows and Docker.
-
-### Test Results
-
-- Final production head: `6e3a7613ebf65ad90ac5bc7952c05c0251d5c934`.
-- Production PR: [#24 — feat: complete Phase 6 Narrative Ledger](https://github.com/feng123-new/NovelForge/pull/24).
-- Exact-head PR CI: `33636642108` — **success**; Go, Frontend, Windows and Docker succeeded.
-- Squash merge: `ef3d144567caadcdf16af809c636b3858d9eb8a2`.
-- Merge-triggered main CI: `33637529694` — **success**; Go, Frontend, Windows and Docker succeeded.
-- Superseded PR #23 was closed without merge and is not acceptance evidence.
-
-### Performance
-
-Foreshadow schedule and Secret holder queries are index-backed and bounded. Context build and hybrid retrieval performance remain Phase 7 work.
-
-### License Review
-
-Phase 6 added no Go or npm dependency. Existing Apache-2.0 dependency inventories and fail-closed Go/npm license gates passed on the exact PR head and merged main.
-
-### Known Issues
-
-No Phase 6 data-integrity, temporal-boundary, OpenAPI, Windows, Docker, dependency-license or generated-asset blocker remains. Context Compiler is intentionally Phase 7 scope.
-
-### Next Phase
-
-`feature/phase-07-context-compiler`
-
-### Feature Branch
-
-`delivery/phase-06-clean`
-
-### Final Head Commit
-
-`6e3a7613ebf65ad90ac5bc7952c05c0251d5c934`
-
-### Pull Request
-
-[#24 — feat: complete Phase 6 Narrative Ledger](https://github.com/feng123-new/NovelForge/pull/24)
-
-### PR CI Result
-
-`33636642108` — success
-
-### Main Merge Commit
-
-`ef3d144567caadcdf16af809c636b3858d9eb8a2`
-
-### Main CI Result
-
-`33637529694` — success
-
-### Exact Resume Point
-
-1. Merge this evidence-only status PR after its complete CI succeeds and verify its merge-triggered main CI.
-2. Fetch the resulting exact `origin/main` commit.
-3. Create `feature/phase-07-context-compiler` from that exact accepted main.
-4. Implement Context Compiler and Hybrid Retrieval without reopening accepted Phase 6 scope.
-'''
+              text += base64.b64decode(os.environ['PHASE6_SECTION_B64']).decode('utf-8')
           path.write_text(text, encoding='utf-8')
           PY
 
