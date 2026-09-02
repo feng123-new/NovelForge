@@ -76,3 +76,12 @@ The client opens one process-wide `EventSource`. It exposes `connecting`, `conne
 - Project paths remain opaque or workspace-relative; settings expose only the workspace label.
 - Chapter inspection skips symlinks and reads at most 1 MiB per file.
 - The existing restrictive CSP works because production JavaScript and CSS are self-hosted files with no inline executable script.
+
+
+## Phase 6 Narrative Ledger pages
+
+Phase 6 adds real **Foreshadows** and **Secrets** routes to the embedded workspace. Both pages load projects and Chapter-N state through the typed API client, use server-generated authority as the source of truth, disable writes while pending, display structured error codes and trace IDs, and reload after each successful mutation.
+
+The Foreshadows page exposes computed OVERDUE metrics, stable filtered lists, creation, progress, resolve, and abandon operations. The Secrets page deliberately separates the management-only authority truth from Chapter-N holder ranges and public status; it supports private creation, temporal holder addition, and explicit public reveal.
+
+Component tests cover empty and structured-error states, idempotent writes, pending-state button protection, lifecycle transitions, temporal holder writes, public reveal, and authoritative refresh. `web/dist` is rebuilt from the committed lockfile and remains a CI-checked `go:embed` release input.
