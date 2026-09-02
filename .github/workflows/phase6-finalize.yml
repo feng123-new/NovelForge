@@ -1,0 +1,129 @@
+name: Temporary delayed Phase 6 acceptance finalizer
+
+on:
+  push:
+    branches: [ops/phase6-finalizer]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: feng123-new/NovelForge
+      FEATURE: feature/phase-06-narrative-ledger
+      BASE: ed4896536e7d31db4bed538be99e27778a64aaab
+      TREE: 17dc01c2d591524430ef03488798e2a4c30cd37c
+    steps:
+      - name: Wait, then finish only missing Phase 6 steps
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 600
+          required=('Go lint, test and build' 'Frontend check, test and build' 'Windows test and build' 'Docker build')
+
+          verify_jobs() {
+            local id="$1" payload
+            payload="$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100")"
+            for n in "${required[@]}"; do
+              [[ "$(jq --arg n "$n" '[.jobs[] | select(.name==$n and .conclusion=="success")]|length' <<<"$payload")" == 1 ]] || return 1
+            done
+          }
+          wait_ci() {
+            local sha="$1" event="$2" id='' status='' conclusion=''
+            for _ in $(seq 1 180); do
+              row="$(gh api "repos/$REPO/actions/runs?head_sha=$sha&event=$event&per_page=100" --jq '.workflow_runs[] | select(.name=="CI") | [.id,.status,(.conclusion//"")] | @tsv' | head -1)"
+              if [[ -n "$row" ]]; then
+                IFS=$'\t' read -r id status conclusion <<<"$row"
+                if [[ "$status" == completed ]]; then
+                  [[ "$conclusion" == success ]] && verify_jobs "$id" || return 1
+                  echo "$id"; return 0
+                fi
+              fi
+              sleep 10
+            done
+            return 1
+          }
+          set_tag() {
+            local sha="$1"
+            if gh api "repos/$REPO/git/ref/tags/phase-06-accepted" >/dev/null 2>&1; then
+              gh api --method PATCH "repos/$REPO/git/refs/tags/phase-06-accepted" -f sha="$sha" -F force=true >/dev/null
+            else
+              gh api --method POST "repos/$REPO/git/refs" -f ref=refs/tags/phase-06-accepted -f sha="$sha" >/dev/null
+            fi
+          }
+
+          main="$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)"
+          tag="$(gh api "repos/$REPO/git/ref/tags/phase-06-accepted" --jq .object.sha 2>/dev/null || true)"
+          if [[ "$tag" == "$main" && -n "$tag" ]]; then wait_ci "$main" push >/dev/null; exit 0; fi
+          gh api "repos/$REPO/contents/docs/IMPLEMENTATION_STATUS.md?ref=$main" --jq .content | tr -d '\n' | base64 -d >/tmp/status.md
+          if grep -q '| 6 — Narrative Ledger | complete |' /tmp/status.md; then wait_ci "$main" push >/dev/null; set_tag "$main"; exit 0; fi
+
+          prs="$(gh api "repos/$REPO/pulls?state=all&per_page=100")"
+          pr="$(jq -r --arg f "$FEATURE" '.[]|select(.head.ref==$f or .title=="feat: add Phase 6 narrative ledger")|.number' <<<"$prs" | head -1)"
+          if [[ -n "$pr" ]]; then
+            view="$(gh api "repos/$REPO/pulls/$pr")"
+            fsha="$(jq -r .head.sha <<<"$view")"
+            merged="$(jq -r '.merged_at//empty' <<<"$view")"
+          else
+            fsha="$(gh api --method POST "repos/$REPO/git/commits" -f message='feat: add Phase 6 narrative ledger' -f tree="$TREE" -f "parents[]=$BASE" --jq .sha)"
+            gh api --method POST "repos/$REPO/git/refs" -f ref="refs/heads/$FEATURE" -f sha="$fsha" >/dev/null
+            url="$(gh pr create --repo "$REPO" --base main --head "$FEATURE" --title 'feat: add Phase 6 narrative ledger' --body 'Implements the real Phase 6 Narrative Ledger prerequisite, temporal boundaries, API/OpenAPI/Web integration and Scenario E. Phase 7 is out of scope.')"
+            pr="${url##*/}"; merged=''
+          fi
+          [[ "$(gh api "repos/$REPO/git/commits/$fsha" --jq .tree.sha)" == "$TREE" ]]
+          if [[ -z "$merged" ]]; then
+            prci="$(wait_ci "$fsha" pull_request)"
+            gh pr merge "$pr" --repo "$REPO" --squash --delete-branch --subject 'feat: add Phase 6 narrative ledger' --body 'Land the validated Narrative Ledger prerequisite.'
+          else
+            prci="$(gh api "repos/$REPO/actions/runs?head_sha=$fsha&event=pull_request&per_page=100" --jq '.workflow_runs[]|select(.name=="CI" and .conclusion=="success")|.id' | head -1)"
+            [[ -n "$prci" ]]; verify_jobs "$prci"
+          fi
+          merge="$(gh api "repos/$REPO/pulls/$pr" --jq .merge_commit_sha)"
+          mainci="$(wait_ci "$merge" push)"
+          main="$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)"
+
+          # Reuse an open evidence PR or create one from the current production main.
+          ebranch=docs/phase-06-acceptance
+          epr="$(gh api "repos/$REPO/pulls?state=open&head=feng123-new:$ebranch&base=main&per_page=20" --jq '.[0].number//empty')"
+          if [[ -z "$epr" ]]; then
+            rm -rf /tmp/repo
+            git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" /tmp/repo
+            cd /tmp/repo; git checkout -B "$ebranch" "$main"
+            export FSHA="$fsha" PR="$pr" PRCI="$prci" MERGE="$merge" MAINCI="$mainci"
+            python3 - <<'PY'
+from pathlib import Path
+import os,re
+p=Path('docs/IMPLEMENTATION_STATUS.md'); t=p.read_text()
+t=re.sub(r'\| 6–13 \| not started \|[^\n]*\|','| 6 — Narrative Ledger | complete | Production PR and merged-main CI passed; exact evidence is recorded below. |\n| 7–13 | not started | Phase 7 begins from the accepted Phase 6 main. |',t,count=1)
+if '| 6 — Narrative Ledger | complete |' not in t: raise SystemExit('status-row update failed')
+if '## Phase 6' in t: t=t.split('## Phase 6',1)[0].rstrip()+'\n'
+t += f'''\n\n## Phase 6\n\n### Completed\n\n- Persistent Foreshadow lifecycle with computed `OVERDUE`, bounded indexed queries and planner injection.\n- Secret holder/public Chapter-N knowledge boundaries and reveal tracking.\n- Accepted-Final-only replay-safe Ledger events, dashboard/API/OpenAPI/Web integration and Scenario E.\n- Structured Truth remains authoritative; Narrative Ledger cannot override it.\n\n### Test Results\n\n- Final feature head: `{os.environ['FSHA']}`.\n- Production PR: [#{os.environ['PR']} — feat: add Phase 6 narrative ledger](https://github.com/feng123-new/NovelForge/pull/{os.environ['PR']}).\n- Exact-head PR CI: `{os.environ['PRCI']}` — success.\n- Squash merge: `{os.environ['MERGE']}`.\n- Merge-triggered main CI: `{os.environ['MAINCI']}` — success.\n- Go, Frontend, Windows and Docker jobs all succeeded.\n\n### Exact Resume Point\n\n1. Fetch accepted `main`.\n2. Create `feature/phase-07-context-compiler` from that exact SHA.\n3. Do not reopen Phase 6 scope.\n'''
+p.write_text(t.rstrip()+'\n')
+PY
+            git config user.name github-actions; git config user.email actions@github.com
+            git add docs/IMPLEMENTATION_STATUS.md; git commit -m 'docs: record Phase 6 acceptance evidence'; git push --force origin "$ebranch"
+            esha="$(git rev-parse HEAD)"
+            url="$(gh pr create --repo "$REPO" --base main --head "$ebranch" --title 'docs: record Phase 6 acceptance evidence' --body 'Records exact Phase 6 delivery evidence and the Phase 7 resume point.')"; epr="${url##*/}"
+          else
+            esha="$(gh api "repos/$REPO/pulls/$epr" --jq .head.sha)"
+          fi
+          wait_ci "$esha" pull_request >/dev/null
+          gh pr merge "$epr" --repo "$REPO" --squash --delete-branch --subject 'docs: record Phase 6 acceptance evidence' --body 'Record immutable Phase 6 evidence.'
+          accepted="$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)"
+          wait_ci "$accepted" push >/dev/null
+          set_tag "$accepted"
+
+      - name: Cleanup after acceptance
+        if: success()
+        shell: bash
+        run: |
+          set +e
+          for b in ops/phase6-transfer ops/phase6-source-export ops/phase6-dev-env-export ops/phase6-recovery ops/phase6-finalizer feature/phase-06-narrative-ledger docs/phase-06-acceptance; do
+            gh api --method DELETE "repos/$REPO/git/refs/heads/$b" >/dev/null 2>&1 || true
+          done
