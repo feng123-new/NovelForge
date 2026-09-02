@@ -1,0 +1,167 @@
+name: Temporary idempotent Phase 6 acceptance
+
+on:
+  push:
+    branches:
+      - ops/phase6-accept-v2
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  checks: read
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Complete or verify Phase 6 acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          require_jobs() {
+            local run_id="$1"
+            local jobs
+            jobs=$(gh api "repos/${REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100")
+            for required in 'Go lint, test and build' 'Frontend check, test and build' 'Windows test and build' 'Docker build'; do
+              jq -e --arg name "$required" '.jobs | any(.name==$name and .status=="completed" and .conclusion=="success")' <<<"$jobs" >/dev/null
+            done
+            jq -e '.jobs | all(.status=="completed" and .conclusion=="success")' <<<"$jobs" >/dev/null
+          }
+
+          wait_ci() {
+            local sha="$1" event="$2" attempts="${3:-180}"
+            local run_id='' status=''
+            for attempt in $(seq 1 "$attempts"); do
+              local runs
+              runs=$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${sha}&event=${event}&per_page=50")
+              run_id=$(jq -r '[.workflow_runs[] | select(.name=="CI")] | sort_by(.created_at) | last | .id // empty' <<<"$runs")
+              if [[ -n "$run_id" ]]; then
+                status=$(gh api "repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.status')
+                if [[ "$status" == completed ]]; then break; fi
+              fi
+              sleep 10
+            done
+            [[ -n "$run_id" ]]
+            [[ $(gh api "repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.conclusion') == success ]]
+            require_jobs "$run_id"
+            printf '%s' "$run_id"
+          }
+
+          cleanup_branches() {
+            for branch in \
+              feature/phase-06-narrative-ledger \
+              ops/phase6-accept \
+              ops/phase6-accept-v2 \
+              ops/phase6-source-export \
+              ops/phase6-dev-env-export \
+              ops/phase6-apply \
+              ops/phase6-apply-v3 \
+              ops/phase6-apply-v4 \
+              ops/phase6-polish \
+              ops/phase6-repair \
+              ops/phase6-main-cleanup; do
+              git push origin --delete "$branch" >/dev/null 2>&1 || true
+            done
+          }
+
+          git fetch origin main
+          git checkout -B main origin/main
+          current_sha=$(git rev-parse HEAD)
+          if [[ -f docs/PHASE6_ACCEPTANCE.md ]] && grep -q '| 6 — Narrative Ledger | complete |' docs/IMPLEMENTATION_STATUS.md; then
+            runs=$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${current_sha}&per_page=50")
+            run_id=$(jq -r '[.workflow_runs[] | select(.name=="CI" and .status=="completed" and .conclusion=="success")] | sort_by(.created_at) | last | .id // empty' <<<"$runs")
+            if [[ -z "$run_id" ]]; then
+              gh api --method POST "repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches" -f ref=main
+              run_id=$(wait_ci "$current_sha" workflow_dispatch 180)
+            else
+              require_jobs "$run_id"
+            fi
+            echo "Phase 6 was already accepted on ${current_sha}; CI ${run_id} is successful."
+            cleanup_branches
+            exit 0
+          fi
+
+          pulls=$(gh api "repos/${REPOSITORY}/pulls?state=all&per_page=100")
+          pr=$(jq -c '[.[] | select(.head.ref=="feature/phase-06-narrative-ledger")] | sort_by(.number) | last // empty' <<<"$pulls")
+          [[ -n "$pr" ]]
+          pr_number=$(jq -r '.number' <<<"$pr")
+          pr_state=$(jq -r '.state' <<<"$pr")
+          head_sha=$(jq -r '.head.sha' <<<"$pr")
+          [[ -n "$head_sha" && "$head_sha" != null ]]
+
+          pr_run=''
+          merge_sha=''
+          if [[ "$pr_state" == open ]]; then
+            pr_run=$(wait_ci "$head_sha" pull_request 180)
+            response=$(gh api --method PUT "repos/${REPOSITORY}/pulls/${pr_number}/merge" \
+              -f merge_method=squash \
+              -f sha="$head_sha" \
+              -f commit_title='feat: add append-only narrative ledger' \
+              -f commit_message='Complete Phase 6 with an immutable hash-chained narrative event stream, deterministic lifecycle projection, historical state and audit, recoverable Finalize integration, strict REST/OpenAPI contracts, a real Chapters workspace panel, and cross-platform validation.')
+            jq -e '.merged == true' <<<"$response" >/dev/null
+            merge_sha=$(jq -r '.sha' <<<"$response")
+          else
+            merged=$(jq -r '.merged_at // empty' <<<"$pr")
+            [[ -n "$merged" ]]
+            merge_sha=$(jq -r '.merge_commit_sha' <<<"$pr")
+            runs=$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${head_sha}&event=pull_request&per_page=50")
+            pr_run=$(jq -r '[.workflow_runs[] | select(.name=="CI" and .status=="completed" and .conclusion=="success")] | sort_by(.created_at) | last | .id // empty' <<<"$runs")
+            [[ -n "$pr_run" ]]
+            require_jobs "$pr_run"
+          fi
+          [[ -n "$merge_sha" && "$merge_sha" != null ]]
+
+          for attempt in $(seq 1 60); do
+            main_sha=$(gh api "repos/${REPOSITORY}/branches/main" --jq '.commit.sha')
+            [[ "$main_sha" == "$merge_sha" ]] && break
+            sleep 2
+          done
+          [[ $(gh api "repos/${REPOSITORY}/branches/main" --jq '.commit.sha') == "$merge_sha" ]]
+
+          existing=$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${merge_sha}&per_page=50")
+          main_run=$(jq -r '[.workflow_runs[] | select(.name=="CI" and .status=="completed" and .conclusion=="success")] | sort_by(.created_at) | last | .id // empty' <<<"$existing")
+          if [[ -z "$main_run" ]]; then
+            gh api --method POST "repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches" -f ref=main
+            main_run=$(wait_ci "$merge_sha" workflow_dispatch 180)
+          else
+            require_jobs "$main_run"
+          fi
+
+          git fetch origin main
+          git checkout -B main origin/main
+          python3 - "$head_sha" "$pr_number" "$pr_run" "$merge_sha" "$main_run" <<'PY'
+          from pathlib import Path
+          import sys
+          head,pr,prrun,merge,mainrun=sys.argv[1:]
+          path=Path('docs/IMPLEMENTATION_STATUS.md')
+          text=path.read_text()
+          text=text.replace('| 6 — Narrative Ledger | implementation complete; acceptance pending | Append-only hash-chained narrative events, deterministic projections, REST/OpenAPI/Web integration and Finalize saga are on the Phase 6 PR. |','| 6 — Narrative Ledger | complete | Production code, REST/OpenAPI/Web integration and tests merged from PR #'+pr+'; exact-head PR CI and exact post-merge main CI passed. |',1)
+          pending='Implementation is complete on `feature/phase-06-narrative-ledger`; exact-head PR CI, squash merge and merge-triggered main CI are pending.'
+          accepted=f'''Phase 6 is accepted.\n\n- Final feature head: `{head}`\n- Delivery PR: #{pr} — `feat: add append-only narrative ledger`\n- Exact-head PR CI: `{prrun}` — success\n- Squash merge: `{merge}`\n- Exact post-merge main CI: `{mainrun}` — success'''
+          if pending in text: text=text.replace(pending,accepted,1)
+          elif 'Phase 6 is accepted.' not in text: text += '\n\n'+accepted+'\n'
+          text=text.replace('`feature/phase-07-context-compiler` after Phase 6 merged-main acceptance.','`feature/phase-07-context-compiler`.',1)
+          path.write_text(text)
+          Path('docs/PHASE6_ACCEPTANCE.md').write_text(f'''# Phase 6 Acceptance Evidence\n\n- Final feature head: `{head}`\n- Pull request: #{pr} — `feat: add append-only narrative ledger`\n- Exact-head pull-request CI: `{prrun}` — success\n- Squash merge commit: `{merge}`\n- Exact post-merge main CI: `{mainrun}` — success\n\nThe Go, Frontend, Windows and Docker jobs all completed successfully. Phase 7 is not included in this delivery.\n''')
+          PY
+          git add docs/IMPLEMENTATION_STATUS.md docs/PHASE6_ACCEPTANCE.md
+          git commit -m 'docs: record Phase 6 acceptance evidence'
+          evidence_sha=$(git rev-parse HEAD)
+          git push origin HEAD:main
+
+          gh api --method POST "repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches" -f ref=main
+          final_run=$(wait_ci "$evidence_sha" workflow_dispatch 180)
+          echo "Phase 6 accepted: PR #${pr_number}, PR CI ${pr_run}, merge ${merge_sha}, merge CI ${main_run}, evidence ${evidence_sha}, final CI ${final_run}."
+          cleanup_branches
