@@ -1,0 +1,93 @@
+name: Temporary Phase 6 implementation finalizer
+
+on:
+  push:
+    branches:
+      - ops/phase6-write-files-now-2
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/phase6-write-files-now-2
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Finalize Phase 6 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/phase6_finalize.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('internal/narrativeledger/performance_test.go')
+          text = path.read_text(encoding='utf-8')
+          anchor = 'func TestScheduleIndexGate100K(t *testing.T) {\n'
+          replacement = anchor + '\tif raceEnabled {\n\t\tt.Skip("performance gate runs in the dedicated non-race CI step")\n\t}\n'
+          if replacement not in text:
+              if anchor not in text:
+                  raise SystemExit('performance test anchor not found')
+              text = text.replace(anchor, replacement, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm -f .github/phase6_finalize.py .github/workflows/phase6-finalize.yml
+          gofmt -w internal/narrativeledger internal/project/narrative_ledger.go internal/project/narrative_ledger_test.go internal/project/zz_narrative_ledger_migration.go internal/qualitygate/narrative_context.go internal/qualitygate/narrative_context_test.go internal/server/narrative_ledger.go internal/server/narrative_ledger_helpers_test.go internal/server/narrative_ledger_contract_test.go
+          git diff --check
+
+      - name: Go formatting and vet
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/narrativeledger internal/project/narrative_ledger.go internal/project/narrative_ledger_test.go internal/project/zz_narrative_ledger_migration.go internal/qualitygate/narrative_context.go internal/qualitygate/narrative_context_test.go internal/server/narrative_ledger.go internal/server/narrative_ledger_helpers_test.go internal/server/narrative_ledger_contract_test.go)"
+          GOWORK=off go vet ./...
+
+      - name: Full Go tests
+        run: GOWORK=off go test -buildvcs=false -count=1 ./...
+
+      - name: Targeted race tests
+        run: GOWORK=off go test -buildvcs=false -count=1 -race ./internal/narrativeledger ./internal/project ./internal/qualitygate ./internal/server
+
+      - name: Dedicated 100k schedule gate
+        run: GOWORK=off go test -buildvcs=false -count=1 ./internal/narrativeledger -run '^TestScheduleIndexGate100K$'
+
+      - name: Frontend checks and tests
+        working-directory: web
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run check
+          npm test -- --run
+          npm run build
+          npm audit --audit-level=high
+
+      - name: Commit validated Phase 6 implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'No Phase 6 changes were produced' >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: add Narrative Ledger and temporal story obligations'
+          git push origin HEAD:feature/phase-06-narrative-ledger
