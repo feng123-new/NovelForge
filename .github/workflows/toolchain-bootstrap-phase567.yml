@@ -1,0 +1,50 @@
+name: Temporary Phase 5-7 toolchain bootstrap
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    if: github.event.pull_request.head.ref == 'ops/source-snapshot-phase567'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.2'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Resolve frontend dependencies
+        working-directory: web
+        run: npm ci
+      - name: Package local test environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          goroot="$(go env GOROOT)"
+          tar -C "$(dirname "$goroot")" -czf /tmp/go-1.25.5-linux-amd64.tgz "$(basename "$goroot")"
+          tar -C web -czf /tmp/web-node-modules.tgz node_modules
+          sha256sum /tmp/go-1.25.5-linux-amd64.tgz /tmp/web-node-modules.tgz > /tmp/toolchain.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: novelforge-toolchain-${{ github.run_id }}
+          compression-level: 0
+          path: |
+            /tmp/go-1.25.5-linux-amd64.tgz
+            /tmp/web-node-modules.tgz
+            /tmp/toolchain.sha256
+          if-no-files-found: error
+          retention-days: 1
