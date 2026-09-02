@@ -2,339 +2,194 @@
 
 Last updated: 2026-09-02
 
-## Repository state
+## Verified repository state
 
-- Phase 2 PR #7 merged; merged-main CI passed.
-- Phase 3 PR #8 merged; merged-main CI passed.
-- Phase 4 production and evidence correction are on accepted main `5cd80f9efe35e16e3db3302fca5cdd178e28c7b0`.
-- Phase 4 production PR #13 CI `33585504193` succeeded; merge-triggered main CI `33585658124` succeeded.
-- Phase 4 evidence PR #14 CI `33586026981` succeeded; resulting main CI `33586415570` succeeded.
-- Phase 5 production was squash-merged from PR #19 as `831cb2983ce851063ce9fb650eaebb14f6ad44c1`.
-- Phase 5 exact-head PR CI `33591270069` and merge-triggered main CI `33591405462` both succeeded.
-- Draft PR #18 was closed without merge and superseded by the normal non-draft delivery PR #19 on the same final production head.
-- Phase 5 acceptance record PR #20 CI `33591592779` succeeded; its squash merge `0934fc98bcedd7aa7a33baa84984e5cdef0196ed` passed main CI `33591712938`.
-- Phase 6 production PR #24 exact-head CI `33636642108` succeeded; squash merge `ef3d144567caadcdf16af809c636b3858d9eb8a2` passed merged-main CI `33637529694`.
+- Phase 2 project/API foundation was delivered by PR #7 and passed merge-triggered `main` CI.
+- Phase 3 formal Web Workspace was delivered by PR #8 and passed merge-triggered `main` CI.
+- Phase 4 Structured Truth Store was delivered by PR #13; PR CI `33585504193` and merged-main CI `33585658124` succeeded. Evidence correction PR #14 also passed.
+- Phase 5 Librarian / Continuity / Quality Gate was delivered by PR #19; PR CI `33591270069` and merged-main CI `33591405462` succeeded. Acceptance record PR #20 also passed.
+- Phase 6 Narrative Ledger production was delivered by PR #24 from exact head `6e3a7613ebf65ad90ac5bc7952c05c0251d5c934`.
+- Phase 6 production PR CI `33636642108` succeeded; squash merge `ef3d144567caadcdf16af809c636b3858d9eb8a2` passed merged-main CI `33637529694`.
+- Phase 6 acceptance record PR #25 exact-head CI `33638270944` succeeded; squash merge `dff822c14ef9a5eae7f37695fa755d00b875f047` was followed by successful main CI `33638643303`.
+- Phase 6 acceptance hardening PR #26 exact head `b2944cd8c3d7977753c1ff20ca3cf48f41ceb76c` passed PR CI `33639657423`.
+- PR #26 squash merge `12bc259e39df20664c1bf950cf95f8978572ff64` passed merge-triggered main CI `33639951628` across Go, Frontend, Windows and Docker.
+- Phase 7 production work has not started. The exact next delivery branch is `feature/phase-07-context-compiler`.
 
 ## Phase status
 
-| Phase | Status | Notes |
+| Phase | Status | Evidence |
 | --- | --- | --- |
 | 0 — upstream baseline | complete | ainovel-cli baseline retained with provenance. |
-| 1 — compatibility | complete | Runtime isolation, migration, lifecycle, branding, Linux/Windows/Docker gates. |
-| 2 — project/API foundation | complete | PR #7 merged and main CI passed. |
-| 3 — formal Web Workspace | complete | PR #8 merged and main CI passed. |
-| 4 — Structured Truth Store | complete | PR #13 plus merge-triggered main CI passed; evidence correction #14 also passed. |
-| 5 — Librarian / Continuity / Quality Gate | complete | Production code, API, OpenAPI, Web, tests and docs merged in PR #19; PR and merged-main CI passed. |
-| 6 — Narrative Ledger | complete | Production code, API, OpenAPI, Web, tests and docs merged in PR #24; exact-head and merged-main CI passed. |
-| 7–13 | not started | Phase 7 begins from the exact accepted main after this evidence record is merged and validated. |
-
-## Phase 4 evidence
-
-- Final feature head: `078c18aa69929469d219dfd00f5e47aa2c348d86`
-- PR: #13
-- PR CI: `33585504193` — success
-- Main merge: `903a163cb84385155783e52161e70233a15e8dc7`
-- Main CI: `33585658124` — success
-- Evidence correction main: `5cd80f9efe35e16e3db3302fca5cdd178e28c7b0`
-- Evidence correction main CI: `33586415570` — success
-
-## Phase 5
-
-### Completed
-
-- Added stable Architect, Planner, Writer, Librarian, Continuity, Editor, structured-output, model-call, transaction-repository, commit-coordinator and quality-policy interfaces.
-- Added strict structured-output decoding: unknown fields, multiple JSON values and trailing data fail; optional repair is bounded and every repaired response is revalidated.
-- Added provenance-bound Fact Proposal groups for entity, character, relationship, location, inventory, knowledge, timeline, world, foreshadow, secret, injury and cultivation changes.
-- Kept Librarian proposals separate from authoritative Truth until a deterministic coordinator accepts a Final candidate.
-- Added deterministic Chapter-N continuity checks against the temporal Truth Store, including inventory and knowledge boundaries.
-- Added a persistent chapter-quality state machine, candidate history, proposal history, continuity results, Editor reviews, model-call ledger and transition audit.
-- Added default `max_rewrites=2`, configurable quality threshold 7.0 and deterministic WARN policy.
-- Added bounded candidate selection; Continuity FAIL can never become Final and an Editor score cannot override a blocking continuity result.
-- Added model-call idempotency: same key and request hash replay; same key with different content conflicts; transient provider retry is bounded.
-- Added a recoverable Final → Truth → chapter file → checkpoint saga with per-chapter Finalize serialization and replay-safe Truth keys.
-- Added Windows-safe recoverable chapter replacement with a same-directory backup.
-- Added project migration 3, real REST/OpenAPI integration and real Chapters Web quality controls.
-- Preserved the existing TUI, headless, host, Store, checkpoint, revision and mature `commit_chapter` recovery paths.
-
-### Changed Files
-
-Major production and acceptance paths:
-
-- `.github/workflows/ci.yml`
-- `internal/qualitygate/*.go`
-- `internal/project/quality.go`
-- `internal/project/quality_migration.go`
-- `internal/server/quality.go`
-- `internal/server/quality_test.go`
-- `internal/server/server.go`
-- `internal/server/workspace.go`
-- `internal/server/openapi.go`
-- `internal/server/openapi_phase5.json`
-- `internal/server/openapi_test.go`
-- `web/src/lib/api.ts`
-- `web/src/lib/api.test.ts`
-- `web/src/lib/types.ts`
-- `web/src/pages/Chapters.svelte`
-- `web/dist/assets/app.css`
-- `web/dist/assets/app.js`
-- `docs/AGENTS.md`
-- `docs/ENGINE.md`
-- `docs/API.md`
-- `docs/QUALITY_GATE.md`
-- `docs/ARCHITECTURE.md`
-- `docs/IMPLEMENTATION_STATUS.md`
-
-### Architecture Decisions
-
-- Writer and Librarian do not receive Truth repositories; only the deterministic commit coordinator converts the accepted proposal into Truth events.
-- Continuity uses authoritative Chapter-N Truth; retrieval or RAG is not an authority input.
-- Full Draft text is durable but omitted from quality diagnostic API responses.
-- Semantic model outputs are behind injected services and `ModelInvoker`; no API key is stored in the project database, Web state or normal logs.
-- JSON repair defaults to one attempt when a repairer is configured; provider retry defaults to two and is capped at five.
-- The quality loop is finite. Default `max_rewrites` is two and no Agent can create an unbounded self-loop.
-- A transaction becomes `completed` only after Truth events, the final chapter file and checkpoint are durable.
-- The cross-database/filesystem boundary is a recoverable saga with persisted step state and idempotent re-entry rather than an unsafe best-effort sequence.
-
-### Database / Migration Changes
-
-Project migration 3 `chapter_quality_gate` adds:
-
-```text
-chapter_transactions
-chapter_state_changes
-chapter_candidates
-fact_proposals
-continuity_results
-editor_reviews
-model_calls
-chapter_truth_commits
-chapter_checkpoints
-```
-
-The existing migration runner continues to provide checksums, pre-migration backup, transactional application, unknown-version rejection and restore on failure.
-
-### API Changes
-
-Added:
-
-```text
-POST /api/projects/{id}/chapters/{chapter}/generate
-POST /api/projects/{id}/chapters/{chapter}/check
-POST /api/projects/{id}/chapters/{chapter}/rewrite
-POST /api/projects/{id}/chapters/{chapter}/finalize
-GET  /api/projects/{id}/chapters/{chapter}/quality
-GET  /api/projects/{id}/chapters/{chapter}/candidates
-```
-
-All writes require `Idempotency-Key` and use the existing one-MiB request bound, strict JSON decoding, opaque project IDs, trace IDs and safe error envelope. All routes and schemas are included in the composed OpenAPI 3.1 document and route-drift tests.
-
-### UI Changes
-
-The Chapters workspace now shows authoritative transaction state, Draft count, Librarian proposal status, Continuity PASS/WARN/FAIL, Editor score, rewrite attempt/max, Final candidate, HOLD reason and structured trace errors. Generate, Check, Rewrite and Finalize invoke real API routes, disable during pending work and reload authoritative server state after every action. Phase 8 history, diff, restore and human-revision controls were not added prematurely.
-
-### Tests Executed
-
-Deterministic Phase 5 tests cover:
-
-- Writer and Librarian separation from Truth through interface boundaries
-- Fact Proposal provenance and schema validation
-- malformed JSON repair, unknown/trailing JSON rejection and repair cap
-- Draft retention after Librarian failure and post-Draft crash injection
-- Continuity FAIL blocking Editor override and Finalize
-- deterministic WARN handling
-- Editor score persistence
-- default and maximum rewrite bounds with no model calls beyond the cap
-- highest safe candidate selection, recorded reason and HOLD when no safe candidate exists
-- model-call idempotent replay and content conflict
-- deterministic fake timeout, 429 and 5xx bounded retry with call counts
-- Truth-commit failure retaining the Final candidate
-- Finalize replay and concurrent Finalize without duplicate Truth
-- illegal state-transition rejection
-- Chapter-N inventory and knowledge temporal checks
-- HTTP safe errors, strict JSON, idempotency and full Generate → Check → Finalize integration
-- OpenAPI route and schema drift
-- Web API idempotency, structured errors and authoritative refresh behavior
-
-The exact final PR and merged-main workflows also executed:
-
-```text
-gofmt drift check
-GOWORK=off go vet ./...
-GOWORK=off go test -buildvcs=false -count=1 ./...
-targeted race tests including internal/qualitygate
-Truth Store 100,000-fact temporal index gate
-OpenAPI route/schema validation
-CGO_ENABLED=0 NovelForge build
-Go dependency and license inventory
-module-lock drift check
-shell syntax validation
-install/upgrade/uninstall lifecycle smoke
-brand audit
-npm ci
-Svelte/TypeScript checks
-Vitest
-production Web build
-npm audit --audit-level=high
-frontend dependency and license inventory
-committed Web build-drift check
-Windows full tests and build
-Docker build
-```
-
-### Test Results
-
-- Final feature head: `9fe20781383c04ae39c5816a43fbe037a81dd82e`.
-- Final non-draft delivery PR: #19 — `feat: add fact extraction and continuity gate`.
-- PR CI run `33591270069`: **success** on the exact final head; Go, Frontend, Windows and Docker all succeeded.
-- Squash merge: **success**, main commit `831cb2983ce851063ce9fb650eaebb14f6ad44c1`.
-- Merge-triggered main CI run `33591405462`: **success** on the exact merge commit; Go, Frontend, Windows and Docker all succeeded.
-- Draft PR #18 was closed without merge after the connector could not transition its draft flag; it is not used as acceptance evidence.
-- Acceptance record PR #20 CI run `33591592779`: **success**; squash merge `0934fc98bcedd7aa7a33baa84984e5cdef0196ed` and resulting main CI run `33591712938`: **success**.
-
-### Performance
-
-- Phase 5 continuity checks issue bounded, indexed Chapter-N Truth queries per proposed fact and do not scan the complete novel.
-- The existing 100,000-fact Truth Store index gate remains blocking and passed on the exact PR head and merged main.
-- Model retry, JSON repair and rewrite loops have explicit caps.
-- Formal Context Compiler benchmarks belong to Phase 7; release-scale benchmarks remain Phase 13 work.
-
-### License Review
-
-- Phase 5 adds no Go or npm dependency.
-- Existing Apache-2.0 dependency inventories and fail-closed Go/npm license gates remained enabled and passed.
-- No GPL/AGPL clean-room reference source, SQL, components, tests or prompts were copied.
-- The final production diff contains no Phase-specific recovery generator, payload fragment or self-modifying workflow.
-
-### Known Issues
-
-- No Phase 5 data-integrity, continuity-gate, credential-exposure, OpenAPI, Windows, Docker, dependency-license or build-drift blocker remains.
-- Narrative Ledger and Context Compiler are intentionally outside Phase 5 and remain Phase 6 and Phase 7 work.
-- The connected GitHub GraphQL wrapper could not mark draft PR #18 ready because of an upstream response-schema incompatibility; the exact validated head was therefore delivered through normal non-draft PR #19 without changing production content.
-
-### Next Phase
-
-`feature/phase-06-narrative-ledger`
-
-### Feature Branch
-
-`feature/phase-05-quality-gate`
-
-### Final Head Commit
-
-`9fe20781383c04ae39c5816a43fbe037a81dd82e`
-
-### Pull Request
-
-[#19 — feat: add fact extraction and continuity gate](https://github.com/feng123-new/NovelForge/pull/19)
-
-### PR CI Result
-
-`33591270069` — success
-
-### Main Merge Commit
-
-`831cb2983ce851063ce9fb650eaebb14f6ad44c1`
-
-### Main CI Result
-
-`33591405462` — success
-
-### Exact Resume Point
-
-1. Fetch `origin/main` and verify the latest workflow on that exact commit is successful.
-2. Create `feature/phase-06-narrative-ledger` from the exact fetched main SHA.
-3. Implement Narrative Ledger without reopening or expanding the accepted Phase 5 scope.
-
+| 1 — compatibility | complete | Runtime isolation, migration, lifecycle, branding and cross-platform gates passed. |
+| 2 — project/API foundation | complete | PR #7 merged; merged-main CI passed. |
+| 3 — formal Web Workspace | complete | PR #8 merged; merged-main CI passed. |
+| 4 — Structured Truth Store | complete | PR #13 merged; exact-head and merged-main CI passed. |
+| 5 — Librarian / Continuity / Quality Gate | complete | PR #19 merged; exact-head and merged-main CI passed. |
+| 6 — Narrative Ledger | complete | PR #24 production, PR #25 acceptance evidence and PR #26 hardening all merged and validated. |
+| 7–13 | not started | Begin Phase 7 only from the latest accepted `main`. |
 
 ## Phase 6 — Narrative Ledger
 
 ### Completed
 
 - Added project Migration 4 and the `internal/narrativeledger` production package.
-- Added deterministic Foreshadow lifecycle validation, computed Chapter-N OVERDUE, stable pagination, append-only audit events and indexed Scenario E queries.
-- Added independent Secret records, temporal knowledge holders, Chapter-N public state and metadata-only unknown boundaries.
-- Added replay-safe Accepted Final integration without granting Writer, Librarian or retrieval a Ledger write capability.
-- Added real REST/OpenAPI integration, Dashboard metrics, diagnostics, Planner context and Foreshadows/Secrets Web pages.
+- Added deterministic Foreshadow lifecycle validation with `planned`, `planted`, `progressing`, `resolved`, `abandoned` and `contradicted` states.
+- Implemented `OVERDUE` as a Chapter-N computed view rather than a mutable stored state.
+- Added stable bounded listing, project/status/payoff indexes, append-only audit events and an `EXPLAIN QUERY PLAN` regression gate.
+- Added an independent Secret model with temporal holders, Chapter-N public state, source version, authority and Truth-compatible provenance.
+- Prevented unknown-role views from receiving Secret truth; they receive metadata-only knowledge-boundary records.
+- Integrated accepted Phase 5 Final candidates through a replay-safe `AcceptedFinalCommitter` boundary.
+- Kept Writer, Librarian and retrieval components unable to mutate the Ledger directly.
+- Added real Dashboard metrics, Diagnostics, Planner Context, REST routes, OpenAPI contracts, Foreshadows Web page and Secrets Web page.
+- Preserved the existing Truth Store as world-fact authority; Narrative Ledger is an indexed temporal projection, not a second authority system.
 
-### Changed Files
+### Database / migration changes
 
-Production paths include `internal/narrativeledger/`, `internal/project/ledger*.go`, `internal/qualitygate/coordinator*.go`, `internal/server/ledger*.go`, `internal/server/openapi_phase6.json`, Web API/types/pages, generated Web assets, CI gates and Narrative Ledger documentation.
+Project Migration 4 adds:
 
-### Architecture Decisions
+```text
+narrative_ledger_operations
+narrative_ledger_commits
+foreshadows
+foreshadow_entities
+foreshadow_arcs
+foreshadow_events
+secrets
+secret_holders
+secret_events
+narrative_ledger_meta
+```
 
-- OVERDUE is calculated per Chapter N and cannot be written as a lifecycle state.
-- Truth Store remains world-fact authority; Ledger projections share provenance vocabulary but cannot override Truth.
-- Unknown Secret boundaries expose metadata, never authoritative Secret truth.
-- Phase 5 Finalize calls `AcceptedFinalCommitter` only for the selected safe Final candidate; idempotent replay cannot duplicate Ledger events.
+The existing migration runner still supplies checksums, pre-migration backup, transactionality, unknown-version rejection and rollback. Immutable Ledger audit tables are protected by update/delete triggers.
 
-### Database / Migration Changes
+### API changes
 
-Migration 4 adds narrative commit/idempotency records, Foreshadow projection/link/event tables, Secret/holder/event tables, append-only triggers, and bounded schedule/temporal indexes.
+Read routes:
 
-### API Changes
+```text
+GET /api/projects/{id}/foreshadows
+GET /api/projects/{id}/foreshadows/{foreshadow}
+GET /api/projects/{id}/secrets
+GET /api/projects/{id}/secrets/{secret}
+GET /api/projects/{id}/ledger/dashboard
+GET /api/projects/{id}/ledger/diagnostics
+GET /api/projects/{id}/ledger/planner-context
+```
 
-Added project-scoped Foreshadow, Secret/holder, Ledger Dashboard, Diagnostics and Planner Context endpoints. All writes use the common strict JSON, body limit, idempotency and safe-error path.
+Write routes:
 
-### UI Changes
+```text
+POST  /api/projects/{id}/foreshadows
+PATCH /api/projects/{id}/foreshadows/{foreshadow}
+POST  /api/projects/{id}/secrets
+PATCH /api/projects/{id}/secrets/{secret}
+POST  /api/projects/{id}/secrets/{secret}/holders
+POST  /api/projects/{id}/secrets/{secret}/holders/{holder}/close
+```
 
-Added Foreshadows and Secrets routes and real Ledger metrics on Dashboard. Writes show pending/success/structured error states and reload authoritative server state.
+Writes require `Idempotency-Key`, strict single-object JSON, bounded request bodies, project ownership checks, trace IDs and the common safe error envelope. Collections use stable ordering and bounded pagination.
 
-### Tests Executed
+### UI changes
 
-Deterministic coverage includes lifecycle transitions, OVERDUE computation/index use, stable paging, Secret Chapter-N holders, safe truth omission, Accepted Final replay, concurrent idempotency, Scenario E, HTTP boundaries, OpenAPI drift, frontend loading/error/data states, targeted race, Windows and Docker.
+- Added real Foreshadows and Secrets routes.
+- Added Chapter-N selection, computed OVERDUE badges, Dashboard metrics and Diagnostics.
+- Added real create, progress, resolve, abandon, holder-add and public-reveal actions.
+- Every write disables duplicate submission, shows pending/success/structured-error state and reloads authoritative server state.
+- Secret management views distinguish authority truth from role knowledge.
 
-### Test Results
+### Tests and CI
 
-- Final production head: `6e3a7613ebf65ad90ac5bc7952c05c0251d5c934`.
-- Production PR: [#24 — feat: complete Phase 6 Narrative Ledger](https://github.com/feng123-new/NovelForge/pull/24).
-- Exact-head PR CI: `33636642108` — **success**; Go, Frontend, Windows and Docker succeeded.
-- Squash merge: `ef3d144567caadcdf16af809c636b3858d9eb8a2`.
-- Merge-triggered main CI: `33637529694` — **success**; Go, Frontend, Windows and Docker succeeded.
-- Superseded PR #23 was closed without merge and is not acceptance evidence.
+Deterministic repository and HTTP coverage includes:
+
+- Foreshadow lifecycle and illegal-transition rejection;
+- computed OVERDUE and `overdue_by_chapters`;
+- stable pagination and indexed overdue query planning;
+- Secret Holder Chapter-N ranges and public reveal boundaries;
+- safe truth omission for unauthorized role-bound context;
+- accepted-Final-only Ledger mutation;
+- Finalize replay without duplicate Ledger events;
+- concurrent idempotent creation;
+- strict JSON, pagination and chapter bounds;
+- Scenario E at repository and HTTP boundaries;
+- OpenAPI route/schema drift.
+
+Acceptance hardening adds:
+
+- direct `internal/narrativeledger` execution in the targeted Go race gate;
+- `Foreshadows.test.ts` page tests for empty/error states, idempotent create, pending lifecycle actions and authoritative refresh;
+- `Secrets.test.ts` page tests for empty/error states, private Secret creation, temporal holder writes and public reveal;
+- a deterministic committed Web build including the Tailwind output induced by the new component tests;
+- cross-layer architecture, Truth Store and Web documentation.
+
+The final hardening workflow executed:
+
+```text
+gofmt drift check
+go vet ./...
+go test -buildvcs=false -count=1 ./...
+go test -race including internal/narrativeledger
+Truth Store 100,000-fact temporal index gate
+OpenAPI route/schema validation
+CGO_ENABLED=0 NovelForge build
+module and dependency-license gates
+lifecycle smoke and brand audit
+npm ci
+Svelte/TypeScript check
+Vitest: 9 files, 25 tests
+Vite production build
+npm high-severity audit
+frontend dependency/license inventory
+committed Web build-drift check
+Windows full tests and build
+Docker build
+```
+
+### Acceptance evidence
+
+| Delivery | Exact head | PR CI | Merge | Main CI |
+| --- | --- | --- | --- | --- |
+| Phase 6 production PR #24 | `6e3a7613ebf65ad90ac5bc7952c05c0251d5c934` | `33636642108` success | `ef3d144567caadcdf16af809c636b3858d9eb8a2` | `33637529694` success |
+| Acceptance record PR #25 | `f8c0e695b5b37869c2830bf38f8f2874d1ec7000` | `33638270944` success | `dff822c14ef9a5eae7f37695fa755d00b875f047` | `33638643303` success |
+| Acceptance hardening PR #26 | `b2944cd8c3d7977753c1ff20ca3cf48f41ceb76c` | `33639657423` success | `12bc259e39df20664c1bf950cf95f8978572ff64` | `33639951628` success |
+
+Superseded PR #23 was closed without merge and is not acceptance evidence.
+
+### Architecture decisions
+
+- `OVERDUE` is always derived from the requested Chapter N and payoff boundary.
+- Truth Store remains authoritative for world facts; Ledger records reuse provenance and authority vocabulary without overriding Truth.
+- Unknown Secret boundaries contain no authority truth.
+- Only the selected, continuity-safe Final candidate can produce Ledger mutations.
+- Ledger finalization is idempotent and participates in the existing recoverable chapter saga.
+- Phase 7 consumes the stable `NarrativeLedgerContextProvider`; Phase 6 itself does not perform token trimming.
 
 ### Performance
 
-Foreshadow schedule and Secret holder queries are index-backed and bounded. Context build and hybrid retrieval performance remain Phase 7 work.
+Foreshadow schedule and Secret holder queries are bounded and index-backed. Scenario E verifies that a Chapter 20 critical Foreshadow with payoff range 100–130 is computed as overdue by five chapters at Chapter 135 and remains mandatory in Planner Context. Context-build and hybrid-retrieval benchmarks remain Phase 7 scope.
 
-### License Review
+### License review
 
-Phase 6 added no Go or npm dependency. Existing Apache-2.0 dependency inventories and fail-closed Go/npm license gates passed on the exact PR head and merged main.
+Phase 6 and its hardening add no Go or npm dependency. Existing Apache-2.0 dependency inventories and fail-closed Go/npm license gates remained enabled and passed. No GPL/AGPL clean-room reference source, SQL, component, test or prompt was copied.
 
-### Known Issues
+### Repository hygiene
 
-No Phase 6 data-integrity, temporal-boundary, OpenAPI, Windows, Docker, dependency-license or generated-asset blocker remains. Context Compiler is intentionally Phase 7 scope.
+The accepted `main` contains only the normal `.github/workflows/ci.yml`; it contains no Phase-specific recovery workflow, source generator, payload fragment, probe file or finalizer script. Temporary delivery helpers were not merged into production.
 
-### Next Phase
+### Known issues
 
-`feature/phase-07-context-compiler`
+No Phase 6 data-integrity, temporal-boundary, OpenAPI, generated-asset, Windows, Docker, dependency-license or race-gate blocker remains. Context compilation, FTS5 hybrid retrieval and token budgeting are intentionally Phase 7 work.
 
-### Feature Branch
+## Next phase
 
-`delivery/phase-06-clean`
+```text
+Phase 7 — Context Compiler and Hybrid Retrieval
+feature/phase-07-context-compiler
+```
 
-### Final Head Commit
+## Exact resume point
 
-`6e3a7613ebf65ad90ac5bc7952c05c0251d5c934`
-
-### Pull Request
-
-[#24 — feat: complete Phase 6 Narrative Ledger](https://github.com/feng123-new/NovelForge/pull/24)
-
-### PR CI Result
-
-`33636642108` — success
-
-### Main Merge Commit
-
-`ef3d144567caadcdf16af809c636b3858d9eb8a2`
-
-### Main CI Result
-
-`33637529694` — success
-
-### Exact Resume Point
-
-1. Merge this evidence-only status PR after its complete CI succeeds and verify its merge-triggered main CI.
-2. Fetch the resulting exact `origin/main` commit.
-3. Create `feature/phase-07-context-compiler` from that exact accepted main.
-4. Implement Context Compiler and Hybrid Retrieval without reopening accepted Phase 6 scope.
+1. Fetch and prune the repository after this evidence record is merged and its merge-triggered `main` CI succeeds.
+2. Verify the exact current `main` SHA and that no unrelated open PR requires reconciliation.
+3. Fast-forward or recreate `feature/phase-07-context-compiler` from that exact accepted `main`.
+4. Run the full Go, Frontend, Windows and Docker baseline.
+5. Implement the five-layer Context Compiler, token budgets, mandatory retention, deterministic ordering, Chapter-N safety, FTS5 hybrid retrieval, diagnostics and Scenario C/D/E regressions without reopening accepted Phase 6 scope.
