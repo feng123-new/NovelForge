@@ -1,0 +1,282 @@
+{
+  "paths": {
+    "/api/projects/{id}/foreshadows": {
+      "get": {
+        "operationId": "listForeshadows",
+        "summary": "List Chapter-N foreshadows",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectID"},
+          {"$ref": "#/components/parameters/LedgerChapter"},
+          {"$ref": "#/components/parameters/LedgerLimit"},
+          {"$ref": "#/components/parameters/LedgerOffset"},
+          {"name": "status", "in": "query", "schema": {"type": "string"}},
+          {"name": "priority", "in": "query", "schema": {"type": "string"}},
+          {"name": "q", "in": "query", "schema": {"type": "string", "maxLength": 200}}
+        ],
+        "responses": {
+          "200": {"description": "Deterministic foreshadow page", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ForeshadowPage"}}}},
+          "400": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      },
+      "post": {
+        "operationId": "createForeshadow",
+        "summary": "Create a human-authoritative foreshadow",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectID"},
+          {"$ref": "#/components/parameters/IdempotencyKey"}
+        ],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ForeshadowMutation"}}}},
+        "responses": {
+          "200": {"description": "Durable mutation result", "content": {"application/json": {"schema": {"type": "object"}}}},
+          "400": {"$ref": "#/components/responses/ErrorResponse"},
+          "409": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      }
+    },
+    "/api/projects/{id}/foreshadows/{key}": {
+      "get": {
+        "operationId": "getForeshadow",
+        "summary": "Get one Chapter-N foreshadow",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectID"},
+          {"$ref": "#/components/parameters/LedgerKey"},
+          {"$ref": "#/components/parameters/LedgerChapter"}
+        ],
+        "responses": {
+          "200": {"description": "Foreshadow", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Foreshadow"}}}},
+          "404": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      },
+      "patch": {
+        "operationId": "updateForeshadow",
+        "summary": "Apply a bounded foreshadow lifecycle transition",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectID"},
+          {"$ref": "#/components/parameters/LedgerKey"},
+          {"$ref": "#/components/parameters/IdempotencyKey"}
+        ],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ForeshadowMutation"}}}},
+        "responses": {
+          "200": {"description": "Durable mutation result", "content": {"application/json": {"schema": {"type": "object"}}}},
+          "400": {"$ref": "#/components/responses/ErrorResponse"},
+          "409": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      }
+    },
+    "/api/projects/{id}/secrets": {
+      "get": {
+        "operationId": "listSecrets",
+        "summary": "List Chapter-N secrets",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectID"},
+          {"$ref": "#/components/parameters/LedgerChapter"},
+          {"$ref": "#/components/parameters/LedgerLimit"},
+          {"$ref": "#/components/parameters/LedgerOffset"},
+          {"name": "status", "in": "query", "schema": {"type": "string"}},
+          {"name": "q", "in": "query", "schema": {"type": "string", "maxLength": 200}}
+        ],
+        "responses": {
+          "200": {"description": "Deterministic secret page", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SecretPage"}}}},
+          "400": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      },
+      "post": {
+        "operationId": "createSecret",
+        "summary": "Create a human-authoritative secret",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectID"},
+          {"$ref": "#/components/parameters/IdempotencyKey"}
+        ],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SecretMutation"}}}},
+        "responses": {
+          "200": {"description": "Durable mutation result", "content": {"application/json": {"schema": {"type": "object"}}}},
+          "400": {"$ref": "#/components/responses/ErrorResponse"},
+          "409": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      }
+    },
+    "/api/projects/{id}/secrets/{key}": {
+      "get": {
+        "operationId": "getSecret",
+        "summary": "Get holder and public state for a secret at Chapter N",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectID"},
+          {"$ref": "#/components/parameters/LedgerKey"},
+          {"$ref": "#/components/parameters/LedgerChapter"}
+        ],
+        "responses": {
+          "200": {"description": "Secret", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Secret"}}}},
+          "404": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      },
+      "patch": {
+        "operationId": "updateSecret",
+        "summary": "Apply a secret lifecycle or knowledge-boundary transition",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectID"},
+          {"$ref": "#/components/parameters/LedgerKey"},
+          {"$ref": "#/components/parameters/IdempotencyKey"}
+        ],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SecretMutation"}}}},
+        "responses": {
+          "200": {"description": "Durable mutation result", "content": {"application/json": {"schema": {"type": "object"}}}},
+          "400": {"$ref": "#/components/responses/ErrorResponse"},
+          "409": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      }
+    },
+    "/api/projects/{id}/ledger/planner-context": {
+      "get": {
+        "operationId": "getNarrativePlannerContext",
+        "summary": "Get mandatory CRITICAL, OVERDUE and UPCOMING planner obligations",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectID"},
+          {"$ref": "#/components/parameters/LedgerChapter"}
+        ],
+        "responses": {"200": {"description": "Planner context", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlannerContext"}}}}}
+      }
+    },
+    "/api/projects/{id}/ledger/dashboard": {
+      "get": {
+        "operationId": "getNarrativeLedgerDashboard",
+        "summary": "Get real Narrative Ledger counts",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectID"},
+          {"$ref": "#/components/parameters/LedgerChapter"}
+        ],
+        "responses": {"200": {"description": "Dashboard", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LedgerDashboard"}}}}}
+      }
+    },
+    "/api/projects/{id}/ledger/diagnostics": {
+      "get": {
+        "operationId": "getNarrativeLedgerDiagnostics",
+        "summary": "Get stable Narrative Ledger diagnostics",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectID"},
+          {"$ref": "#/components/parameters/LedgerChapter"}
+        ],
+        "responses": {"200": {"description": "Diagnostics", "content": {"application/json": {"schema": {"type": "object"}}}}}
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "LedgerChapter": {"name": "chapter", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 0}},
+      "LedgerLimit": {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50}},
+      "LedgerOffset": {"name": "offset", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 0, "default": 0}},
+      "LedgerKey": {"name": "key", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 200}}
+    },
+    "schemas": {
+      "Foreshadow": {
+        "type": "object",
+        "required": ["id", "key", "title", "priority", "status", "effective_status", "updated_chapter"],
+        "properties": {
+          "id": {"type": "string"},
+          "key": {"type": "string"},
+          "title": {"type": "string"},
+          "description": {"type": "string"},
+          "priority": {"type": "string", "enum": ["critical", "high", "normal", "low"]},
+          "status": {"type": "string", "enum": ["planned", "planted", "reinforced", "revealed", "abandoned"]},
+          "effective_status": {"type": "string", "enum": ["planned", "planted", "reinforced", "revealed", "abandoned", "overdue"]},
+          "planted_chapter": {"type": ["integer", "null"], "minimum": 0},
+          "due_chapter": {"type": ["integer", "null"], "minimum": 0},
+          "reveal_chapter": {"type": ["integer", "null"], "minimum": 0},
+          "updated_chapter": {"type": "integer", "minimum": 0}
+        }
+      },
+      "ForeshadowPage": {
+        "type": "object",
+        "required": ["items", "total", "limit", "offset"],
+        "properties": {
+          "items": {"type": "array", "items": {"$ref": "#/components/schemas/Foreshadow"}},
+          "total": {"type": "integer", "minimum": 0},
+          "limit": {"type": "integer"},
+          "offset": {"type": "integer"},
+          "next_offset": {"type": ["integer", "null"]}
+        }
+      },
+      "ForeshadowMutation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chapter", "key"],
+        "properties": {
+          "chapter": {"type": "integer", "minimum": 0},
+          "action": {"type": "string"},
+          "key": {"type": "string", "maxLength": 200},
+          "title": {"type": "string", "maxLength": 500},
+          "description": {"type": "string", "maxLength": 20000},
+          "priority": {"type": "string", "enum": ["critical", "high", "normal", "low"]},
+          "status": {"type": "string", "enum": ["planned", "planted", "reinforced", "revealed", "abandoned"]},
+          "planted_chapter": {"type": ["integer", "null"], "minimum": 0},
+          "due_chapter": {"type": ["integer", "null"], "minimum": 0},
+          "reveal_chapter": {"type": ["integer", "null"], "minimum": 0}
+        }
+      },
+      "Secret": {
+        "type": "object",
+        "required": ["id", "key", "title", "status", "public", "holders", "updated_chapter"],
+        "properties": {
+          "id": {"type": "string"},
+          "key": {"type": "string"},
+          "title": {"type": "string"},
+          "description": {"type": "string"},
+          "status": {"type": "string", "enum": ["hidden", "hinted", "revealed", "retired"]},
+          "public_from_chapter": {"type": ["integer", "null"], "minimum": 0},
+          "public": {"type": "boolean"},
+          "holders": {"type": "array", "items": {"type": "string"}},
+          "updated_chapter": {"type": "integer", "minimum": 0}
+        }
+      },
+      "SecretPage": {
+        "type": "object",
+        "required": ["items", "total", "limit", "offset"],
+        "properties": {
+          "items": {"type": "array", "items": {"$ref": "#/components/schemas/Secret"}},
+          "total": {"type": "integer", "minimum": 0},
+          "limit": {"type": "integer"},
+          "offset": {"type": "integer"},
+          "next_offset": {"type": ["integer", "null"]}
+        }
+      },
+      "SecretMutation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chapter", "key"],
+        "properties": {
+          "chapter": {"type": "integer", "minimum": 0},
+          "action": {"type": "string"},
+          "key": {"type": "string", "maxLength": 200},
+          "title": {"type": "string", "maxLength": 500},
+          "description": {"type": "string", "maxLength": 20000},
+          "status": {"type": "string", "enum": ["hidden", "hinted", "revealed", "retired"]},
+          "public_from_chapter": {"type": ["integer", "null"], "minimum": 0},
+          "knowledge": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["holder", "known_from_chapter"], "properties": {"holder": {"type": "string"}, "known_from_chapter": {"type": "integer", "minimum": 0}, "known_until_chapter": {"type": ["integer", "null"], "minimum": 0}}}}
+        }
+      },
+      "PlannerContext": {
+        "type": "object",
+        "required": ["chapter", "items", "text"],
+        "properties": {
+          "chapter": {"type": "integer"},
+          "items": {"type": "array", "items": {"type": "object"}},
+          "text": {"type": "string"}
+        }
+      },
+      "LedgerDashboard": {
+        "type": "object",
+        "required": ["chapter", "foreshadows_total", "foreshadows_active", "foreshadows_critical", "foreshadows_overdue", "foreshadows_upcoming", "secrets_total", "secrets_public", "secrets_hidden"],
+        "properties": {
+          "chapter": {"type": "integer"},
+          "foreshadows_total": {"type": "integer"},
+          "foreshadows_active": {"type": "integer"},
+          "foreshadows_critical": {"type": "integer"},
+          "foreshadows_overdue": {"type": "integer"},
+          "foreshadows_upcoming": {"type": "integer"},
+          "secrets_total": {"type": "integer"},
+          "secrets_public": {"type": "integer"},
+          "secrets_hidden": {"type": "integer"}
+        }
+      }
+    }
+  }
+}
