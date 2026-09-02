@@ -1,0 +1,53 @@
+name: Temporary Phase 5-7 Go cache bootstrap
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    if: github.event.pull_request.head.ref == 'ops/source-snapshot-phase567'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Resolve exact module graph and warm build cache
+        env:
+          GOWORK: 'off'
+        run: |
+          set -euo pipefail
+          go mod download
+          go test -buildvcs=false -run '^$' ./...
+      - name: Package caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          modcache="$(go env GOMODCACHE)"
+          buildcache="$(go env GOCACHE)"
+          tar -C "$(dirname "$modcache")" -czf /tmp/go-mod-cache.tgz "$(basename "$modcache")"
+          tar -C "$(dirname "$buildcache")" -czf /tmp/go-build-cache.tgz "$(basename "$buildcache")"
+          printf '%s\n' "$modcache" > /tmp/go-cache-paths.txt
+          printf '%s\n' "$buildcache" >> /tmp/go-cache-paths.txt
+          sha256sum /tmp/go-mod-cache.tgz /tmp/go-build-cache.tgz > /tmp/go-cache.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: novelforge-go-cache-${{ github.run_id }}
+          compression-level: 0
+          path: |
+            /tmp/go-mod-cache.tgz
+            /tmp/go-build-cache.tgz
+            /tmp/go-cache-paths.txt
+            /tmp/go-cache.sha256
+          if-no-files-found: error
+          retention-days: 1
