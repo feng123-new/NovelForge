@@ -1,0 +1,1312 @@
+name: Temporary validated Phase 6 implementation
+
+on:
+  push:
+    branches:
+      - ops/phase6-apply
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Build Narrative Ledger implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B feature/phase-06-narrative-ledger
+          rm -f tmp2.txt
+          mkdir -p internal/narrativeledger internal/server web/src/components web/src/lib docs
+
+          cat > internal/narrativeledger/types.go <<'EOF'
+          package narrativeledger
+
+          import (
+          	"errors"
+          	"fmt"
+          	"time"
+          )
+
+          type EventKind string
+
+          const (
+          	KindChapterFinalized        EventKind = "chapter.finalized"
+          	KindSceneRecorded           EventKind = "scene.recorded"
+          	KindBeatRecorded            EventKind = "beat.recorded"
+          	KindThreadOpened            EventKind = "thread.opened"
+          	KindThreadAdvanced          EventKind = "thread.advanced"
+          	KindThreadResolved          EventKind = "thread.resolved"
+          	KindThreadAbandoned         EventKind = "thread.abandoned"
+          	KindPromiseMade             EventKind = "promise.made"
+          	KindPromisePaid             EventKind = "promise.paid"
+          	KindPromiseBroken           EventKind = "promise.broken"
+          	KindQuestionOpened          EventKind = "question.opened"
+          	KindQuestionAnswered        EventKind = "question.answered"
+          	KindCharacterArcAdvanced    EventKind = "character_arc.advanced"
+          	KindRelationshipArcAdvanced EventKind = "relationship_arc.advanced"
+          	KindTensionSet              EventKind = "tension.set"
+          	KindNoteRecorded            EventKind = "note.recorded"
+          )
+
+          var (
+          	ErrInvalid             = errors.New("invalid narrative ledger request")
+          	ErrIdempotencyConflict = errors.New("narrative ledger idempotency conflict")
+          	ErrRevisionConflict    = errors.New("narrative ledger revision conflict")
+          	ErrSemanticConflict    = errors.New("narrative ledger semantic conflict")
+          	ErrIntegrity           = errors.New("narrative ledger integrity failure")
+          )
+
+          type ValidationError struct{ Message string }
+
+          func (e *ValidationError) Error() string { return e.Message }
+          func (e *ValidationError) Unwrap() error { return ErrInvalid }
+
+          type ConflictError struct {
+          	Kind     error
+          	Message  string
+          	Expected int64
+          	Actual   int64
+          }
+
+          func (e *ConflictError) Error() string {
+          	if e.Expected != 0 || e.Actual != 0 {
+          		return fmt.Sprintf("%s (expected=%d actual=%d)", e.Message, e.Expected, e.Actual)
+          	}
+          	return e.Message
+          }
+          func (e *ConflictError) Unwrap() error { return e.Kind }
+
+          type SourceRef struct {
+          	Type string `json:"type"`
+          	ID   string `json:"id"`
+          }
+
+          type EventInput struct {
+          	EventID  string         `json:"event_id,omitempty"`
+          	Kind     EventKind      `json:"kind"`
+          	Chapter  int            `json:"chapter,omitempty"`
+          	Sequence int            `json:"sequence,omitempty"`
+          	Subject  string         `json:"subject,omitempty"`
+          	ThreadID string         `json:"thread_id,omitempty"`
+          	Payload  map[string]any `json:"payload,omitempty"`
+          	Tags     []string       `json:"tags,omitempty"`
+          	Source   SourceRef      `json:"source"`
+          }
+
+          type Event struct {
+          	EventInput
+          	ProjectID      string    `json:"project_id"`
+          	Revision       int64     `json:"revision"`
+          	PreviousHash   string    `json:"previous_hash,omitempty"`
+          	Hash           string    `json:"hash"`
+          	RequestHash    string    `json:"request_hash"`
+          	IdempotencyKey string    `json:"idempotency_key"`
+          	CreatedAt      time.Time `json:"created_at"`
+          }
+
+          type CommitRequest struct {
+          	ProjectID       string       `json:"project_id"`
+          	IdempotencyKey  string       `json:"idempotency_key"`
+          	ExpectedRevision *int64      `json:"expected_revision,omitempty"`
+          	Events          []EventInput `json:"events"`
+          }
+
+          type Receipt struct {
+          	ProjectID       string   `json:"project_id"`
+          	IdempotencyKey  string   `json:"idempotency_key"`
+          	RequestHash     string   `json:"request_hash"`
+          	FromRevision    int64    `json:"from_revision"`
+          	ToRevision      int64    `json:"to_revision"`
+          	HeadHash        string   `json:"head_hash"`
+          	EventIDs        []string `json:"event_ids"`
+          }
+
+          type Query struct {
+          	ProjectID     string
+          	AfterRevision int64
+          	BeforeRevision int64
+          	Chapter       int
+          	Kinds         []EventKind
+          	Limit         int
+          }
+
+          type ThreadState struct {
+          	ID             string `json:"id"`
+          	Title          string `json:"title,omitempty"`
+          	Status         string `json:"status"`
+          	OpenedChapter  int    `json:"opened_chapter"`
+          	UpdatedChapter int    `json:"updated_chapter"`
+          	Resolution     string `json:"resolution,omitempty"`
+          }
+
+          type PromiseState struct {
+          	ID             string `json:"id"`
+          	Description    string `json:"description,omitempty"`
+          	Status         string `json:"status"`
+          	MadeChapter    int    `json:"made_chapter"`
+          	UpdatedChapter int    `json:"updated_chapter"`
+          	Outcome        string `json:"outcome,omitempty"`
+          }
+
+          type QuestionState struct {
+          	ID              string `json:"id"`
+          	Question        string `json:"question,omitempty"`
+          	Status          string `json:"status"`
+          	OpenedChapter   int    `json:"opened_chapter"`
+          	UpdatedChapter  int    `json:"updated_chapter"`
+          	Answer          string `json:"answer,omitempty"`
+          }
+
+          type ArcState struct {
+          	ID             string `json:"id"`
+          	Kind           string `json:"kind"`
+          	Status         string `json:"status,omitempty"`
+          	Summary        string `json:"summary,omitempty"`
+          	Step           int    `json:"step"`
+          	UpdatedChapter int    `json:"updated_chapter"`
+          }
+
+          type SceneRecord struct {
+          	EventID  string `json:"event_id"`
+          	Chapter  int    `json:"chapter"`
+          	Sequence int    `json:"sequence"`
+          	Title    string `json:"title,omitempty"`
+          	Summary  string `json:"summary,omitempty"`
+          }
+
+          type BeatRecord struct {
+          	EventID  string `json:"event_id"`
+          	Chapter  int    `json:"chapter"`
+          	Sequence int    `json:"sequence"`
+          	Summary  string `json:"summary,omitempty"`
+          }
+
+          type State struct {
+          	ProjectID            string                  `json:"project_id"`
+          	Revision             int64                   `json:"revision"`
+          	HeadHash             string                  `json:"head_hash,omitempty"`
+          	LastFinalizedChapter int                     `json:"last_finalized_chapter"`
+          	Tension              float64                 `json:"tension"`
+          	Threads              map[string]ThreadState  `json:"threads"`
+          	Promises             map[string]PromiseState `json:"promises"`
+          	Questions            map[string]QuestionState `json:"questions"`
+          	CharacterArcs        map[string]ArcState     `json:"character_arcs"`
+          	RelationshipArcs     map[string]ArcState     `json:"relationship_arcs"`
+          	Scenes               []SceneRecord           `json:"scenes"`
+          	Beats                []BeatRecord            `json:"beats"`
+          }
+
+          type AuditReport struct {
+          	ProjectID      string   `json:"project_id"`
+          	Valid          bool     `json:"valid"`
+          	Revision       int64    `json:"revision"`
+          	HeadHash       string   `json:"head_hash,omitempty"`
+          	CheckedEvents  int      `json:"checked_events"`
+          	Errors         []string `json:"errors,omitempty"`
+          }
+          EOF
+
+          cat > internal/narrativeledger/repository.go <<'EOF'
+          package narrativeledger
+
+          import (
+          	"bufio"
+          	"bytes"
+          	"context"
+          	"crypto/sha256"
+          	"encoding/hex"
+          	"encoding/json"
+          	"errors"
+          	"fmt"
+          	"io"
+          	"os"
+          	"path/filepath"
+          	"regexp"
+          	"runtime"
+          	"sort"
+          	"strconv"
+          	"strings"
+          	"sync"
+          	"time"
+          )
+
+          const (
+          	documentVersion    = 1
+          	maxBatchEvents     = 128
+          	maxPayloadBytes    = 64 << 10
+          	maxDocumentBytes   = 64 << 20
+          	maxTags            = 32
+          	defaultQueryLimit  = 100
+          	maxQueryLimit      = 500
+          )
+
+          var identifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+
+          var allowedKinds = map[EventKind]struct{}{
+          	KindChapterFinalized: {}, KindSceneRecorded: {}, KindBeatRecorded: {},
+          	KindThreadOpened: {}, KindThreadAdvanced: {}, KindThreadResolved: {}, KindThreadAbandoned: {},
+          	KindPromiseMade: {}, KindPromisePaid: {}, KindPromiseBroken: {},
+          	KindQuestionOpened: {}, KindQuestionAnswered: {},
+          	KindCharacterArcAdvanced: {}, KindRelationshipArcAdvanced: {},
+          	KindTensionSet: {}, KindNoteRecorded: {},
+          }
+
+          type Repository interface {
+          	Commit(context.Context, CommitRequest) (Receipt, error)
+          	StateAt(context.Context, string, int64, int) (State, error)
+          	List(context.Context, Query) ([]Event, error)
+          	Audit(context.Context, string) (AuditReport, error)
+          }
+
+          type idempotencyRecord struct {
+          	RequestHash string  `json:"request_hash"`
+          	Receipt     Receipt `json:"receipt"`
+          }
+
+          type diskDocument struct {
+          	Version     int                          `json:"version"`
+          	ProjectID   string                       `json:"project_id"`
+          	Revision    int64                        `json:"revision"`
+          	HeadHash    string                       `json:"head_hash,omitempty"`
+          	Events      []Event                      `json:"events"`
+          	Idempotency map[string]idempotencyRecord `json:"idempotency"`
+          }
+
+          type FileRepository struct {
+          	root  string
+          	now   func() time.Time
+          	locks sync.Map
+          }
+
+          func NewFileRepository(root string) (*FileRepository, error) {
+          	root = strings.TrimSpace(root)
+          	if root == "" {
+          		return nil, invalid("repository root is required")
+          	}
+          	if err := os.MkdirAll(root, 0o700); err != nil {
+          		return nil, fmt.Errorf("create narrative ledger root: %w", err)
+          	}
+          	return &FileRepository{root: root, now: time.Now}, nil
+          }
+
+          func (r *FileRepository) projectLock(projectID string) *sync.Mutex {
+          	value, _ := r.locks.LoadOrStore(projectID, &sync.Mutex{})
+          	return value.(*sync.Mutex)
+          }
+
+          func (r *FileRepository) Commit(ctx context.Context, request CommitRequest) (Receipt, error) {
+          	if err := ctx.Err(); err != nil { return Receipt{}, err }
+          	normalized, requestHash, err := normalizeRequest(request)
+          	if err != nil { return Receipt{}, err }
+          	lock := r.projectLock(normalized.ProjectID)
+          	lock.Lock()
+          	defer lock.Unlock()
+
+          	doc, err := r.load(normalized.ProjectID)
+          	if err != nil { return Receipt{}, err }
+          	if record, ok := doc.Idempotency[normalized.IdempotencyKey]; ok {
+          		if record.RequestHash != requestHash {
+          			return Receipt{}, &ConflictError{Kind: ErrIdempotencyConflict, Message: "idempotency key was already used with different content"}
+          		}
+          		return cloneReceipt(record.Receipt), nil
+          	}
+          	if normalized.ExpectedRevision != nil && *normalized.ExpectedRevision != doc.Revision {
+          		return Receipt{}, &ConflictError{Kind: ErrRevisionConflict, Message: "ledger revision does not match", Expected: *normalized.ExpectedRevision, Actual: doc.Revision}
+          	}
+
+          	createdAt := r.now().UTC()
+          	if createdAt.IsZero() { createdAt = time.Now().UTC() }
+          	from := doc.Revision + 1
+          	previous := doc.HeadHash
+          	newEvents := make([]Event, 0, len(normalized.Events))
+          	eventIDs := make([]string, 0, len(normalized.Events))
+          	for index, input := range normalized.Events {
+          		if input.EventID == "" { input.EventID = generatedEventID(requestHash, index) }
+          		revision := doc.Revision + int64(index) + 1
+          		event := Event{EventInput: input, ProjectID: normalized.ProjectID, Revision: revision, PreviousHash: previous, RequestHash: requestHash, IdempotencyKey: normalized.IdempotencyKey, CreatedAt: createdAt}
+          		event.Hash, err = eventHash(event)
+          		if err != nil { return Receipt{}, err }
+          		previous = event.Hash
+          		newEvents = append(newEvents, event)
+          		eventIDs = append(eventIDs, event.EventID)
+          	}
+
+          	candidate := append(append([]Event(nil), doc.Events...), newEvents...)
+          	if _, err := project(normalized.ProjectID, candidate, 0, 0); err != nil { return Receipt{}, err }
+          	doc.Events = candidate
+          	doc.Revision += int64(len(newEvents))
+          	doc.HeadHash = previous
+          	receipt := Receipt{ProjectID: normalized.ProjectID, IdempotencyKey: normalized.IdempotencyKey, RequestHash: requestHash, FromRevision: from, ToRevision: doc.Revision, HeadHash: doc.HeadHash, EventIDs: eventIDs}
+          	doc.Idempotency[normalized.IdempotencyKey] = idempotencyRecord{RequestHash: requestHash, Receipt: receipt}
+          	if err := ctx.Err(); err != nil { return Receipt{}, err }
+          	if err := r.store(doc); err != nil { return Receipt{}, err }
+          	return cloneReceipt(receipt), nil
+          }
+
+          func (r *FileRepository) StateAt(ctx context.Context, projectID string, atRevision int64, chapter int) (State, error) {
+          	if err := ctx.Err(); err != nil { return State{}, err }
+          	projectID = strings.TrimSpace(projectID)
+          	if err := validateProjectID(projectID); err != nil { return State{}, err }
+          	lock := r.projectLock(projectID)
+          	lock.Lock(); defer lock.Unlock()
+          	doc, err := r.load(projectID)
+          	if err != nil { return State{}, err }
+          	return project(projectID, doc.Events, atRevision, chapter)
+          }
+
+          func (r *FileRepository) List(ctx context.Context, query Query) ([]Event, error) {
+          	if err := ctx.Err(); err != nil { return nil, err }
+          	query.ProjectID = strings.TrimSpace(query.ProjectID)
+          	if err := validateProjectID(query.ProjectID); err != nil { return nil, err }
+          	if query.AfterRevision < 0 || query.BeforeRevision < 0 || query.Chapter < 0 { return nil, invalid("query bounds cannot be negative") }
+          	if query.Limit == 0 { query.Limit = defaultQueryLimit }
+          	if query.Limit < 1 || query.Limit > maxQueryLimit { return nil, invalid("limit must be between 1 and 500") }
+          	kinds := make(map[EventKind]struct{}, len(query.Kinds))
+          	for _, kind := range query.Kinds {
+          		if _, ok := allowedKinds[kind]; !ok { return nil, invalid("unsupported event kind %q", kind) }
+          		kinds[kind] = struct{}{}
+          	}
+          	lock := r.projectLock(query.ProjectID)
+          	lock.Lock(); defer lock.Unlock()
+          	doc, err := r.load(query.ProjectID)
+          	if err != nil { return nil, err }
+          	result := make([]Event, 0, min(query.Limit, len(doc.Events)))
+          	for _, event := range doc.Events {
+          		if event.Revision <= query.AfterRevision { continue }
+          		if query.BeforeRevision > 0 && event.Revision > query.BeforeRevision { continue }
+          		if query.Chapter > 0 && event.Chapter != query.Chapter { continue }
+          		if len(kinds) > 0 { if _, ok := kinds[event.Kind]; !ok { continue } }
+          		result = append(result, cloneEvent(event))
+          		if len(result) == query.Limit { break }
+          	}
+          	return result, nil
+          }
+
+          func (r *FileRepository) Audit(ctx context.Context, projectID string) (AuditReport, error) {
+          	if err := ctx.Err(); err != nil { return AuditReport{}, err }
+          	projectID = strings.TrimSpace(projectID)
+          	if err := validateProjectID(projectID); err != nil { return AuditReport{}, err }
+          	lock := r.projectLock(projectID)
+          	lock.Lock(); defer lock.Unlock()
+          	doc, err := r.load(projectID)
+          	if err != nil {
+          		return AuditReport{ProjectID: projectID, Valid: false, Errors: []string{err.Error()}}, nil
+          	}
+          	report := AuditReport{ProjectID: projectID, Valid: true, Revision: doc.Revision, HeadHash: doc.HeadHash, CheckedEvents: len(doc.Events)}
+          	previous := ""
+          	for index, event := range doc.Events {
+          		expectedRevision := int64(index + 1)
+          		if event.ProjectID != projectID { report.Errors = append(report.Errors, fmt.Sprintf("revision %d project mismatch", expectedRevision)) }
+          		if event.Revision != expectedRevision { report.Errors = append(report.Errors, fmt.Sprintf("revision sequence mismatch at %d", expectedRevision)) }
+          		if event.PreviousHash != previous { report.Errors = append(report.Errors, fmt.Sprintf("previous hash mismatch at revision %d", expectedRevision)) }
+          		hash, hashErr := eventHash(event)
+          		if hashErr != nil || hash != event.Hash { report.Errors = append(report.Errors, fmt.Sprintf("event hash mismatch at revision %d", expectedRevision)) }
+          		previous = event.Hash
+          	}
+          	if doc.Revision != int64(len(doc.Events)) { report.Errors = append(report.Errors, "document revision does not match event count") }
+          	if doc.HeadHash != previous { report.Errors = append(report.Errors, "document head hash does not match event chain") }
+          	if _, projectionErr := project(projectID, doc.Events, 0, 0); projectionErr != nil { report.Errors = append(report.Errors, projectionErr.Error()) }
+          	report.Valid = len(report.Errors) == 0
+          	return report, nil
+          }
+
+          func (r *FileRepository) load(projectID string) (diskDocument, error) {
+          	path := r.path(projectID)
+          	file, err := os.Open(path)
+          	if errors.Is(err, os.ErrNotExist) {
+          		return diskDocument{Version: documentVersion, ProjectID: projectID, Idempotency: map[string]idempotencyRecord{}}, nil
+          	}
+          	if err != nil { return diskDocument{}, fmt.Errorf("open narrative ledger: %w", err) }
+          	defer file.Close()
+          	decoder := json.NewDecoder(io.LimitReader(file, maxDocumentBytes+1))
+          	decoder.DisallowUnknownFields()
+          	var doc diskDocument
+          	if err := decoder.Decode(&doc); err != nil { return diskDocument{}, fmt.Errorf("decode narrative ledger: %w", err) }
+          	if err := ensureJSONEOF(decoder); err != nil { return diskDocument{}, fmt.Errorf("decode narrative ledger: %w", err) }
+          	if doc.Version != documentVersion || doc.ProjectID != projectID { return diskDocument{}, fmt.Errorf("%w: narrative ledger metadata mismatch", ErrIntegrity) }
+          	if doc.Idempotency == nil { doc.Idempotency = map[string]idempotencyRecord{} }
+          	return doc, nil
+          }
+
+          func (r *FileRepository) store(doc diskDocument) error {
+          	if err := os.MkdirAll(r.root, 0o700); err != nil { return fmt.Errorf("create narrative ledger root: %w", err) }
+          	target := r.path(doc.ProjectID)
+          	temp, err := os.CreateTemp(r.root, ".narrative-ledger-*.tmp")
+          	if err != nil { return fmt.Errorf("create narrative ledger temp file: %w", err) }
+          	tempName := temp.Name()
+          	committed := false
+          	defer func() { if !committed { _ = temp.Close(); _ = os.Remove(tempName) } }()
+          	writer := bufio.NewWriter(temp)
+          	encoder := json.NewEncoder(writer)
+          	encoder.SetEscapeHTML(false)
+          	if err := encoder.Encode(doc); err != nil { return fmt.Errorf("encode narrative ledger: %w", err) }
+          	if err := writer.Flush(); err != nil { return fmt.Errorf("flush narrative ledger: %w", err) }
+          	if err := temp.Sync(); err != nil { return fmt.Errorf("sync narrative ledger: %w", err) }
+          	if err := temp.Close(); err != nil { return fmt.Errorf("close narrative ledger: %w", err) }
+          	if err := os.Chmod(tempName, 0o600); err != nil { return fmt.Errorf("secure narrative ledger: %w", err) }
+
+          	backup := target + ".bak"
+          	_ = os.Remove(backup)
+          	hadTarget := false
+          	if _, err := os.Stat(target); err == nil {
+          		hadTarget = true
+          		if err := os.Rename(target, backup); err != nil { return fmt.Errorf("backup narrative ledger: %w", err) }
+          	} else if !errors.Is(err, os.ErrNotExist) { return fmt.Errorf("stat narrative ledger: %w", err) }
+          	if err := os.Rename(tempName, target); err != nil {
+          		if hadTarget { _ = os.Rename(backup, target) }
+          		return fmt.Errorf("replace narrative ledger: %w", err)
+          	}
+          	committed = true
+          	_ = os.Remove(backup)
+          	if runtime.GOOS != "windows" {
+          		if directory, err := os.Open(r.root); err == nil { _ = directory.Sync(); _ = directory.Close() }
+          	}
+          	return nil
+          }
+
+          func (r *FileRepository) path(projectID string) string {
+          	sum := sha256.Sum256([]byte(projectID))
+          	return filepath.Join(r.root, hex.EncodeToString(sum[:])+".json")
+          }
+
+          func normalizeRequest(request CommitRequest) (CommitRequest, string, error) {
+          	request.ProjectID = strings.TrimSpace(request.ProjectID)
+          	request.IdempotencyKey = strings.TrimSpace(request.IdempotencyKey)
+          	if err := validateProjectID(request.ProjectID); err != nil { return CommitRequest{}, "", err }
+          	if request.IdempotencyKey == "" || len(request.IdempotencyKey) > 200 { return CommitRequest{}, "", invalid("idempotency key is required and must not exceed 200 characters") }
+          	if len(request.Events) == 0 || len(request.Events) > maxBatchEvents { return CommitRequest{}, "", invalid("events must contain between 1 and 128 entries") }
+          	seen := make(map[string]struct{}, len(request.Events))
+          	for index := range request.Events {
+          		input := &request.Events[index]
+          		input.EventID = strings.TrimSpace(input.EventID)
+          		input.Subject = strings.TrimSpace(input.Subject)
+          		input.ThreadID = strings.TrimSpace(input.ThreadID)
+          		input.Source.Type = strings.TrimSpace(input.Source.Type)
+          		input.Source.ID = strings.TrimSpace(input.Source.ID)
+          		if _, ok := allowedKinds[input.Kind]; !ok { return CommitRequest{}, "", invalid("unsupported event kind %q", input.Kind) }
+          		if input.Chapter < 0 || input.Sequence < 0 { return CommitRequest{}, "", invalid("chapter and sequence cannot be negative") }
+          		for _, pair := range []struct{name, value string}{{"event_id", input.EventID}, {"subject", input.Subject}, {"thread_id", input.ThreadID}} {
+          			if pair.value != "" && !identifierPattern.MatchString(pair.value) { return CommitRequest{}, "", invalid("%s contains unsupported characters", pair.name) }
+          		}
+          		if input.EventID != "" { if _, duplicate := seen[input.EventID]; duplicate { return CommitRequest{}, "", invalid("event_id %q is duplicated in the batch", input.EventID) }; seen[input.EventID] = struct{}{} }
+          		if input.Source.Type == "" || input.Source.ID == "" || len(input.Source.Type) > 64 || len(input.Source.ID) > 256 { return CommitRequest{}, "", invalid("source type and id are required and bounded") }
+          		if len(input.Tags) > maxTags { return CommitRequest{}, "", invalid("an event cannot contain more than 32 tags") }
+          		for tagIndex, tag := range input.Tags { input.Tags[tagIndex] = strings.TrimSpace(tag); if input.Tags[tagIndex] == "" || len(input.Tags[tagIndex]) > 64 { return CommitRequest{}, "", invalid("tags must be non-empty and at most 64 characters") } }
+          		if input.Payload == nil { input.Payload = map[string]any{} }
+          		payload, err := json.Marshal(input.Payload); if err != nil { return CommitRequest{}, "", invalid("payload must be valid JSON: %v", err) }
+          		if len(payload) > maxPayloadBytes { return CommitRequest{}, "", invalid("payload exceeds 64 KiB") }
+          		if err := validateKind(*input); err != nil { return CommitRequest{}, "", err }
+          	}
+          	hashRequest := request
+          	hashRequest.IdempotencyKey = ""
+          	encoded, err := json.Marshal(hashRequest)
+          	if err != nil { return CommitRequest{}, "", fmt.Errorf("hash narrative ledger request: %w", err) }
+          	sum := sha256.Sum256(encoded)
+          	return request, hex.EncodeToString(sum[:]), nil
+          }
+
+          func validateKind(input EventInput) error {
+          	logical := input.ThreadID; if logical == "" { logical = input.Subject }
+          	switch input.Kind {
+          	case KindChapterFinalized:
+          		if input.Chapter < 1 { return invalid("chapter.finalized requires a positive chapter") }
+          	case KindThreadOpened, KindThreadAdvanced, KindThreadResolved, KindThreadAbandoned:
+          		if logical == "" { return invalid("thread events require thread_id or subject") }
+          	case KindPromiseMade, KindPromisePaid, KindPromiseBroken, KindQuestionOpened, KindQuestionAnswered, KindCharacterArcAdvanced, KindRelationshipArcAdvanced:
+          		if input.Subject == "" { return invalid("%s requires subject", input.Kind) }
+          	case KindTensionSet:
+          		level, ok := number(input.Payload["level"]); if !ok || level < 0 || level > 10 { return invalid("tension.set requires payload.level between 0 and 10") }
+          	}
+          	return nil
+          }
+
+          func validateProjectID(projectID string) error {
+          	if projectID == "" || len(projectID) > 200 { return invalid("project id is required and must not exceed 200 characters") }
+          	for _, r := range projectID { if r < 0x20 || r == '/' || r == '\\' { return invalid("project id contains unsupported characters") } }
+          	return nil
+          }
+
+          func project(projectID string, events []Event, atRevision int64, chapter int) (State, error) {
+          	state := State{ProjectID: projectID, Threads: map[string]ThreadState{}, Promises: map[string]PromiseState{}, Questions: map[string]QuestionState{}, CharacterArcs: map[string]ArcState{}, RelationshipArcs: map[string]ArcState{}, Scenes: []SceneRecord{}, Beats: []BeatRecord{}}
+          	for _, event := range events {
+          		if atRevision > 0 && event.Revision > atRevision { break }
+          		if chapter > 0 && event.Chapter > chapter { continue }
+          		if err := apply(&state, event); err != nil { return State{}, err }
+          		state.Revision = event.Revision
+          		state.HeadHash = event.Hash
+          	}
+          	return state, nil
+          }
+
+          func apply(state *State, event Event) error {
+          	logical := event.ThreadID; if logical == "" { logical = event.Subject }
+          	switch event.Kind {
+          	case KindChapterFinalized:
+          		if event.Chapter <= state.LastFinalizedChapter { return semantic("chapter %d cannot be finalized after chapter %d", event.Chapter, state.LastFinalizedChapter) }
+          		state.LastFinalizedChapter = event.Chapter
+          	case KindThreadOpened:
+          		if _, exists := state.Threads[logical]; exists { return semantic("thread %q already exists", logical) }
+          		state.Threads[logical] = ThreadState{ID: logical, Title: text(event.Payload, "title", event.Subject), Status: "open", OpenedChapter: event.Chapter, UpdatedChapter: event.Chapter}
+          	case KindThreadAdvanced:
+          		value, exists := state.Threads[logical]; if !exists || value.Status != "open" { return semantic("thread %q is not open", logical) }
+          		value.UpdatedChapter = event.Chapter; if title := text(event.Payload, "title", ""); title != "" { value.Title = title }; state.Threads[logical] = value
+          	case KindThreadResolved, KindThreadAbandoned:
+          		value, exists := state.Threads[logical]; if !exists || value.Status != "open" { return semantic("thread %q is not open", logical) }
+          		if event.Kind == KindThreadResolved { value.Status = "resolved" } else { value.Status = "abandoned" }
+          		value.Resolution = text(event.Payload, "resolution", ""); value.UpdatedChapter = event.Chapter; state.Threads[logical] = value
+          	case KindPromiseMade:
+          		if _, exists := state.Promises[event.Subject]; exists { return semantic("promise %q already exists", event.Subject) }
+          		state.Promises[event.Subject] = PromiseState{ID: event.Subject, Description: text(event.Payload, "description", ""), Status: "open", MadeChapter: event.Chapter, UpdatedChapter: event.Chapter}
+          	case KindPromisePaid, KindPromiseBroken:
+          		value, exists := state.Promises[event.Subject]; if !exists || value.Status != "open" { return semantic("promise %q is not open", event.Subject) }
+          		if event.Kind == KindPromisePaid { value.Status = "paid" } else { value.Status = "broken" }
+          		value.Outcome = text(event.Payload, "outcome", ""); value.UpdatedChapter = event.Chapter; state.Promises[event.Subject] = value
+          	case KindQuestionOpened:
+          		if _, exists := state.Questions[event.Subject]; exists { return semantic("question %q already exists", event.Subject) }
+          		state.Questions[event.Subject] = QuestionState{ID: event.Subject, Question: text(event.Payload, "question", ""), Status: "open", OpenedChapter: event.Chapter, UpdatedChapter: event.Chapter}
+          	case KindQuestionAnswered:
+          		value, exists := state.Questions[event.Subject]; if !exists || value.Status != "open" { return semantic("question %q is not open", event.Subject) }
+          		value.Status = "answered"; value.Answer = text(event.Payload, "answer", ""); value.UpdatedChapter = event.Chapter; state.Questions[event.Subject] = value
+          	case KindCharacterArcAdvanced, KindRelationshipArcAdvanced:
+          		target := state.CharacterArcs; kind := "character"; if event.Kind == KindRelationshipArcAdvanced { target = state.RelationshipArcs; kind = "relationship" }
+          		value := target[event.Subject]; value.ID = event.Subject; value.Kind = kind; value.Step++; value.UpdatedChapter = event.Chapter
+          		value.Status = text(event.Payload, "status", value.Status); value.Summary = text(event.Payload, "summary", value.Summary); target[event.Subject] = value
+          	case KindSceneRecorded:
+          		state.Scenes = append(state.Scenes, SceneRecord{EventID: event.EventID, Chapter: event.Chapter, Sequence: event.Sequence, Title: text(event.Payload, "title", event.Subject), Summary: text(event.Payload, "summary", "")})
+          	case KindBeatRecorded:
+          		state.Beats = append(state.Beats, BeatRecord{EventID: event.EventID, Chapter: event.Chapter, Sequence: event.Sequence, Summary: text(event.Payload, "summary", event.Subject)})
+          	case KindTensionSet:
+          		state.Tension, _ = number(event.Payload["level"])
+          	case KindNoteRecorded:
+          	default:
+          		return semantic("unsupported event kind %q", event.Kind)
+          	}
+          	return nil
+          }
+
+          func eventHash(event Event) (string, error) {
+          	canonical := struct {
+          		ProjectID string `json:"project_id"`; Revision int64 `json:"revision"`; PreviousHash string `json:"previous_hash"`; Input EventInput `json:"input"`; RequestHash string `json:"request_hash"`; IdempotencyKey string `json:"idempotency_key"`; CreatedAt string `json:"created_at"`
+          	}{event.ProjectID, event.Revision, event.PreviousHash, event.EventInput, event.RequestHash, event.IdempotencyKey, event.CreatedAt.UTC().Format(time.RFC3339Nano)}
+          	encoded, err := json.Marshal(canonical); if err != nil { return "", fmt.Errorf("hash narrative ledger event: %w", err) }
+          	sum := sha256.Sum256(encoded); return hex.EncodeToString(sum[:]), nil
+          }
+
+          func generatedEventID(requestHash string, index int) string { return "evt-" + requestHash[:20] + "-" + strconv.Itoa(index+1) }
+          func invalid(format string, values ...any) error { return &ValidationError{Message: fmt.Sprintf(format, values...)} }
+          func semantic(format string, values ...any) error { return &ConflictError{Kind: ErrSemanticConflict, Message: fmt.Sprintf(format, values...)} }
+          func text(payload map[string]any, key, fallback string) string { if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" { return strings.TrimSpace(value) }; return fallback }
+          func number(value any) (float64, bool) { switch value := value.(type) { case float64: return value, true; case float32: return float64(value), true; case int: return float64(value), true; case int64: return float64(value), true; case json.Number: parsed, err := value.Float64(); return parsed, err == nil; default: return 0, false } }
+          func ensureJSONEOF(decoder *json.Decoder) error { var trailing any; if err := decoder.Decode(&trailing); errors.Is(err, io.EOF) { return nil } else if err != nil { return err }; return errors.New("multiple JSON values are not allowed") }
+          func cloneReceipt(value Receipt) Receipt { value.EventIDs = append([]string(nil), value.EventIDs...); return value }
+          func cloneEvent(value Event) Event { encoded, _ := json.Marshal(value); var result Event; _ = json.Unmarshal(encoded, &result); return result }
+
+          func SortStateForDisplay(state *State) {
+          	sort.SliceStable(state.Scenes, func(i, j int) bool { if state.Scenes[i].Chapter != state.Scenes[j].Chapter { return state.Scenes[i].Chapter < state.Scenes[j].Chapter }; return state.Scenes[i].Sequence < state.Scenes[j].Sequence })
+          	sort.SliceStable(state.Beats, func(i, j int) bool { if state.Beats[i].Chapter != state.Beats[j].Chapter { return state.Beats[i].Chapter < state.Beats[j].Chapter }; return state.Beats[i].Sequence < state.Beats[j].Sequence })
+          }
+
+          const SQLMigration = `
+          CREATE TABLE IF NOT EXISTS narrative_ledger_meta (
+            project_id TEXT PRIMARY KEY,
+            revision INTEGER NOT NULL DEFAULT 0,
+            head_hash TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS narrative_ledger_events (
+            project_id TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            event_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            chapter INTEGER NOT NULL DEFAULT 0,
+            event_json TEXT NOT NULL,
+            previous_hash TEXT NOT NULL DEFAULT '',
+            event_hash TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (project_id, revision),
+            UNIQUE (project_id, event_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_narrative_ledger_chapter ON narrative_ledger_events(project_id, chapter, revision);
+          CREATE INDEX IF NOT EXISTS idx_narrative_ledger_kind ON narrative_ledger_events(project_id, kind, revision);
+          CREATE TABLE IF NOT EXISTS narrative_ledger_idempotency (
+            project_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            receipt_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (project_id, idempotency_key)
+          );`
+
+          var _ = bytes.MinRead
+          EOF
+
+          cat > internal/narrativeledger/repository_test.go <<'EOF'
+          package narrativeledger
+
+          import (
+          	"context"
+          	"encoding/json"
+          	"errors"
+          	"os"
+          	"strings"
+          	"sync"
+          	"testing"
+          	"time"
+          )
+
+          func source(id string) SourceRef { return SourceRef{Type: "test", ID: id} }
+
+          func TestCommitProjectionHistoryAndReplay(t *testing.T) {
+          	repository, err := NewFileRepository(t.TempDir()); if err != nil { t.Fatal(err) }
+          	repository.now = func() time.Time { return time.Date(2026, 9, 2, 1, 2, 3, 0, time.UTC) }
+          	expected := int64(0)
+          	receipt, err := repository.Commit(context.Background(), CommitRequest{ProjectID: "project-one", IdempotencyKey: "chapter-1", ExpectedRevision: &expected, Events: []EventInput{
+          		{Kind: KindThreadOpened, Chapter: 1, ThreadID: "missing-heir", Payload: map[string]any{"title": "The missing heir"}, Source: source("one")},
+          		{Kind: KindPromiseMade, Chapter: 1, Subject: "return-ring", Payload: map[string]any{"description": "Return the ring"}, Source: source("two")},
+          		{Kind: KindQuestionOpened, Chapter: 1, Subject: "who-betrayed", Payload: map[string]any{"question": "Who betrayed the guard?"}, Source: source("three")},
+          		{Kind: KindSceneRecorded, Chapter: 1, Sequence: 1, Subject: "gate", Payload: map[string]any{"summary": "The gate falls"}, Source: source("four")},
+          		{Kind: KindTensionSet, Chapter: 1, Payload: map[string]any{"level": 7.5}, Source: source("five")},
+          		{Kind: KindChapterFinalized, Chapter: 1, Subject: "chapter:1", Source: source("six")},
+          	}})
+          	if err != nil { t.Fatal(err) }
+          	if receipt.FromRevision != 1 || receipt.ToRevision != 6 || len(receipt.EventIDs) != 6 { t.Fatalf("unexpected receipt: %+v", receipt) }
+          	replayed, err := repository.Commit(context.Background(), CommitRequest{ProjectID: "project-one", IdempotencyKey: "chapter-1", ExpectedRevision: &expected, Events: []EventInput{
+          		{Kind: KindThreadOpened, Chapter: 1, ThreadID: "missing-heir", Payload: map[string]any{"title": "The missing heir"}, Source: source("one")},
+          		{Kind: KindPromiseMade, Chapter: 1, Subject: "return-ring", Payload: map[string]any{"description": "Return the ring"}, Source: source("two")},
+          		{Kind: KindQuestionOpened, Chapter: 1, Subject: "who-betrayed", Payload: map[string]any{"question": "Who betrayed the guard?"}, Source: source("three")},
+          		{Kind: KindSceneRecorded, Chapter: 1, Sequence: 1, Subject: "gate", Payload: map[string]any{"summary": "The gate falls"}, Source: source("four")},
+          		{Kind: KindTensionSet, Chapter: 1, Payload: map[string]any{"level": 7.5}, Source: source("five")},
+          		{Kind: KindChapterFinalized, Chapter: 1, Subject: "chapter:1", Source: source("six")},
+          	}})
+          	if err != nil { t.Fatal(err) }
+          	if replayed.HeadHash != receipt.HeadHash || replayed.ToRevision != receipt.ToRevision { t.Fatalf("replay changed receipt") }
+          	state, err := repository.StateAt(context.Background(), "project-one", 0, 0); if err != nil { t.Fatal(err) }
+          	if state.LastFinalizedChapter != 1 || state.Tension != 7.5 || state.Threads["missing-heir"].Status != "open" || len(state.Scenes) != 1 { t.Fatalf("unexpected state: %+v", state) }
+          	historical, err := repository.StateAt(context.Background(), "project-one", 2, 0); if err != nil { t.Fatal(err) }
+          	if historical.Revision != 2 || len(historical.Questions) != 0 { t.Fatalf("unexpected historical state: %+v", historical) }
+          	report, err := repository.Audit(context.Background(), "project-one"); if err != nil { t.Fatal(err) }
+          	if !report.Valid || report.CheckedEvents != 6 { t.Fatalf("audit failed: %+v", report) }
+          }
+
+          func TestConflictsAndAtomicSemanticValidation(t *testing.T) {
+          	repository, _ := NewFileRepository(t.TempDir())
+          	_, err := repository.Commit(context.Background(), CommitRequest{ProjectID: "p", IdempotencyKey: "one", Events: []EventInput{{Kind: KindThreadOpened, ThreadID: "t", Source: source("1")}}}); if err != nil { t.Fatal(err) }
+          	_, err = repository.Commit(context.Background(), CommitRequest{ProjectID: "p", IdempotencyKey: "one", Events: []EventInput{{Kind: KindThreadOpened, ThreadID: "different", Source: source("2")}}})
+          	if !errors.Is(err, ErrIdempotencyConflict) { t.Fatalf("expected idempotency conflict, got %v", err) }
+          	wrong := int64(0)
+          	_, err = repository.Commit(context.Background(), CommitRequest{ProjectID: "p", IdempotencyKey: "two", ExpectedRevision: &wrong, Events: []EventInput{{Kind: KindNoteRecorded, Source: source("3")}}})
+          	if !errors.Is(err, ErrRevisionConflict) { t.Fatalf("expected revision conflict, got %v", err) }
+          	_, err = repository.Commit(context.Background(), CommitRequest{ProjectID: "p", IdempotencyKey: "three", Events: []EventInput{{Kind: KindThreadOpened, ThreadID: "new", Source: source("4")}, {Kind: KindThreadResolved, ThreadID: "missing", Source: source("5")}}})
+          	if !errors.Is(err, ErrSemanticConflict) { t.Fatalf("expected semantic conflict, got %v", err) }
+          	events, err := repository.List(context.Background(), Query{ProjectID: "p"}); if err != nil { t.Fatal(err) }
+          	if len(events) != 1 { t.Fatalf("failed batch was partially committed: %d events", len(events)) }
+          }
+
+          func TestConcurrentCommitsAndTamperAudit(t *testing.T) {
+          	repository, _ := NewFileRepository(t.TempDir())
+          	var group sync.WaitGroup
+          	errorsChannel := make(chan error, 24)
+          	for index := 0; index < 24; index++ {
+          		group.Add(1)
+          		go func(index int) { defer group.Done(); _, err := repository.Commit(context.Background(), CommitRequest{ProjectID: "concurrent", IdempotencyKey: "key-"+string(rune('A'+index)), Events: []EventInput{{Kind: KindNoteRecorded, Subject: "note-"+string(rune('A'+index)), Source: source("source")}}}); errorsChannel <- err }(index)
+          	}
+          	group.Wait(); close(errorsChannel)
+          	for err := range errorsChannel { if err != nil { t.Fatal(err) } }
+          	events, _ := repository.List(context.Background(), Query{ProjectID: "concurrent", Limit: 100})
+          	if len(events) != 24 { t.Fatalf("got %d events", len(events)) }
+          	path := repository.path("concurrent")
+          	data, err := os.ReadFile(path); if err != nil { t.Fatal(err) }
+          	var doc map[string]any; if err := json.Unmarshal(data, &doc); err != nil { t.Fatal(err) }
+          	items := doc["events"].([]any); first := items[0].(map[string]any); first["subject"] = "tampered"
+          	data, _ = json.Marshal(doc); if err := os.WriteFile(path, data, 0o600); err != nil { t.Fatal(err) }
+          	report, err := repository.Audit(context.Background(), "concurrent"); if err != nil { t.Fatal(err) }
+          	if report.Valid || len(report.Errors) == 0 { t.Fatalf("tampering was not detected") }
+          }
+
+          func TestStrictValidationAndQueryBounds(t *testing.T) {
+          	repository, _ := NewFileRepository(t.TempDir())
+          	_, err := repository.Commit(context.Background(), CommitRequest{ProjectID: "bad/project", IdempotencyKey: "x", Events: []EventInput{{Kind: KindNoteRecorded, Source: source("x")}}}); if !errors.Is(err, ErrInvalid) { t.Fatalf("expected invalid project: %v", err) }
+          	_, err = repository.Commit(context.Background(), CommitRequest{ProjectID: "p", IdempotencyKey: "x", Events: []EventInput{{Kind: KindTensionSet, Payload: map[string]any{"level": 11}, Source: source("x")}}}); if !errors.Is(err, ErrInvalid) { t.Fatalf("expected invalid tension: %v", err) }
+          	_, err = repository.List(context.Background(), Query{ProjectID: "p", Limit: 501}); if !errors.Is(err, ErrInvalid) { t.Fatalf("expected invalid limit: %v", err) }
+          	if !strings.Contains(SQLMigration, "narrative_ledger_events") || !strings.Contains(SQLMigration, "narrative_ledger_idempotency") { t.Fatal("SQL migration is incomplete") }
+          }
+          EOF
+
+          cat > internal/server/narrative_ledger.go <<'EOF'
+          package server
+
+          import (
+          	"bytes"
+          	"context"
+          	"crypto/sha256"
+          	"encoding/hex"
+          	"encoding/json"
+          	"errors"
+          	"fmt"
+          	"io"
+          	"net/http"
+          	"os"
+          	"path/filepath"
+          	"strconv"
+          	"strings"
+          	"sync"
+          	"time"
+
+          	"__MODULE__/internal/narrativeledger"
+          )
+
+          const narrativeBodyLimit = 1 << 20
+
+          var narrativeRuntime struct {
+          	sync.Mutex
+          	repository narrativeledger.Repository
+          	err error
+          }
+
+          func narrativeRepository() (narrativeledger.Repository, error) {
+          	narrativeRuntime.Lock(); defer narrativeRuntime.Unlock()
+          	if narrativeRuntime.repository != nil || narrativeRuntime.err != nil { return narrativeRuntime.repository, narrativeRuntime.err }
+          	root := strings.TrimSpace(os.Getenv("NOVELFORGE_NARRATIVE_LEDGER_DIR"))
+          	if root == "" {
+          		config, err := os.UserConfigDir(); if err != nil { narrativeRuntime.err = fmt.Errorf("resolve narrative ledger directory: %w", err); return nil, narrativeRuntime.err }
+          		root = filepath.Join(config, "NovelForge", "narrative-ledger")
+          	}
+          	narrativeRuntime.repository, narrativeRuntime.err = narrativeledger.NewFileRepository(root)
+          	return narrativeRuntime.repository, narrativeRuntime.err
+          }
+
+          func setNarrativeRepositoryForTest(repository narrativeledger.Repository) func() {
+          	narrativeRuntime.Lock(); previous, previousErr := narrativeRuntime.repository, narrativeRuntime.err; narrativeRuntime.repository, narrativeRuntime.err = repository, nil; narrativeRuntime.Unlock()
+          	return func() { narrativeRuntime.Lock(); narrativeRuntime.repository, narrativeRuntime.err = previous, previousErr; narrativeRuntime.Unlock() }
+          }
+
+          type narrativeCommitBody struct {
+          	ExpectedRevision *int64                       `json:"expected_revision,omitempty"`
+          	Events           []narrativeledger.EventInput `json:"events"`
+          }
+
+          func (s *__SERVER_TYPE__) handleNarrativeCommit(w http.ResponseWriter, r *http.Request) {
+          	projectID := strings.TrimSpace(r.PathValue("id"))
+          	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+          	if key == "" { writeNarrativeError(w, r, http.StatusBadRequest, "missing_idempotency_key", "Idempotency-Key is required"); return }
+          	var body narrativeCommitBody
+          	if err := decodeNarrativeJSON(w, r, &body); err != nil { writeNarrativeError(w, r, http.StatusBadRequest, "invalid_json", err.Error()); return }
+          	repository, err := narrativeRepository(); if err != nil { writeNarrativeError(w, r, http.StatusInternalServerError, "narrative_storage_unavailable", "Narrative Ledger is unavailable"); return }
+          	receipt, err := repository.Commit(r.Context(), narrativeledger.CommitRequest{ProjectID: projectID, IdempotencyKey: key, ExpectedRevision: body.ExpectedRevision, Events: body.Events})
+          	if err != nil { writeNarrativeRepositoryError(w, r, err); return }
+          	w.Header().Set("X-Narrative-Ledger-Revision", strconv.FormatInt(receipt.ToRevision, 10))
+          	writeNarrativeJSON(w, r, http.StatusOK, receipt)
+          }
+
+          func (s *__SERVER_TYPE__) handleNarrativeState(w http.ResponseWriter, r *http.Request) {
+          	revision, err := narrativeIntQuery(r, "revision", 0, 1<<62); if err != nil { writeNarrativeError(w, r, http.StatusBadRequest, "invalid_query", err.Error()); return }
+          	chapter, err := narrativeIntQuery(r, "chapter", 0, 1<<30); if err != nil { writeNarrativeError(w, r, http.StatusBadRequest, "invalid_query", err.Error()); return }
+          	repository, err := narrativeRepository(); if err != nil { writeNarrativeError(w, r, http.StatusInternalServerError, "narrative_storage_unavailable", "Narrative Ledger is unavailable"); return }
+          	state, err := repository.StateAt(r.Context(), strings.TrimSpace(r.PathValue("id")), int64(revision), chapter); if err != nil { writeNarrativeRepositoryError(w, r, err); return }
+          	narrativeledger.SortStateForDisplay(&state)
+          	writeNarrativeJSON(w, r, http.StatusOK, state)
+          }
+
+          func (s *__SERVER_TYPE__) handleNarrativeEvents(w http.ResponseWriter, r *http.Request) {
+          	after, err := narrativeIntQuery(r, "after_revision", 0, 1<<62); if err != nil { writeNarrativeError(w, r, http.StatusBadRequest, "invalid_query", err.Error()); return }
+          	before, err := narrativeIntQuery(r, "before_revision", 0, 1<<62); if err != nil { writeNarrativeError(w, r, http.StatusBadRequest, "invalid_query", err.Error()); return }
+          	chapter, err := narrativeIntQuery(r, "chapter", 0, 1<<30); if err != nil { writeNarrativeError(w, r, http.StatusBadRequest, "invalid_query", err.Error()); return }
+          	limit, err := narrativeIntQuery(r, "limit", 100, 500); if err != nil { writeNarrativeError(w, r, http.StatusBadRequest, "invalid_query", err.Error()); return }
+          	var kinds []narrativeledger.EventKind
+          	for _, raw := range r.URL.Query()["kind"] { for _, value := range strings.Split(raw, ",") { if value = strings.TrimSpace(value); value != "" { kinds = append(kinds, narrativeledger.EventKind(value)) } } }
+          	repository, err := narrativeRepository(); if err != nil { writeNarrativeError(w, r, http.StatusInternalServerError, "narrative_storage_unavailable", "Narrative Ledger is unavailable"); return }
+          	events, err := repository.List(r.Context(), narrativeledger.Query{ProjectID: strings.TrimSpace(r.PathValue("id")), AfterRevision: int64(after), BeforeRevision: int64(before), Chapter: chapter, Kinds: kinds, Limit: limit}); if err != nil { writeNarrativeRepositoryError(w, r, err); return }
+          	writeNarrativeJSON(w, r, http.StatusOK, map[string]any{"events": events})
+          }
+
+          func (s *__SERVER_TYPE__) handleNarrativeAudit(w http.ResponseWriter, r *http.Request) {
+          	repository, err := narrativeRepository(); if err != nil { writeNarrativeError(w, r, http.StatusInternalServerError, "narrative_storage_unavailable", "Narrative Ledger is unavailable"); return }
+          	report, err := repository.Audit(r.Context(), strings.TrimSpace(r.PathValue("id"))); if err != nil { writeNarrativeRepositoryError(w, r, err); return }
+          	status := http.StatusOK; if !report.Valid { status = http.StatusConflict }
+          	writeNarrativeJSON(w, r, status, report)
+          }
+
+          func (s *__SERVER_TYPE__) wrapNarrativeFinalize(next http.HandlerFunc) http.HandlerFunc {
+          	return func(w http.ResponseWriter, r *http.Request) {
+          		buffer := newNarrativeResponseBuffer()
+          		next(buffer, r)
+          		if buffer.status < 200 || buffer.status >= 300 { buffer.flush(w); return }
+          		projectID := strings.TrimSpace(r.PathValue("id")); chapter, err := strconv.Atoi(strings.TrimSpace(r.PathValue("chapter")))
+          		if err != nil || chapter < 1 { writeNarrativeError(w, r, http.StatusInternalServerError, "narrative_finalize_invalid", "Finalized chapter could not be recorded"); return }
+          		requestKey := strings.TrimSpace(r.Header.Get("Idempotency-Key")); if requestKey == "" { writeNarrativeError(w, r, http.StatusInternalServerError, "narrative_finalize_invalid", "Finalize idempotency key is unavailable"); return }
+          		digest := sha256.Sum256(buffer.body.Bytes())
+          	repository, err := narrativeRepository(); if err != nil { writeNarrativeError(w, r, http.StatusServiceUnavailable, "narrative_storage_unavailable", "Final chapter is durable but Narrative Ledger recording must be retried"); return }
+          	receipt, err := repository.Commit(r.Context(), narrativeledger.CommitRequest{ProjectID: projectID, IdempotencyKey: "quality-finalize/"+requestKey, Events: []narrativeledger.EventInput{{Kind: narrativeledger.KindChapterFinalized, Chapter: chapter, Subject: fmt.Sprintf("chapter:%d", chapter), Payload: map[string]any{"response_sha256": hex.EncodeToString(digest[:])}, Source: narrativeledger.SourceRef{Type: "quality-gate-finalize", ID: requestKey}}}})
+          		if err != nil { writeNarrativeRepositoryErrorWithStatus(w, r, err, http.StatusServiceUnavailable); return }
+          		buffer.header.Set("X-Narrative-Ledger-Revision", strconv.FormatInt(receipt.ToRevision, 10)); buffer.flush(w)
+          	}
+          }
+
+          type narrativeResponseBuffer struct { header http.Header; body bytes.Buffer; status int }
+          func newNarrativeResponseBuffer() *narrativeResponseBuffer { return &narrativeResponseBuffer{header: make(http.Header), status: http.StatusOK} }
+          func (b *narrativeResponseBuffer) Header() http.Header { return b.header }
+          func (b *narrativeResponseBuffer) WriteHeader(status int) { if b.body.Len() == 0 && b.status == http.StatusOK { b.status = status } }
+          func (b *narrativeResponseBuffer) Write(value []byte) (int, error) { return b.body.Write(value) }
+          func (b *narrativeResponseBuffer) flush(w http.ResponseWriter) { for key, values := range b.header { for _, value := range values { w.Header().Add(key, value) } }; w.WriteHeader(b.status); _, _ = w.Write(b.body.Bytes()) }
+
+          func decodeNarrativeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
+          	if r.Body == nil { return errors.New("request body is required") }
+          	reader := http.MaxBytesReader(w, r.Body, narrativeBodyLimit)
+          	decoder := json.NewDecoder(reader); decoder.DisallowUnknownFields(); decoder.UseNumber()
+          	if err := decoder.Decode(destination); err != nil { return err }
+          	var trailing any; if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) { if err == nil { return errors.New("multiple JSON values are not allowed") }; return err }
+          	return nil
+          }
+
+          func narrativeIntQuery(r *http.Request, key string, fallback, maximum int) (int, error) {
+          	raw := strings.TrimSpace(r.URL.Query().Get(key)); if raw == "" { return fallback, nil }
+          	value, err := strconv.ParseInt(raw, 10, 64); if err != nil || value < 0 || value > int64(maximum) { return 0, fmt.Errorf("%s is outside the supported range", key) }
+          	return int(value), nil
+          }
+
+          func writeNarrativeRepositoryError(w http.ResponseWriter, r *http.Request, err error) { writeNarrativeRepositoryErrorWithStatus(w, r, err, 0) }
+          func writeNarrativeRepositoryErrorWithStatus(w http.ResponseWriter, r *http.Request, err error, override int) {
+          	status, code, message := http.StatusInternalServerError, "narrative_storage_error", "Narrative Ledger operation failed"
+          	switch { case errors.Is(err, narrativeledger.ErrInvalid): status, code, message = http.StatusBadRequest, "invalid_narrative_event", err.Error(); case errors.Is(err, narrativeledger.ErrIdempotencyConflict): status, code, message = http.StatusConflict, "idempotency_conflict", err.Error(); case errors.Is(err, narrativeledger.ErrRevisionConflict): status, code, message = http.StatusConflict, "revision_conflict", err.Error(); case errors.Is(err, narrativeledger.ErrSemanticConflict): status, code, message = http.StatusConflict, "narrative_conflict", err.Error(); case errors.Is(err, narrativeledger.ErrIntegrity): status, code, message = http.StatusConflict, "narrative_integrity_failure", "Narrative Ledger integrity verification failed" }
+          	if override != 0 && status >= 500 { status = override }
+          	writeNarrativeError(w, r, status, code, message)
+          }
+
+          func writeNarrativeError(w http.ResponseWriter, r *http.Request, status int, code, message string) { writeNarrativeJSON(w, r, status, map[string]any{"error": map[string]any{"code": code, "message": message, "trace_id": narrativeTraceID(r)}}) }
+          func writeNarrativeJSON(w http.ResponseWriter, r *http.Request, status int, value any) { w.Header().Set("Content-Type", "application/json"); w.Header().Set("X-Trace-ID", narrativeTraceID(r)); w.WriteHeader(status); _ = json.NewEncoder(w).Encode(value) }
+          func narrativeTraceID(r *http.Request) string { if trace := strings.TrimSpace(r.Header.Get("X-Trace-ID")); trace != "" { return trace }; trace := fmt.Sprintf("narrative-%d", time.Now().UnixNano()); r.Header.Set("X-Trace-ID", trace); return trace }
+
+          var _ = context.Canceled
+          EOF
+
+          cat > internal/server/narrative_ledger_test.go <<'EOF'
+          package server
+
+          import (
+          	"encoding/json"
+          	"net/http"
+          	"net/http/httptest"
+          	"strings"
+          	"testing"
+
+          	"__MODULE__/internal/narrativeledger"
+          )
+
+          func narrativeTestServer(t *testing.T) (*__SERVER_TYPE__, func()) {
+          	t.Helper(); repository, err := narrativeledger.NewFileRepository(t.TempDir()); if err != nil { t.Fatal(err) }
+          	return &__SERVER_TYPE__{}, setNarrativeRepositoryForTest(repository)
+          }
+
+          func TestNarrativeHTTPCommitStateListAndAudit(t *testing.T) {
+          	server, restore := narrativeTestServer(t); defer restore()
+          	body := `{"expected_revision":0,"events":[{"kind":"thread.opened","chapter":1,"thread_id":"lost-key","payload":{"title":"The lost key"},"source":{"type":"test","id":"draft-1"}}]}`
+          	request := httptest.NewRequest(http.MethodPost, "/api/projects/p/narrative/events", strings.NewReader(body)); request.SetPathValue("id", "p"); request.Header.Set("Idempotency-Key", "commit-1")
+          	response := httptest.NewRecorder(); server.handleNarrativeCommit(response, request)
+          	if response.Code != http.StatusOK { t.Fatalf("commit status=%d body=%s", response.Code, response.Body.String()) }
+          	var receipt narrativeledger.Receipt; if err := json.Unmarshal(response.Body.Bytes(), &receipt); err != nil { t.Fatal(err) }; if receipt.ToRevision != 1 { t.Fatalf("unexpected receipt: %+v", receipt) }
+
+          	stateRequest := httptest.NewRequest(http.MethodGet, "/api/projects/p/narrative/state", nil); stateRequest.SetPathValue("id", "p")
+          	stateResponse := httptest.NewRecorder(); server.handleNarrativeState(stateResponse, stateRequest); if stateResponse.Code != http.StatusOK || !strings.Contains(stateResponse.Body.String(), "lost-key") { t.Fatalf("state response=%d %s", stateResponse.Code, stateResponse.Body.String()) }
+          	listRequest := httptest.NewRequest(http.MethodGet, "/api/projects/p/narrative/events?limit=10", nil); listRequest.SetPathValue("id", "p")
+          	listResponse := httptest.NewRecorder(); server.handleNarrativeEvents(listResponse, listRequest); if listResponse.Code != http.StatusOK || !strings.Contains(listResponse.Body.String(), "thread.opened") { t.Fatalf("list response=%d %s", listResponse.Code, listResponse.Body.String()) }
+          	auditRequest := httptest.NewRequest(http.MethodGet, "/api/projects/p/narrative/audit", nil); auditRequest.SetPathValue("id", "p")
+          	auditResponse := httptest.NewRecorder(); server.handleNarrativeAudit(auditResponse, auditRequest); if auditResponse.Code != http.StatusOK || !strings.Contains(auditResponse.Body.String(), `"valid":true`) { t.Fatalf("audit response=%d %s", auditResponse.Code, auditResponse.Body.String()) }
+          }
+
+          func TestNarrativeHTTPStrictJSONAndConflicts(t *testing.T) {
+          	server, restore := narrativeTestServer(t); defer restore()
+          	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"events":[],"unknown":true}`)); request.SetPathValue("id", "p"); request.Header.Set("Idempotency-Key", "x")
+          	response := httptest.NewRecorder(); server.handleNarrativeCommit(response, request); if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "invalid_json") { t.Fatalf("unexpected response: %d %s", response.Code, response.Body.String()) }
+          }
+
+          func TestFinalizeWrapperPersistsAndReplays(t *testing.T) {
+          	server, restore := narrativeTestServer(t); defer restore()
+          	wrapped := server.wrapNarrativeFinalize(func(w http.ResponseWriter, r *http.Request) { w.Header().Set("Content-Type", "application/json"); w.WriteHeader(http.StatusOK); _, _ = w.Write([]byte(`{"status":"completed"}`)) })
+          	for run := 0; run < 2; run++ {
+          		request := httptest.NewRequest(http.MethodPost, "/", nil); request.SetPathValue("id", "project"); request.SetPathValue("chapter", "3"); request.Header.Set("Idempotency-Key", "finalize-three")
+          		response := httptest.NewRecorder(); wrapped(response, request); if response.Code != http.StatusOK { t.Fatalf("run %d status=%d body=%s", run, response.Code, response.Body.String()) }; if response.Header().Get("X-Narrative-Ledger-Revision") != "1" { t.Fatalf("unexpected revision header: %q", response.Header().Get("X-Narrative-Ledger-Revision")) }
+          	}
+          }
+          EOF
+
+          cat > web/src/lib/narrativeLedger.ts <<'EOF'
+          export type NarrativeEventKind =
+            | 'chapter.finalized' | 'scene.recorded' | 'beat.recorded'
+            | 'thread.opened' | 'thread.advanced' | 'thread.resolved' | 'thread.abandoned'
+            | 'promise.made' | 'promise.paid' | 'promise.broken'
+            | 'question.opened' | 'question.answered'
+            | 'character_arc.advanced' | 'relationship_arc.advanced'
+            | 'tension.set' | 'note.recorded';
+
+          export interface NarrativeSourceRef { type: string; id: string }
+          export interface NarrativeEventInput { event_id?: string; kind: NarrativeEventKind; chapter?: number; sequence?: number; subject?: string; thread_id?: string; payload?: Record<string, unknown>; tags?: string[]; source: NarrativeSourceRef }
+          export interface NarrativeEvent extends NarrativeEventInput { project_id: string; revision: number; previous_hash?: string; hash: string; request_hash: string; idempotency_key: string; created_at: string }
+          export interface NarrativeReceipt { project_id: string; idempotency_key: string; request_hash: string; from_revision: number; to_revision: number; head_hash: string; event_ids: string[] }
+          export interface NarrativeThread { id: string; title?: string; status: string; opened_chapter: number; updated_chapter: number; resolution?: string }
+          export interface NarrativePromise { id: string; description?: string; status: string; made_chapter: number; updated_chapter: number; outcome?: string }
+          export interface NarrativeQuestion { id: string; question?: string; status: string; opened_chapter: number; updated_chapter: number; answer?: string }
+          export interface NarrativeArc { id: string; kind: string; status?: string; summary?: string; step: number; updated_chapter: number }
+          export interface NarrativeState { project_id: string; revision: number; head_hash?: string; last_finalized_chapter: number; tension: number; threads: Record<string, NarrativeThread>; promises: Record<string, NarrativePromise>; questions: Record<string, NarrativeQuestion>; character_arcs: Record<string, NarrativeArc>; relationship_arcs: Record<string, NarrativeArc>; scenes: Array<{event_id:string;chapter:number;sequence:number;title?:string;summary?:string}>; beats: Array<{event_id:string;chapter:number;sequence:number;summary?:string}> }
+          export interface NarrativeAudit { project_id: string; valid: boolean; revision: number; head_hash?: string; checked_events: number; errors?: string[] }
+
+          export class NarrativeLedgerAPIError extends Error {
+            constructor(public status: number, public code: string, message: string, public traceID?: string) { super(message); this.name = 'NarrativeLedgerAPIError'; }
+          }
+
+          type FetchLike = typeof fetch;
+          const encode = encodeURIComponent;
+
+          async function requestJSON<T>(path: string, init: RequestInit = {}, fetcher: FetchLike = fetch): Promise<T> {
+            const response = await fetcher(path, init);
+            const payload = await response.json().catch(() => ({})) as Record<string, any>;
+            if (!response.ok) {
+              const error = payload.error ?? {};
+              throw new NarrativeLedgerAPIError(response.status, String(error.code ?? 'request_failed'), String(error.message ?? `Request failed (${response.status})`), error.trace_id ? String(error.trace_id) : response.headers.get('X-Trace-ID') ?? undefined);
+            }
+            return payload as T;
+          }
+
+          export function narrativeIdempotencyKey(prefix = 'narrative'): string {
+            const random = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            return `${prefix}-${random}`;
+          }
+
+          export function projectIDFromLocation(location: Pick<Location, 'pathname'|'search'> = window.location): string {
+            const query = new URLSearchParams(location.search).get('project'); if (query) return query;
+            const segments = location.pathname.split('/').filter(Boolean);
+            const index = segments.findIndex((value) => value === 'projects');
+            return index >= 0 && segments[index + 1] ? decodeURIComponent(segments[index + 1]) : '';
+          }
+
+          export async function commitNarrativeEvents(projectID: string, events: NarrativeEventInput[], expectedRevision?: number, idempotencyKey = narrativeIdempotencyKey(), fetcher: FetchLike = fetch): Promise<NarrativeReceipt> {
+            return requestJSON(`/api/projects/${encode(projectID)}/narrative/events`, {method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':idempotencyKey},body:JSON.stringify({expected_revision: expectedRevision, events})}, fetcher);
+          }
+
+          export async function getNarrativeState(projectID: string, options: {revision?:number;chapter?:number} = {}, fetcher: FetchLike = fetch): Promise<NarrativeState> {
+            const query = new URLSearchParams(); if (options.revision) query.set('revision', String(options.revision)); if (options.chapter) query.set('chapter', String(options.chapter));
+            return requestJSON(`/api/projects/${encode(projectID)}/narrative/state${query.size ? `?${query}` : ''}`, {}, fetcher);
+          }
+
+          export async function listNarrativeEvents(projectID: string, options: {afterRevision?:number;beforeRevision?:number;chapter?:number;kinds?:NarrativeEventKind[];limit?:number} = {}, fetcher: FetchLike = fetch): Promise<NarrativeEvent[]> {
+            const query = new URLSearchParams(); if (options.afterRevision) query.set('after_revision', String(options.afterRevision)); if (options.beforeRevision) query.set('before_revision', String(options.beforeRevision)); if (options.chapter) query.set('chapter', String(options.chapter)); for (const kind of options.kinds ?? []) query.append('kind', kind); query.set('limit', String(Math.min(500, Math.max(1, options.limit ?? 100))));
+            const result = await requestJSON<{events:NarrativeEvent[]}>(`/api/projects/${encode(projectID)}/narrative/events?${query}`, {}, fetcher); return result.events;
+          }
+
+          export function auditNarrativeLedger(projectID: string, fetcher: FetchLike = fetch): Promise<NarrativeAudit> { return requestJSON(`/api/projects/${encode(projectID)}/narrative/audit`, {}, fetcher); }
+          EOF
+
+          cat > web/src/lib/narrativeLedger.test.ts <<'EOF'
+          import { describe, expect, it, vi } from 'vitest';
+          import { auditNarrativeLedger, commitNarrativeEvents, getNarrativeState, listNarrativeEvents, NarrativeLedgerAPIError, projectIDFromLocation } from './narrativeLedger';
+
+          const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), {status, headers:{'Content-Type':'application/json','X-Trace-ID':'trace-header'}});
+
+          describe('Narrative Ledger API', () => {
+            it('commits with strict idempotency and expected revision', async () => {
+              const fetcher = vi.fn(async () => response({project_id:'p',idempotency_key:'key',request_hash:'hash',from_revision:1,to_revision:1,head_hash:'head',event_ids:['e']}));
+              await commitNarrativeEvents('project id', [{kind:'note.recorded',source:{type:'test',id:'one'}}], 0, 'key', fetcher as typeof fetch);
+              expect(fetcher).toHaveBeenCalledOnce(); const [url, init] = fetcher.mock.calls[0]; expect(url).toBe('/api/projects/project%20id/narrative/events'); expect((init?.headers as Record<string,string>)['Idempotency-Key']).toBe('key'); expect(JSON.parse(String(init?.body))).toMatchObject({expected_revision:0});
+            });
+            it('builds bounded state and event queries', async () => {
+              const fetcher = vi.fn(async (url:string) => response(url.includes('/state') ? {project_id:'p',revision:0,last_finalized_chapter:0,tension:0,threads:{},promises:{},questions:{},character_arcs:{},relationship_arcs:{},scenes:[],beats:[]} : {events:[]}));
+              await getNarrativeState('p', {chapter:4}, fetcher as typeof fetch); await listNarrativeEvents('p', {limit:999,kinds:['thread.opened']}, fetcher as typeof fetch);
+              expect(String(fetcher.mock.calls[0][0])).toContain('chapter=4'); expect(String(fetcher.mock.calls[1][0])).toContain('limit=500'); expect(String(fetcher.mock.calls[1][0])).toContain('kind=thread.opened');
+            });
+            it('surfaces structured errors', async () => {
+              const fetcher = vi.fn(async () => response({error:{code:'revision_conflict',message:'stale',trace_id:'trace-body'}}, 409));
+              await expect(auditNarrativeLedger('p', fetcher as typeof fetch)).rejects.toMatchObject({status:409,code:'revision_conflict',traceID:'trace-body'} satisfies Partial<NarrativeLedgerAPIError>);
+            });
+            it('extracts the opaque project id from workspace routes', () => { expect(projectIDFromLocation({pathname:'/projects/opaque%20id/chapters',search:''} as Location)).toBe('opaque id'); expect(projectIDFromLocation({pathname:'/chapters',search:'?project=query-id'} as Location)).toBe('query-id'); });
+          });
+          EOF
+
+          cat > web/src/components/NarrativeLedgerPanel.svelte <<'EOF'
+          <script lang="ts">
+            import { onMount } from 'svelte';
+            import { auditNarrativeLedger, commitNarrativeEvents, getNarrativeState, listNarrativeEvents, narrativeIdempotencyKey, projectIDFromLocation, type NarrativeAudit, type NarrativeEvent, type NarrativeEventKind, type NarrativeState } from '../lib/narrativeLedger';
+
+            let projectID = projectIDFromLocation();
+            let chapter = 1;
+            let state: NarrativeState | null = null;
+            let audit: NarrativeAudit | null = null;
+            let events: NarrativeEvent[] = [];
+            let kind: NarrativeEventKind = 'note.recorded';
+            let subject = '';
+            let detail = '';
+            let busy = false;
+            let error = '';
+
+            const values = <T>(record: Record<string,T> | undefined): T[] => Object.values(record ?? {});
+            const open = <T extends {status:string}>(record: Record<string,T> | undefined): T[] => values(record).filter((value) => value.status === 'open');
+
+            async function reload() {
+              if (!projectID) return;
+              busy = true; error = '';
+              try { [state, audit, events] = await Promise.all([getNarrativeState(projectID), auditNarrativeLedger(projectID), listNarrativeEvents(projectID, {limit:40})]); chapter = Math.max(chapter, (state.last_finalized_chapter || 0) + 1); }
+              catch (value) { error = value instanceof Error ? value.message : String(value); }
+              finally { busy = false; }
+            }
+
+            async function append() {
+              if (!projectID || !state) return;
+              busy = true; error = '';
+              try {
+                const input: any = {kind, chapter, source:{type:'human-workspace',id:narrativeIdempotencyKey('source')}, payload: detail ? {summary:detail,description:detail,question:detail,title:detail} : {}};
+                if (kind.startsWith('thread.')) input.thread_id = subject; else if (subject) input.subject = subject;
+                await commitNarrativeEvents(projectID, [input], state.revision, narrativeIdempotencyKey('workspace'));
+                subject = ''; detail = ''; await reload();
+              } catch (value) { error = value instanceof Error ? value.message : String(value); busy = false; }
+            }
+
+            onMount(reload);
+          </script>
+
+          <section class="ledger" aria-labelledby="narrative-ledger-title">
+            <header>
+              <div><p class="eyebrow">Narrative Ledger</p><h2 id="narrative-ledger-title">叙事账本</h2><p>记录场景、节拍、伏线承诺、开放问题与角色弧线；Truth Store 仍是世界事实权威。</p></div>
+              <button type="button" on:click={reload} disabled={busy || !projectID}>{busy ? '同步中…' : '刷新'}</button>
+            </header>
+            {#if !projectID}<p class="notice">当前 URL 没有项目 ID，叙事账本暂不可用。</p>{/if}
+            {#if error}<p class="error" role="alert">{error}</p>{/if}
+            {#if state}
+              <div class="metrics">
+                <article><span>Revision</span><strong>{state.revision}</strong></article>
+                <article><span>完整性</span><strong>{audit?.valid ? 'PASS' : 'FAIL'}</strong></article>
+                <article><span>张力</span><strong>{state.tension.toFixed(1)}</strong></article>
+                <article><span>已定稿章节</span><strong>{state.last_finalized_chapter}</strong></article>
+              </div>
+              <div class="columns">
+                <article><h3>开放线程</h3>{#each open(state.threads) as item}<p><b>{item.id}</b><span>{item.title ?? '未命名线程'}</span></p>{:else}<small>暂无开放线程</small>{/each}</article>
+                <article><h3>未兑现承诺</h3>{#each open(state.promises) as item}<p><b>{item.id}</b><span>{item.description ?? '未填写说明'}</span></p>{:else}<small>暂无未兑现承诺</small>{/each}</article>
+                <article><h3>开放问题</h3>{#each open(state.questions) as item}<p><b>{item.id}</b><span>{item.question ?? '未填写问题'}</span></p>{:else}<small>暂无开放问题</small>{/each}</article>
+              </div>
+              <form on:submit|preventDefault={append}>
+                <label>事件<select bind:value={kind}><option value="note.recorded">叙事注记</option><option value="thread.opened">开启线程</option><option value="thread.advanced">推进线程</option><option value="thread.resolved">解决线程</option><option value="promise.made">建立承诺</option><option value="promise.paid">兑现承诺</option><option value="question.opened">开放问题</option><option value="question.answered">回答问题</option><option value="character_arc.advanced">推进角色弧线</option><option value="relationship_arc.advanced">推进关系弧线</option><option value="scene.recorded">记录场景</option><option value="beat.recorded">记录节拍</option></select></label>
+                <label>章节<input type="number" min="0" bind:value={chapter}></label>
+                <label>标识<input maxlength="128" bind:value={subject} placeholder="例如 missing-heir"></label>
+                <label class="wide">说明<input maxlength="500" bind:value={detail} placeholder="只记录结构化叙事摘要，不复制完整正文"></label>
+                <button disabled={busy || !projectID || (kind !== 'note.recorded' && !subject)}>追加不可变事件</button>
+              </form>
+              <details><summary>最近事件（{events.length}）</summary><ol>{#each events as event}<li><code>r{event.revision}</code><b>{event.kind}</b><span>Ch. {event.chapter || '—'} · {event.subject || event.thread_id || event.event_id}</span></li>{/each}</ol></details>
+              {#if audit && !audit.valid}<div class="error"><b>哈希链审计失败</b>{#each audit.errors ?? [] as item}<p>{item}</p>{/each}</div>{/if}
+            {/if}
+          </section>
+
+          <style>
+            .ledger{margin-top:1.5rem;padding:1.25rem;border:1px solid var(--border-color,#d8d8de);border-radius:1rem;background:var(--surface-color,#fff)}
+            header{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start}header h2{margin:.1rem 0}.eyebrow{margin:0;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;opacity:.65}header p{max-width:62rem;margin:.35rem 0;opacity:.75}
+            button{cursor:pointer}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin:1rem 0}.metrics article,.columns article{padding:.85rem;border:1px solid var(--border-color,#ddd);border-radius:.75rem}.metrics span{display:block;font-size:.75rem;opacity:.65}.metrics strong{font-size:1.35rem}
+            .columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem}.columns h3{margin:0 0 .6rem}.columns p{display:grid;margin:.45rem 0}.columns span,small{font-size:.82rem;opacity:.7}
+            form{display:grid;grid-template-columns:1.2fr .55fr 1fr 2fr auto;gap:.65rem;align-items:end;margin:1rem 0}label{display:grid;gap:.25rem;font-size:.78rem}input,select{min-width:0;padding:.55rem;border:1px solid var(--border-color,#ccc);border-radius:.45rem;background:inherit;color:inherit}form button{padding:.58rem .8rem}
+            details{margin-top:.75rem}ol{padding-left:1.25rem}li{display:grid;grid-template-columns:4rem 13rem 1fr;gap:.5rem;padding:.25rem 0}.notice,.error{padding:.75rem;border-radius:.55rem;background:rgba(180,55,55,.1)}
+            @media(max-width:900px){.metrics,.columns{grid-template-columns:1fr 1fr}form{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}li{grid-template-columns:4rem 1fr}li span{grid-column:2}}
+            @media(max-width:560px){header{display:block}.metrics,.columns,form{grid-template-columns:1fr}}
+          </style>
+          EOF
+
+          cat > docs/NARRATIVE_LEDGER.md <<'EOF'
+          # Narrative Ledger
+
+          Phase 6 adds an append-only narrative memory that records how the story develops without replacing the Structured Truth Store.
+
+          ## Authority boundary
+
+          - Truth Store is authoritative for world, character, inventory, knowledge, timeline and other factual state.
+          - Narrative Ledger is authoritative for recorded narrative structure: scenes, beats, open threads, promises, questions, character arcs, relationship arcs and tension.
+          - Full chapter text is not copied into the ledger. Events carry bounded structured summaries and provenance.
+          - Retrieval or RAG output is never treated as authority by either store.
+
+          ## Integrity model
+
+          Each project has an ordered revision stream. Every event contains its previous hash and a SHA-256 hash over its canonical content, revision, provenance, request hash, idempotency key and timestamp. A batch is validated and projected before one crash-safe replacement; semantic failure leaves no partial events. Idempotency replays return the original receipt, while key reuse with different content fails.
+
+          `GET /api/projects/{id}/narrative/audit` recomputes the complete chain and deterministic projection. A failed audit returns HTTP 409 and must not be silently repaired.
+
+          ## Event lifecycle
+
+          Thread, promise and question lifecycle transitions are deterministic. Resolving an unknown thread, paying an unknown promise or answering an unknown question is rejected. Chapter finalization is monotonic. Character and relationship arc events advance one step at a time. Tension is bounded from 0 through 10.
+
+          ## Quality Gate integration
+
+          A successful Phase 5 Finalize response is buffered until the corresponding `chapter.finalized` ledger event is durable. If ledger persistence fails, the final chapter remains durable and the client receives a retryable error. Repeating the same Finalize request safely replays both the quality transaction and ledger idempotency key.
+
+          ## Storage
+
+          The default file repository lives under the operating system user configuration directory at `NovelForge/narrative-ledger`. `NOVELFORGE_NARRATIVE_LEDGER_DIR` overrides the root. Files are project-keyed by SHA-256, mode 0600, and replaced using a same-directory temporary file and backup sequence that also works on Windows. The package publishes `SQLMigration` for deployments that use a relational adapter.
+
+          ## API
+
+          ```text
+          POST /api/projects/{id}/narrative/events
+          GET  /api/projects/{id}/narrative/state
+          GET  /api/projects/{id}/narrative/events
+          GET  /api/projects/{id}/narrative/audit
+          ```
+
+          Writes require `Idempotency-Key`. `expected_revision` provides optimistic concurrency. State can be projected at a historical `revision` or `chapter`; event queries have bounded filters and a maximum limit of 500.
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          module = next(line.split()[1] for line in Path('go.mod').read_text().splitlines() if line.startswith('module '))
+          server_files = list(Path('internal/server').glob('*.go'))
+          route_file = next((p for p in server_files if 'chapters/{chapter}/finalize' in p.read_text()), None)
+          if route_file is None:
+              raise SystemExit('Phase 5 finalize route was not found')
+          combined = '\n'.join(p.read_text() for p in server_files)
+          type_match = re.search(r'type\s+([A-Za-z_][A-Za-z0-9_]*)\s+struct\s*\{', combined)
+          if not type_match:
+              raise SystemExit('server type was not found')
+          server_type = type_match.group(1)
+          for path in [Path('internal/server/narrative_ledger.go'), Path('internal/server/narrative_ledger_test.go')]:
+              text = path.read_text().replace('__MODULE__', module).replace('__SERVER_TYPE__', server_type)
+              path.write_text(text)
+
+          text = route_file.read_text()
+          if '/narrative/events' not in text:
+              lines = text.splitlines()
+              result = []
+              inserted = False
+              for line in lines:
+                  if 'chapters/{chapter}/finalize' in line and '.HandleFunc(' in line:
+                      match = re.search(r',\s*([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*$', line)
+                      if not match:
+                          raise SystemExit('cannot parse finalize route handler')
+                      receiver, method = match.groups()
+                      line = line[:match.start()] + f', {receiver}.wrapNarrativeFinalize({receiver}.{method}))'
+                      result.append(line)
+                      indent = line[:len(line)-len(line.lstrip())]
+                      mux = line.strip().split('.HandleFunc(',1)[0]
+                      result.extend([
+                          f'{indent}{mux}.HandleFunc("POST /api/projects/{{id}}/narrative/events", {receiver}.handleNarrativeCommit)',
+                          f'{indent}{mux}.HandleFunc("GET /api/projects/{{id}}/narrative/state", {receiver}.handleNarrativeState)',
+                          f'{indent}{mux}.HandleFunc("GET /api/projects/{{id}}/narrative/events", {receiver}.handleNarrativeEvents)',
+                          f'{indent}{mux}.HandleFunc("GET /api/projects/{{id}}/narrative/audit", {receiver}.handleNarrativeAudit)',
+                      ])
+                      inserted = True
+                  else:
+                      result.append(line)
+              if not inserted:
+                  raise SystemExit('finalize HandleFunc route was not found')
+              route_file.write_text('\n'.join(result)+'\n')
+
+          openapi_path = Path('internal/server/openapi_phase5.json')
+          spec = json.loads(openapi_path.read_text())
+          paths = spec.setdefault('paths', {})
+          components = spec.setdefault('components', {}).setdefault('schemas', {})
+          error_ref = {'$ref':'#/components/schemas/NarrativeErrorEnvelope'}
+          event_ref = {'$ref':'#/components/schemas/NarrativeEvent'}
+          paths['/api/projects/{id}/narrative/events'] = {
+            'post': {'operationId':'commitNarrativeEvents','summary':'Append an atomic Narrative Ledger event batch','parameters':[{'name':'id','in':'path','required':True,'schema':{'type':'string'}},{'name':'Idempotency-Key','in':'header','required':True,'schema':{'type':'string','maxLength':200}}],'requestBody':{'required':True,'content':{'application/json':{'schema':{'$ref':'#/components/schemas/NarrativeCommitRequest'}}}},'responses':{'200':{'description':'Idempotent commit receipt','content':{'application/json':{'schema':{'$ref':'#/components/schemas/NarrativeReceipt'}}}},'400':{'description':'Invalid request','content':{'application/json':{'schema':error_ref}}},'409':{'description':'Revision or semantic conflict','content':{'application/json':{'schema':error_ref}}}}},
+            'get': {'operationId':'listNarrativeEvents','summary':'List immutable Narrative Ledger events','parameters':[{'name':'id','in':'path','required':True,'schema':{'type':'string'}},{'name':'after_revision','in':'query','schema':{'type':'integer','minimum':0}},{'name':'before_revision','in':'query','schema':{'type':'integer','minimum':0}},{'name':'chapter','in':'query','schema':{'type':'integer','minimum':0}},{'name':'kind','in':'query','schema':{'type':'array','items':{'$ref':'#/components/schemas/NarrativeEventKind'}}},{'name':'limit','in':'query','schema':{'type':'integer','minimum':1,'maximum':500,'default':100}}],'responses':{'200':{'description':'Event list','content':{'application/json':{'schema':{'type':'object','required':['events'],'properties':{'events':{'type':'array','items':event_ref}}}}}},'400':{'description':'Invalid query','content':{'application/json':{'schema':error_ref}}}}}
+          }
+          paths['/api/projects/{id}/narrative/state'] = {'get':{'operationId':'getNarrativeState','summary':'Project deterministic narrative state','parameters':[{'name':'id','in':'path','required':True,'schema':{'type':'string'}},{'name':'revision','in':'query','schema':{'type':'integer','minimum':0}},{'name':'chapter','in':'query','schema':{'type':'integer','minimum':0}}],'responses':{'200':{'description':'Projected state','content':{'application/json':{'schema':{'$ref':'#/components/schemas/NarrativeState'}}}},'400':{'description':'Invalid query','content':{'application/json':{'schema':error_ref}}}}}}
+          paths['/api/projects/{id}/narrative/audit'] = {'get':{'operationId':'auditNarrativeLedger','summary':'Verify Narrative Ledger hash chain and projection','parameters':[{'name':'id','in':'path','required':True,'schema':{'type':'string'}}],'responses':{'200':{'description':'Valid ledger','content':{'application/json':{'schema':{'$ref':'#/components/schemas/NarrativeAudit'}}}},'409':{'description':'Integrity failure','content':{'application/json':{'schema':{'$ref':'#/components/schemas/NarrativeAudit'}}}}}}}
+          kinds = ['chapter.finalized','scene.recorded','beat.recorded','thread.opened','thread.advanced','thread.resolved','thread.abandoned','promise.made','promise.paid','promise.broken','question.opened','question.answered','character_arc.advanced','relationship_arc.advanced','tension.set','note.recorded']
+          components.update({
+            'NarrativeEventKind': {'type':'string','enum':kinds},
+            'NarrativeSourceRef': {'type':'object','additionalProperties':False,'required':['type','id'],'properties':{'type':{'type':'string','maxLength':64},'id':{'type':'string','maxLength':256}}},
+            'NarrativeEventInput': {'type':'object','additionalProperties':False,'required':['kind','source'],'properties':{'event_id':{'type':'string','maxLength':128},'kind':{'$ref':'#/components/schemas/NarrativeEventKind'},'chapter':{'type':'integer','minimum':0},'sequence':{'type':'integer','minimum':0},'subject':{'type':'string','maxLength':128},'thread_id':{'type':'string','maxLength':128},'payload':{'type':'object','additionalProperties':True},'tags':{'type':'array','maxItems':32,'items':{'type':'string','maxLength':64}},'source':{'$ref':'#/components/schemas/NarrativeSourceRef'}}},
+            'NarrativeCommitRequest': {'type':'object','additionalProperties':False,'required':['events'],'properties':{'expected_revision':{'type':'integer','minimum':0},'events':{'type':'array','minItems':1,'maxItems':128,'items':{'$ref':'#/components/schemas/NarrativeEventInput'}}}},
+            'NarrativeEvent': {'allOf':[{'$ref':'#/components/schemas/NarrativeEventInput'},{'type':'object','required':['project_id','revision','hash','request_hash','idempotency_key','created_at'],'properties':{'project_id':{'type':'string'},'revision':{'type':'integer'},'previous_hash':{'type':'string'},'hash':{'type':'string'},'request_hash':{'type':'string'},'idempotency_key':{'type':'string'},'created_at':{'type':'string','format':'date-time'}}}]},
+            'NarrativeReceipt': {'type':'object','required':['project_id','idempotency_key','request_hash','from_revision','to_revision','head_hash','event_ids'],'properties':{'project_id':{'type':'string'},'idempotency_key':{'type':'string'},'request_hash':{'type':'string'},'from_revision':{'type':'integer'},'to_revision':{'type':'integer'},'head_hash':{'type':'string'},'event_ids':{'type':'array','items':{'type':'string'}}}},
+            'NarrativeThreadState': {'type':'object','additionalProperties':True},
+            'NarrativePromiseState': {'type':'object','additionalProperties':True},
+            'NarrativeQuestionState': {'type':'object','additionalProperties':True},
+            'NarrativeArcState': {'type':'object','additionalProperties':True},
+            'NarrativeState': {'type':'object','required':['project_id','revision','last_finalized_chapter','tension','threads','promises','questions','character_arcs','relationship_arcs','scenes','beats'],'properties':{'project_id':{'type':'string'},'revision':{'type':'integer'},'head_hash':{'type':'string'},'last_finalized_chapter':{'type':'integer'},'tension':{'type':'number','minimum':0,'maximum':10},'threads':{'type':'object','additionalProperties':{'$ref':'#/components/schemas/NarrativeThreadState'}},'promises':{'type':'object','additionalProperties':{'$ref':'#/components/schemas/NarrativePromiseState'}},'questions':{'type':'object','additionalProperties':{'$ref':'#/components/schemas/NarrativeQuestionState'}},'character_arcs':{'type':'object','additionalProperties':{'$ref':'#/components/schemas/NarrativeArcState'}},'relationship_arcs':{'type':'object','additionalProperties':{'$ref':'#/components/schemas/NarrativeArcState'}},'scenes':{'type':'array','items':{'type':'object','additionalProperties':True}},'beats':{'type':'array','items':{'type':'object','additionalProperties':True}}}},
+            'NarrativeAudit': {'type':'object','required':['project_id','valid','revision','checked_events'],'properties':{'project_id':{'type':'string'},'valid':{'type':'boolean'},'revision':{'type':'integer'},'head_hash':{'type':'string'},'checked_events':{'type':'integer'},'errors':{'type':'array','items':{'type':'string'}}}},
+            'NarrativeErrorEnvelope': {'type':'object','required':['error'],'properties':{'error':{'type':'object','required':['code','message','trace_id'],'properties':{'code':{'type':'string'},'message':{'type':'string'},'trace_id':{'type':'string'}}}}}
+          })
+          openapi_path.write_text(json.dumps(spec, ensure_ascii=False, indent=2)+'\n')
+
+          chapters = Path('web/src/pages/Chapters.svelte')
+          text = chapters.read_text()
+          if 'NarrativeLedgerPanel' not in text:
+              script = re.search(r'<script[^>]*>', text)
+              if not script: raise SystemExit('Chapters script block not found')
+              insertion = "\n  import NarrativeLedgerPanel from '../components/NarrativeLedgerPanel.svelte';"
+              text = text[:script.end()] + insertion + text[script.end():]
+              style = text.find('<style')
+              if style < 0: raise SystemExit('Chapters style block not found')
+              text = text[:style] + '\n<NarrativeLedgerPanel />\n\n' + text[style:]
+              chapters.write_text(text)
+
+          ci = Path('.github/workflows/ci.yml')
+          ci_text = ci.read_text()
+          if 'internal/narrativeledger' not in ci_text:
+              lines=[]; changed=False
+              for line in ci_text.splitlines():
+                  if 'go test' in line and '-race' in line and 'internal/qualitygate' in line:
+                      line += ' ./internal/narrativeledger'; changed=True
+                  lines.append(line)
+              if changed: ci.write_text('\n'.join(lines)+'\n')
+
+          additions = {
+            'docs/API.md': '\n\n## Narrative Ledger (Phase 6)\n\nNarrative structure is available through `POST /api/projects/{id}/narrative/events` and the state, event-list and audit GET routes. Writes require `Idempotency-Key`; `expected_revision` provides optimistic concurrency. Responses include trace IDs and safe structured errors. See `NARRATIVE_LEDGER.md`.\n',
+            'docs/ENGINE.md': '\n\n## Narrative Ledger boundary\n\nAfter a chapter passes the Phase 5 quality transaction, Finalize records a replay-safe `chapter.finalized` event in the append-only Narrative Ledger. The ledger projects narrative threads, promises, questions, scenes, beats, arcs and tension; it never supersedes Truth Store facts and never stores full chapter prose.\n',
+            'docs/ARCHITECTURE.md': '\n\n## Phase 6 — Narrative Ledger\n\nThe Narrative Ledger is a separate append-only aggregate with optimistic revisions, request idempotency, semantic transition validation, a cryptographic hash chain, historical projection and full audit. The Phase 5 Finalize boundary is a recoverable two-step saga: the final chapter stays durable if ledger persistence must be retried.\n',
+            'docs/AGENTS.md': '\n\n## Narrative Ledger access\n\nAgents propose bounded narrative events with provenance. They cannot mutate prior events, bypass lifecycle checks or convert narrative notes into Truth. Only the deterministic repository appends a validated batch, and only the Finalize coordinator records `chapter.finalized`.\n'
+          }
+          for name, addition in additions.items():
+              path=Path(name); current=path.read_text()
+              marker=addition.splitlines()[2]
+              if marker not in current: path.write_text(current.rstrip()+addition)
+
+          status = Path('docs/IMPLEMENTATION_STATUS.md')
+          current = status.read_text()
+          old = '| 6–13 | not started | Phase 6 begins from the latest accepted main; no Phase 6 production work is included in Phase 5. |'
+          new = '| 6 — Narrative Ledger | implementation complete; acceptance pending | Append-only hash-chained narrative events, deterministic projections, REST/OpenAPI/Web integration and Finalize saga are on the Phase 6 PR. |\n| 7–13 | not started | Phase 7 begins only after Phase 6 merged-main acceptance. |'
+          if old in current: current=current.replace(old,new,1)
+          if '## Phase 6\n' not in current:
+              current += '''\n\n## Phase 6\n\n### Completed\n\n- Added an append-only, project-scoped Narrative Ledger with deterministic revisions and SHA-256 event chaining.\n- Added atomic batch validation, optimistic revision control, idempotent replay and content-conflict rejection.\n- Added deterministic lifecycle projection for scenes, beats, threads, promises, questions, character arcs, relationship arcs and tension.\n- Added historical revision/chapter projection and full-chain integrity audit.\n- Added crash-safe Windows-compatible file persistence and a documented relational schema.\n- Added a recoverable Quality Gate Finalize → Narrative Ledger boundary.\n- Added real REST routes, OpenAPI schemas, a typed Web client and a Chapters workspace ledger panel.\n- Added backend concurrency, atomicity, replay, tamper, HTTP and frontend client tests.\n\n### Acceptance State\n\nImplementation is complete on `feature/phase-06-narrative-ledger`; exact-head PR CI, squash merge and merge-triggered main CI are pending.\n\n### Next Phase\n\n`feature/phase-07-context-compiler` after Phase 6 merged-main acceptance.\n'''
+          status.write_text(current)
+          PY
+
+          gofmt -w internal/narrativeledger/*.go internal/server/narrative_ledger*.go
+          python3 -m json.tool internal/server/openapi_phase5.json >/dev/null
+
+      - name: Validate backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          GOWORK=off go vet ./...
+          GOWORK=off go test -buildvcs=false -count=1 ./...
+          CGO_ENABLED=0 GOWORK=off go build -buildvcs=false ./...
+
+      - name: Validate frontend
+        shell: bash
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run check
+          npm test -- --run
+          npm run build
+
+      - name: Commit validated feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add .
+          if git diff --cached --quiet; then
+            echo 'No Phase 6 changes were produced' >&2
+            exit 1
+          fi
+          git commit -m 'feat: add append-only narrative ledger'
+          git push --force origin HEAD:feature/phase-06-narrative-ledger
+          git push origin --delete ops/phase6-apply || true
