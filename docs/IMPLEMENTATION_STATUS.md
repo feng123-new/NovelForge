@@ -12,6 +12,7 @@ Last updated: 2026-09-02
 - Phase 5 production was squash-merged from PR #19 as `831cb2983ce851063ce9fb650eaebb14f6ad44c1`.
 - Phase 5 exact-head PR CI `33591270069` and merge-triggered main CI `33591405462` both succeeded.
 - Draft PR #18 was closed without merge and superseded by the normal non-draft delivery PR #19 on the same final production head.
+- Phase 5 acceptance record PR #20 CI `33591592779` succeeded; its squash merge `0934fc98bcedd7aa7a33baa84984e5cdef0196ed` passed main CI `33591712938`.
 
 ## Phase status
 
@@ -23,7 +24,7 @@ Last updated: 2026-09-02
 | 3 — formal Web Workspace | complete | PR #8 merged and main CI passed. |
 | 4 — Structured Truth Store | complete | PR #13 plus merge-triggered main CI passed; evidence correction #14 also passed. |
 | 5 — Librarian / Continuity / Quality Gate | complete | Production code, API, OpenAPI, Web, tests and docs merged in PR #19; PR and merged-main CI passed. |
-| 6–13 | not started | Phase 6 begins from the exact accepted main after this evidence record is merged and validated. |
+| 6–13 | not started | Phase 6 begins from the latest accepted main; no Phase 6 production work is included in Phase 5. |
 
 ## Phase 4 evidence
 
@@ -186,6 +187,7 @@ Docker build
 - Squash merge: **success**, main commit `831cb2983ce851063ce9fb650eaebb14f6ad44c1`.
 - Merge-triggered main CI run `33591405462`: **success** on the exact merge commit; Go, Frontend, Windows and Docker all succeeded.
 - Draft PR #18 was closed without merge after the connector could not transition its draft flag; it is not used as acceptance evidence.
+- Acceptance record PR #20 CI run `33591592779`: **success**; squash merge `0934fc98bcedd7aa7a33baa84984e5cdef0196ed` and resulting main CI run `33591712938`: **success**.
 
 ### Performance
 
@@ -237,7 +239,6 @@ Docker build
 
 ### Exact Resume Point
 
-1. Merge this evidence-only status PR after its complete CI succeeds and verify its merge-triggered main CI.
-2. Fetch the resulting exact `origin/main` commit.
-3. Create `feature/phase-06-narrative-ledger` from that exact accepted main.
-4. Implement Narrative Ledger without reopening or expanding the accepted Phase 5 scope.
+1. Fetch `origin/main` and verify the latest workflow on that exact commit is successful.
+2. Create `feature/phase-06-narrative-ledger` from the exact fetched main SHA.
+3. Implement Narrative Ledger without reopening or expanding the accepted Phase 5 scope.
