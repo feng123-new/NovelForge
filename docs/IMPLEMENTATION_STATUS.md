@@ -4,59 +4,34 @@ Last updated: 2026-09-02
 
 ## Repository state
 
-- Verified Phase 3/main base before Phase 4 landing: `617fc20a96b307b0656a6267e3657ea9ff9f5147`.
-- Phase 2 PR: [#7 — feat: complete project and API foundation](https://github.com/feng123-new/NovelForge/pull/7) — merged; merged-main CI passed.
-- Phase 3 PR: [#8 — feat: add NovelForge web workspace](https://github.com/feng123-new/NovelForge/pull/8) — merged; merged-main CI passed.
-- Phase 4 prerequisite landing branch: `fix/phase-04-truth-store-landing`.
-- Phase 4 prerequisite landing PR: [#13 — feat: add structured truth store](https://github.com/feng123-new/NovelForge/pull/13).
-- Phase 4 production implementation is in normal source paths. The clean landing diff contains no recovery payloads, source generators, or Phase-specific self-modifying workflows.
-- Phase 4 remains formally in progress until PR #13 passes the complete workflow, is squash-merged, and the merge-triggered `main` workflow succeeds.
+- Phase 2 PR [#7](https://github.com/feng123-new/NovelForge/pull/7) merged; merged-main CI passed.
+- Phase 3 PR [#8](https://github.com/feng123-new/NovelForge/pull/8) merged; merged-main CI passed.
+- Phase 4 was recovered from a previously validated clean implementation and landed from the actual pre-Phase-4 main `617fc20a96b307b0656a6267e3657ea9ff9f5147` without recovery payloads, generators, source fragments, self-modifying workflows, or direct pushes to main.
+- Phase 4 production main: `903a163cb84385155783e52161e70233a15e8dc7`.
 
 ## Phase status
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| 0 — upstream baseline | complete | Imported ainovel-cli baseline and retained provenance. |
-| 1 — compatibility | complete | NovelForge runtime isolation, migration, lifecycle smoke, branding, Linux/Windows/Docker gates. |
-| 2 — project/API foundation | complete | PR #7 merged; merged-main CI passed. |
-| 3 — formal Web Workspace | complete | PR #8 merged; final PR CI and merged-main CI passed. |
-| 4 — Structured Truth Store | implementation complete; acceptance pending | PR #13 contains clean production code, tests, OpenAPI and documentation. |
-| 5–13 | not started | Phase 5 starts only after Phase 4 merged-main acceptance. |
+| 0 — upstream baseline | complete | ainovel-cli baseline retained with provenance. |
+| 1 — compatibility | complete | Runtime isolation, migration, lifecycle, branding, Linux/Windows/Docker gates. |
+| 2 — project/API foundation | complete | PR #7 merged and main CI passed. |
+| 3 — formal Web Workspace | complete | PR #8 merged and main CI passed. |
+| 4 — Structured Truth Store | complete | PR #13 and merge-triggered main CI passed. |
+| 5–13 | not started | Phase 5 begins from the accepted Phase 4 main. |
 
-## Completed
+## Phase 4
 
-### Truth authority layer
+### Completed
 
-- Added project-local append-only `truth_events` with canonical request hashes, event checksums, complete provenance, and deterministic UTC timestamps.
-- Added rebuildable `truth_facts`, `truth_conflicts`, and `truth_projection_meta` projections.
-- Added SQLite triggers that reject direct event update and delete.
-- Added explicit `assert`, `supersede`, and `retract` event kinds.
-- Added deterministic authority ordering: LLM Suggestion < Story Compass < Volume Plan < Arc Plan < Current Chapter Plan < Generated Final < Accepted Human Final.
-- Enforced same-key explicit supersession, no authority downgrade, no double supersession, and no replacement before the target fact becomes effective.
+- Project-local immutable `truth_events` with deterministic request hashes, checksums, provenance, UTC timestamps, authority, valid-time and knowledge-time bounds.
+- Rebuildable `truth_facts`, `truth_conflicts`, and `truth_projection_meta` projections.
+- Explicit `assert`, `supersede`, and `retract` event kinds with deterministic authority ordering.
+- Chapter-N temporal state queries, paginated event/conflict history, bounded batch queries, conflict history, boundary rebuild and integrity verification.
+- Truth API, OpenAPI 3.1 schemas, route drift tests, project adapter and safe migration integration.
+- Append-only SQLite triggers and indexed 100,000-fact temporal query gate.
 
-### Temporal queries and conflict history
-
-- Added separate story-valid and system-knowledge intervals.
-- Chapter-N state requires both intervals to include N, preventing future-state and future-knowledge leakage.
-- Added stable filtered event listing, paginated Chapter-N state, paginated conflict history, and conflict status filtering.
-- Added one-statement batch querying for at most 100 selectors, avoiding a per-selector N+1 path.
-- Added unresolved/resolved conflict history instead of silently deleting evidence.
-
-### Projection rebuild and integrity
-
-- Added deterministic replay from immutable events.
-- Added full rebuild and chapter-bounded rebuild that replace only projections intersecting the boundary.
-- Added event checksum verification, supersession graph validation, count verification, and deterministic projection digest verification.
-- Projection digest covers temporal bounds, value hash, authority/rank, confidence, supersession, and conflict status.
-
-### Project and API integration
-
-- Added project migration 2 through the existing checksum/backup/rollback migration runner.
-- Added `truthstore.Repository` and a project repository adapter using the existing safe project boundary.
-- Added Truth REST handlers using the common request-size limit, strict JSON decoder, safe error envelope, and persistent idempotency ledger.
-- Added OpenAPI schemas for event append, event pages, Chapter-N state, bounded batch query, conflicts, rebuild, and verification.
-
-## Changed Files
+### Changed Files
 
 - `.github/workflows/ci.yml`
 - `internal/truthstore/*.go`
@@ -70,19 +45,18 @@ Last updated: 2026-09-02
 - `docs/ARCHITECTURE.md`
 - `docs/IMPLEMENTATION_STATUS.md`
 
-## Architecture Decisions
+### Architecture Decisions
 
 - Truth is immutable typed events plus rebuildable projections, not mutable last-write-wins rows.
-- Authority is explicit deterministic policy; an LLM does not decide authoritative state.
-- LLM output remains a proposal. Phase 4 does not bypass Final chapter acceptance.
-- Valid time and knowledge time are independent so planned future state and later revelation can be represented without leakage.
-- Batch queries use one SQLite statement; Chapter-N paths do not perform an O(n²) full-book scan.
-- SQLite remains the V1 implementation behind a repository boundary.
-- HTTP idempotency reuses the existing workspace ledger while Truth events independently protect direct repository retries.
+- LLM output is never authoritative merely because a model emitted it.
+- Authority and Chapter-N visibility are deterministic Go policy.
+- Valid time and knowledge time are independent to prevent future-state and future-knowledge leakage.
+- Batch queries use one SQLite statement and normal chapter paths avoid O(n²) full-book scans.
+- SQLite remains behind a repository boundary and uses the existing CGo-free driver.
 
-## Database / Migration Changes
+### Database / Migration Changes
 
-Project schema migration 2 adds:
+Migration 2 `structured_truth_store` adds:
 
 ```text
 truth_events
@@ -91,11 +65,9 @@ truth_conflicts
 truth_projection_meta
 ```
 
-It also adds temporal/key/supersession/conflict indexes plus append-only triggers. Existing project data is retained. The existing runner records migration checksums, creates a backup before pending migrations, applies changes transactionally, and restores the original database on failure.
+The existing migration runner provides checksum verification, pre-migration backup, transactional application and restore on failure.
 
-## API Changes
-
-Added:
+### API Changes
 
 ```text
 GET  /api/truth/events
@@ -107,92 +79,86 @@ POST /api/truth/rebuild
 GET  /api/truth/verify
 ```
 
-POST operations require `Idempotency-Key`. Collection operations use stable ordering and bounded limits. Every operation is represented in OpenAPI 3.1 and route-drift tests.
+Write APIs require `Idempotency-Key`; all requests use bounded input, stable collection semantics and the common safe error envelope.
 
-## UI Changes
+### UI Changes
 
-No Phase 4 Web controls are added. The Phase 3 UI continues to omit Truth mutation controls until the Phase 5 quality transaction can safely connect proposals, continuity, Final selection and Truth commit. No fake button or browser-authoritative state is introduced.
+No Phase 4 mutation UI was added. Browser-authoritative Truth and fake controls remain prohibited; the Phase 5 quality transaction will connect accepted Final candidates to Truth.
 
-## Tests Executed
+### Tests Executed
 
-The clean candidate carries and/or CI executes:
+The exact PR head and merged main executed the repository CI gates, including:
 
 ```text
 gofmt drift check
 GOWORK=off go vet ./...
 GOWORK=off go test -buildvcs=false -count=1 ./...
-Truth Store targeted race tests
-100,000-fact Chapter-N index gate
+targeted race tests
+Truth Store 100k temporal index gate
 OpenAPI route/schema validation
 CGO_ENABLED=0 NovelForge build
-Go dependency/license inventory drift and policy gate
-project migration append/idempotency/rollback/race tests
-shell syntax, lifecycle smoke and brand audit
+Go dependency/license inventory and policy gate
+project migration tests
+shell syntax and lifecycle smoke
+install/upgrade/uninstall smoke
+brand audit
 npm ci/check/test/build/audit/license inventory
 frontend build drift
 Windows full tests/build
 Docker build
 ```
 
-## Test Results
+### Test Results
 
-- PR #13 CI: pending on the exact final head.
-- Phase 4 squash merge: pending.
-- Merge-triggered `main` CI: pending.
-- Phase 4 is not complete until both PR CI and merged-main CI succeed.
+- PR #13 CI run `33585504193`: **success** on exact head `078c18aa69929469d219dfd00f5e47aa2c348d86`.
+- Squash merge: **success**, main commit `903a163cb84385155783e52161e70233a15e8dc7`.
+- Merge-triggered main CI run `33585658124`: **success** on exact main commit `903a163cb84385155783e52161e70233a15e8dc7`.
 
-## Performance
+### Performance
 
-- The permanent CI gate exercises 100,000 projected facts.
-- It asserts SQLite uses `idx_truth_facts_asof` for the bounded Chapter-N key query.
-- Batch selectors are compiled into one SQL statement with window functions.
-- Formal p50/p95 and 100/500/1000-chapter release benchmarks remain later-phase work.
+- Permanent CI exercises 100,000 projected facts.
+- The gate verifies the Chapter-N bounded key query uses `idx_truth_facts_asof`.
+- Bounded batch selectors are compiled into one SQL statement.
 
-## License Review
+### License Review
 
-- No new Go or npm dependency is introduced by Phase 4.
-- The implementation uses the existing Apache-2.0 dependency graph and CGo-free SQLite driver.
-- No source, SQL, tests, components, or prompts are copied from GPL/AGPL clean-room references.
-- Existing dependency inventories and fail-closed license gates remain blocking.
+- No new Go or npm dependency was introduced by Phase 4.
+- Apache-2.0 distribution policy and fail-closed dependency license gates remain intact.
+- No GPL/AGPL clean-room reference source, SQL, test or UI code was copied.
 
-## Known Issues
+### Known Issues
 
-- No known Phase 4 data-corruption or credential-exposure blocker is recorded in the clean candidate.
-- Acceptance is still pending authoritative GitHub CI, squash merge, and merged-main CI.
-- Librarian proposals, Continuity, Editor, bounded rewrites, and Final-to-Truth commit are Phase 5 work.
+- No Phase 4 data-integrity, credential-exposure, Windows, Docker, OpenAPI or license blocker remains.
+- Librarian proposals, Continuity, Editor, bounded rewrite and Final-to-Truth commit belong to Phase 5.
 
-## Next Phase
+### Next Phase
 
-After Phase 4 merged-main acceptance, create `feature/phase-05-quality-gate` from the exact accepted `main` and implement the persisted bounded chapter quality transaction.
+`feature/phase-05-quality-gate`
 
-## Feature Branch
+### Feature Branch
 
 `fix/phase-04-truth-store-landing`
 
-## Final Head Commit
+### Final Head Commit
 
-Pending final PR-head CI.
+`078c18aa69929469d219dfd00f5e47aa2c348d86`
 
-## Pull Request
+### Pull Request
 
 [#13 — feat: add structured truth store](https://github.com/feng123-new/NovelForge/pull/13)
 
-## PR CI Result
+### PR CI Result
 
-Pending.
+`33585504193` — success
 
-## Main Merge Commit
+### Main Merge Commit
 
-Pending.
+`903a163cb84385155783e52161e70233a15e8dc7`
 
-## Main CI Result
+### Main CI Result
 
-Pending.
+`33585658124` — success
 
-## Exact Resume Point
+### Exact Resume Point
 
-1. Run the complete PR #13 workflow on its exact final head and inspect every job.
-2. Fix evidence-based failures without weakening a gate.
-3. Squash-merge only after the entire PR workflow succeeds.
-4. Verify the merge-triggered workflow on the exact main merge commit.
-5. Record exact Phase 4 evidence before creating `feature/phase-05-quality-gate`.
+Create `feature/phase-05-quality-gate` from the exact accepted main after this evidence-only status correction is merged and its own main CI is green.
