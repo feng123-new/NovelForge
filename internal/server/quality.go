@@ -62,7 +62,14 @@ func (s *Server) qualityCoordinator(r *http.Request, projectID string) (*quality
 		_ = store.Close()
 		return nil, func() {}, projectFailure(err)
 	}
+	ledger, err := s.projects.OpenNarrativeLedger(r.Context(), projectID)
+	if err != nil {
+		_ = truth.Close()
+		_ = store.Close()
+		return nil, func() {}, projectFailure(err)
+	}
 	cleanup := func() {
+		_ = ledger.Close()
 		_ = truth.Close()
 		_ = store.Close()
 	}
@@ -85,7 +92,7 @@ func (s *Server) qualityCoordinator(r *http.Request, projectID string) (*quality
 		}
 	}
 	coordinator := &qualitygate.Coordinator{
-		Store: store, Truth: truth, Writer: writer, Librarian: librarian,
+		Store: store, Truth: truth, Ledger: ledger, Writer: writer, Librarian: librarian,
 		Continuity: qualitygate.TruthContinuityService{Truth: truth}, Editor: editor,
 		Policy: s.cfg.QualityPolicy, FinalWriter: s.projects,
 	}

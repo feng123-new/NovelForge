@@ -34,30 +34,39 @@ func TestOpenAPICoversImplementedRoutesAndUniqueOperations(t *testing.T) {
 		t.Fatalf("invalid reusable IdempotencyKey parameter: %#v", idempotencyParameter)
 	}
 	expected := map[string][]string{
-		"/api/health":                                      {"get"},
-		"/api/openapi.json":                                {"get"},
-		"/api/events":                                      {"get"},
-		"/api/models":                                      {"get"},
-		"/api/settings":                                    {"get"},
-		"/api/projects":                                    {"get", "post"},
-		"/api/projects/{id}":                               {"get", "patch", "delete"},
-		"/api/projects/{id}/archive":                       {"post"},
-		"/api/projects/{id}/unarchive":                     {"post"},
-		"/api/projects/{id}/duplicate":                     {"post"},
-		"/api/projects/{id}/chapters":                      {"get"},
-		"/api/projects/{id}/foundation":                    {"get", "post"},
-		"/api/projects/{id}/chapters/{chapter}/quality":    {"get"},
-		"/api/projects/{id}/chapters/{chapter}/candidates": {"get"},
-		"/api/projects/{id}/chapters/{chapter}/generate":   {"post"},
-		"/api/projects/{id}/chapters/{chapter}/check":      {"post"},
-		"/api/projects/{id}/chapters/{chapter}/rewrite":    {"post"},
-		"/api/projects/{id}/chapters/{chapter}/finalize":   {"post"},
-		"/api/truth/events":                                {"get", "post"},
-		"/api/truth/state":                                 {"get"},
-		"/api/truth/state:batch":                           {"post"},
-		"/api/truth/conflicts":                             {"get"},
-		"/api/truth/rebuild":                               {"post"},
-		"/api/truth/verify":                                {"get"},
+		"/api/health":                                                {"get"},
+		"/api/openapi.json":                                          {"get"},
+		"/api/events":                                                {"get"},
+		"/api/models":                                                {"get"},
+		"/api/settings":                                              {"get"},
+		"/api/projects":                                              {"get", "post"},
+		"/api/projects/{id}":                                         {"get", "patch", "delete"},
+		"/api/projects/{id}/archive":                                 {"post"},
+		"/api/projects/{id}/unarchive":                               {"post"},
+		"/api/projects/{id}/duplicate":                               {"post"},
+		"/api/projects/{id}/chapters":                                {"get"},
+		"/api/projects/{id}/foundation":                              {"get", "post"},
+		"/api/projects/{id}/chapters/{chapter}/quality":              {"get"},
+		"/api/projects/{id}/chapters/{chapter}/candidates":           {"get"},
+		"/api/projects/{id}/chapters/{chapter}/generate":             {"post"},
+		"/api/projects/{id}/chapters/{chapter}/check":                {"post"},
+		"/api/projects/{id}/chapters/{chapter}/rewrite":              {"post"},
+		"/api/projects/{id}/chapters/{chapter}/finalize":             {"post"},
+		"/api/projects/{id}/foreshadows":                             {"get", "post"},
+		"/api/projects/{id}/foreshadows/{foreshadow}":                {"get", "patch"},
+		"/api/projects/{id}/secrets":                                 {"get", "post"},
+		"/api/projects/{id}/secrets/{secret}":                        {"get", "patch"},
+		"/api/projects/{id}/secrets/{secret}/holders":                {"post"},
+		"/api/projects/{id}/secrets/{secret}/holders/{holder}/close": {"post"},
+		"/api/projects/{id}/ledger/dashboard":                        {"get"},
+		"/api/projects/{id}/ledger/diagnostics":                      {"get"},
+		"/api/projects/{id}/ledger/planner-context":                  {"get"},
+		"/api/truth/events":                                          {"get", "post"},
+		"/api/truth/state":                                           {"get"},
+		"/api/truth/state:batch":                                     {"post"},
+		"/api/truth/conflicts":                                       {"get"},
+		"/api/truth/rebuild":                                         {"post"},
+		"/api/truth/verify":                                          {"get"},
 	}
 	seenOperations := make(map[string]string)
 	for path, methods := range expected {
@@ -195,6 +204,18 @@ func TestOpenAPITruthContractsMatchProductionTypes(t *testing.T) {
 	continuity := document.Components.Schemas["ContinuityResult"]
 	if strings.Join(continuity.Properties["status"].Enum, ",") != "PASS,WARN,FAIL" {
 		t.Fatalf("continuity enum=%v", continuity.Properties["status"].Enum)
+	}
+
+	foreshadow := document.Components.Schemas["Foreshadow"]
+	if !containsString(foreshadow.Required, "overdue") || !containsString(foreshadow.Required, "overdue_by_chapters") {
+		t.Fatalf("foreshadow computed OVERDUE contract is incomplete: %#v", foreshadow.Required)
+	}
+	if got := strings.Join(foreshadow.Properties["status"].Enum, ","); strings.Contains(got, "overdue") || got != "planned,planted,progressing,resolved,abandoned,contradicted" {
+		t.Fatalf("foreshadow persisted statuses invalid: %s", got)
+	}
+	secret := document.Components.Schemas["Secret"]
+	if !containsString(secret.Required, "holders") || !containsString(secret.Required, "public_at_chapter") {
+		t.Fatalf("secret Chapter-N boundary contract is incomplete: %#v", secret.Required)
 	}
 }
 
