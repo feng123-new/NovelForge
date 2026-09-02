@@ -1,0 +1,133 @@
+name: Temporary Phase 6 acceptance marker
+
+on:
+  push:
+    branches:
+      - ops/phase6-acceptance-marker
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+jobs:
+  mark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      BASELINE_SHA: ee6eea67da3ab0c1e426053e97bd12e484990310
+      ACCEPTED_TAG: phase-06-accepted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Wait for and verify accepted Phase 6 main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          official_ci() {
+            local sha="$1"
+            for _ in $(seq 1 360); do
+              runs=$(gh api --method GET "repos/${REPO}/actions/runs" -f head_sha="$sha" -f event=push -f per_page=100)
+              run=$(jq -c '[.workflow_runs[] | select(.name == "CI" and .path == ".github/workflows/ci.yml")] | sort_by(.created_at) | last // empty' <<<"$runs")
+              if [[ -z "$run" || $(jq -r '.status' <<<"$run") != completed ]]; then
+                sleep 10
+                continue
+              fi
+              [[ $(jq -r '.conclusion' <<<"$run") == success ]] || return 1
+              run_id=$(jq -r '.id' <<<"$run")
+              jobs=$(gh api "repos/${REPO}/actions/runs/${run_id}/jobs?per_page=100")
+              for name in 'Go lint, test and build' 'Frontend check, test and build' 'Windows test and build' 'Docker build'; do
+                [[ $(jq --arg name "$name" '[.jobs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length' <<<"$jobs") -eq 1 ]] || return 1
+              done
+              printf '%s\n' "$run_id"
+              return 0
+            done
+            return 1
+          }
+
+          for _ in $(seq 1 360); do
+            git fetch --prune origin main
+            git reset --hard origin/main
+            sha=$(git rev-parse HEAD)
+            doc=docs/IMPLEMENTATION_STATUS.md
+            if [[ "$sha" != "$BASELINE_SHA" ]] \
+              && grep -q '^## Phase 6 Acceptance Evidence$' "$doc" \
+              && grep -Eq '^\| 6 .*Narrative Ledger .*\| complete \|' "$doc"; then
+              if final_ci=$(official_ci "$sha"); then
+                break
+              fi
+            fi
+            echo 'waiting for fully accepted Phase 6 main' >&2
+            sleep 10
+          done
+
+          sha=$(git rev-parse HEAD)
+          [[ "$sha" != "$BASELINE_SHA" ]]
+          grep -q '^## Phase 6 Acceptance Evidence$' docs/IMPLEMENTATION_STATUS.md
+          grep -Eq '^\| 6 .*Narrative Ledger .*\| complete \|' docs/IMPLEMENTATION_STATUS.md
+          [[ "$final_ci" =~ ^[0-9]+$ ]]
+
+          feature_sha=$(sed -n 's/^- Final feature head: `\([0-9a-f]\{40\}\)`.*/\1/p' docs/IMPLEMENTATION_STATUS.md | tail -1)
+          pr=$(sed -n 's/^- Production PR: \[#\([0-9][0-9]*\).*/\1/p' docs/IMPLEMENTATION_STATUS.md | tail -1)
+          pr_ci=$(sed -n 's/^- Exact-head PR CI: `\([0-9][0-9]*\)`.*/\1/p' docs/IMPLEMENTATION_STATUS.md | tail -1)
+          merge_sha=$(sed -n 's/^- Squash merge: `\([0-9a-f]\{40\}\)`.*/\1/p' docs/IMPLEMENTATION_STATUS.md | tail -1)
+          merge_ci=$(sed -n 's/^- Merge-triggered main CI: `\([0-9][0-9]*\)`.*/\1/p' docs/IMPLEMENTATION_STATUS.md | tail -1)
+          [[ "$feature_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$pr" =~ ^[0-9]+$ ]]
+          [[ "$pr_ci" =~ ^[0-9]+$ ]]
+          [[ "$merge_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$merge_ci" =~ ^[0-9]+$ ]]
+
+          pr_json=$(gh api "repos/${REPO}/pulls/${pr}")
+          [[ $(jq -r '.merged' <<<"$pr_json") == true ]]
+          [[ $(jq -r '.head.sha' <<<"$pr_json") == "$feature_sha" ]]
+
+          changed=$(git diff --name-only "$BASELINE_SHA..$merge_sha")
+          grep -Eiq '(^|/)(narrative|ledger)' <<<"$changed"
+          grep -Eq '^internal/' <<<"$changed"
+          grep -Eq '^web/src/' <<<"$changed"
+          grep -Eq '^docs/' <<<"$changed"
+          ! grep -Eq '^\.github/workflows/phase6-' <<<"$changed"
+          [[ -z $(find .github/workflows -maxdepth 1 -type f -iname '*phase6*' -print) ]]
+
+          open_count=$(gh api --method GET "repos/${REPO}/pulls" -f state=open -f per_page=100 \
+            --jq '[.[] | select((.head.ref | test("phase-06|phase6"; "i")) or (.title | test("Phase 6|narrative ledger"; "i")))] | length')
+          [[ "$open_count" -eq 0 ]]
+
+          if gh api "repos/${REPO}/git/ref/tags/${ACCEPTED_TAG}" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/${REPO}/git/refs/tags/${ACCEPTED_TAG}" -f sha="$sha" -F force=true >/dev/null
+          else
+            gh api --method POST "repos/${REPO}/git/refs" -f ref="refs/tags/${ACCEPTED_TAG}" -f sha="$sha" >/dev/null
+          fi
+
+          {
+            echo '## Phase 6 acceptance marker created'
+            echo
+            echo "- Tag: \`${ACCEPTED_TAG}\`"
+            echo "- Final main: \`${sha}\`"
+            echo "- Final main CI: \`${final_ci}\`"
+            echo "- Production PR: #${pr}"
+            echo "- Feature head: \`${feature_sha}\`"
+            echo "- Production PR CI: \`${pr_ci}\`"
+            echo "- Production merge: \`${merge_sha}\`"
+            echo "- Production main CI: \`${merge_ci}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove every temporary Phase 6 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          branches=$(gh api --paginate "repos/${REPO}/branches?per_page=100" --jq '.[].name')
+          while IFS= read -r branch; do
+            case "$branch" in
+              feature/phase-06-*|docs/phase-06-*|ops/phase6-*|ops/phase-6-*|ops/phase06-*)
+                gh api --method DELETE "repos/${REPO}/git/refs/heads/${branch}" >/dev/null 2>&1 || true
+                ;;
+            esac
+          done <<< "$branches"
