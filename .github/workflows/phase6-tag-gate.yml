@@ -1,0 +1,58 @@
+name: Temporary Phase 6 final tag gate
+
+on:
+  push:
+    branches: [ops/phase6-tag-gate]
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: feng123-new/NovelForge
+    steps:
+      - name: Require completed evidence main and tag it
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=('Go lint, test and build' 'Frontend check, test and build' 'Windows test and build' 'Docker build')
+          main="$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)"
+          gh api "repos/$REPO/contents/docs/IMPLEMENTATION_STATUS.md?ref=$main" --jq .content | tr -d '\n' | base64 -d > /tmp/status.md
+          grep -q '| 6 — Narrative Ledger | complete |' /tmp/status.md
+          run=''
+          for _ in $(seq 1 210); do
+            row="$(gh api "repos/$REPO/actions/runs?head_sha=$main&event=push&per_page=100" --jq '.workflow_runs[]|select(.name=="CI")|[.id,.status,(.conclusion//"")]|@tsv' | head -1)"
+            if [[ -n "$row" ]]; then
+              IFS=$'\t' read -r run status conclusion <<<"$row"
+              if [[ "$status" == completed ]]; then
+                [[ "$conclusion" == success ]] || { echo "main CI $run failed: $conclusion" >&2; exit 1; }
+                break
+              fi
+            fi
+            sleep 10
+          done
+          [[ -n "$run" ]]
+          jobs="$(gh api "repos/$REPO/actions/runs/$run/jobs?per_page=100")"
+          for n in "${required[@]}"; do
+            [[ "$(jq --arg n "$n" '[.jobs[]|select(.name==$n and .conclusion=="success")]|length' <<<"$jobs")" == 1 ]]
+          done
+          if gh api "repos/$REPO/git/ref/tags/phase-06-accepted" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$REPO/git/refs/tags/phase-06-accepted" -f sha="$main" -F force=true >/dev/null
+          else
+            gh api --method POST "repos/$REPO/git/refs" -f ref=refs/tags/phase-06-accepted -f sha="$main" >/dev/null
+          fi
+          echo "Phase 6 accepted at $main with main CI $run"
+
+      - name: Cleanup Phase 6 operation refs
+        if: success()
+        shell: bash
+        run: |
+          set +e
+          for b in ops/phase6-transfer ops/phase6-source-export ops/phase6-dev-env-export ops/phase6-recovery ops/phase6-finalizer ops/phase6-pr-gate ops/phase6-evidence-gate ops/phase6-tag-gate feature/phase-06-narrative-ledger docs/phase-06-acceptance; do
+            gh api --method DELETE "repos/$REPO/git/refs/heads/$b" >/dev/null 2>&1 || true
+          done
