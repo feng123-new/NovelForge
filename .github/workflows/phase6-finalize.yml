@@ -36,14 +36,20 @@ jobs:
           from pathlib import Path
           path = Path('.github/scripts/phase6_finalize.py')
           text = path.read_text(encoding='utf-8')
-          text = text.replace(
-              "expect(await screen.findByText('当前筛选没有伏笔')).toBeInTheDocument();",
-              "expect((await screen.findAllByText('当前筛选没有伏笔')).length).toBeGreaterThan(0);",
-          )
-          text = text.replace(
-              "expect(await screen.findByText('尚无 Secret')).toBeInTheDocument();",
-              "expect((await screen.findAllByText('尚无 Secret')).length).toBeGreaterThan(0);",
-          )
+          replacements = {
+              "expect(await screen.findByText('当前筛选没有伏笔')).toBeInTheDocument();":
+                  "expect((await screen.findAllByText('当前筛选没有伏笔')).length).toBeGreaterThan(0);",
+              "expect(await screen.findByText('尚无 Secret')).toBeInTheDocument();":
+                  "expect((await screen.findAllByText('尚无 Secret')).length).toBeGreaterThan(0);",
+              "await waitFor(() => expect(resolveButton).not.toBeDisabled());":
+                  "await waitFor(() => expect(screen.getByRole('button', { name: 'Resolve' })).not.toBeDisabled());",
+              "expect(await screen.findByText(\"The heir's origin\")).toBeInTheDocument();":
+                  "expect((await screen.findAllByText(\"The heir's origin\")).length).toBeGreaterThan(0);",
+              "await waitFor(() => expect(revealButton).not.toBeDisabled());":
+                  "await waitFor(() => expect(screen.getByRole('button', { name: 'Public Reveal' })).not.toBeDisabled());",
+          }
+          for old, new in replacements.items():
+              text = text.replace(old, new)
           path.write_text(text, encoding='utf-8')
           PY
           python3 .github/scripts/phase6_finalize.py
