@@ -204,3 +204,12 @@ The model-call repository gives every paid/semantic operation a request hash and
 Continuity uses the Phase 4 Chapter-N Truth query for inventory, knowledge, location, relations, timeline, world rules and other blocking predicates. RAG is not consulted as authority. A blocking FAIL cannot be superseded by a high Editor score.
 
 Finalization is a recoverable saga: accepted candidate → idempotent generated-final Truth events → hash-checked chapter-file switch → durable checkpoint → `completed`. The chapter file switch preserves a same-directory backup across the Windows replace boundary, and retries do not repeat Truth events or model stages. See `docs/QUALITY_GATE.md`.
+
+
+## 18. Phase 6 Narrative Ledger
+
+Phase 6 introduces `internal/narrativeledger` as an indexed, project-local projection for Foreshadows and Secrets. It does not create a competing truth authority: accepted chapter Finals remain the only model-originated write boundary, and all Ledger changes retain Truth-compatible authority and provenance.
+
+The Chapter Commit Coordinator applies accepted Truth events and Narrative Ledger changes as replay-safe saga steps keyed by the same chapter transaction. Rejected candidates, Continuity failures, HOLD states, and unaccepted Librarian proposals cannot mutate the Ledger. Re-entry after a crash returns the prior Ledger commit rather than duplicating Foreshadow, Secret, holder, or reveal events.
+
+Foreshadow `OVERDUE` is a Chapter-N calculation, never a stored lifecycle state. Secret truth is separated from role knowledge through temporal holder ranges and public-reveal boundaries. The Planner adapter returns all overdue and critical Foreshadows as mandatory items, known Secret summaries only for an authorized POV, and explicit truth-free unknown boundaries for everything else. Phase 7 consumes this stable provider under token budgets without weakening those rules.
