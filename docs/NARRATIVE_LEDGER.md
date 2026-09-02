@@ -116,6 +116,8 @@ POST  /api/projects/{id}/secrets/{secret}/holders/{holder}/close
 
 Writes require `Idempotency-Key`, strict single-object JSON, the shared one-MiB request bound, project ownership checks, trace IDs, and the safe error envelope. Collections cap `limit` at 100 and use explicit stable ordering.
 
+The embedded Web assets are rebuilt from `web/src` and committed exactly; CI fails closed on any `web/dist` or lockfile drift.
+
 ## Diagnostics
 
 The diagnostic surface is deterministic and safe. It can emit:
