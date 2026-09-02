@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/voocel/ainovel-cli/internal/project"
+	"github.com/voocel/ainovel-cli/internal/qualitygate"
 	"github.com/voocel/ainovel-cli/internal/server/engineadapter"
 	"github.com/voocel/ainovel-cli/internal/server/eventstore"
 	"github.com/voocel/ainovel-cli/internal/server/idempotency"
@@ -25,7 +26,10 @@ const (
 	apiVersion  = "v1alpha1"
 )
 
-// Config controls the local single-binary web server.
+// Config controls the local single-binary web server. Quality agent services
+// can be supplied directly by tests/embedders or derived from QualityModel.
+// Secrets remain in the provider configuration and are never exposed through
+// the server settings/API surface.
 type Config struct {
 	Host            string
 	Port            int
@@ -33,6 +37,15 @@ type Config struct {
 	Version         string
 	Engine          engineadapter.EngineService
 	EventRepository eventstore.Repository
+
+	QualityModel      qualitygate.ModelInvoker
+	QualityRepairer   qualitygate.JSONRepairer
+	QualityWriter     qualitygate.WriterService
+	QualityLibrarian  qualitygate.LibrarianService
+	QualityEditor     qualitygate.EditorService
+	QualityPolicy     qualitygate.Policy
+	QualityMaxRetries int
+	QualityMaxRepairs int
 }
 
 // Server owns REST/SSE transport and delegates deterministic work to
@@ -61,6 +74,24 @@ func New(cfg Config) (*Server, error) {
 	}
 	if strings.TrimSpace(cfg.Workspace) == "" {
 		cfg.Workspace = "."
+	}
+	if cfg.QualityMaxRetries < 0 || cfg.QualityMaxRetries > 5 {
+		return nil, fmt.Errorf("quality model retries must be between 0 and 5")
+	}
+	if cfg.QualityMaxRepairs < 0 || cfg.QualityMaxRepairs > 3 {
+		return nil, fmt.Errorf("quality JSON repairs must be between 0 and 3")
+	}
+	if cfg.QualityMaxRetries == 0 {
+		cfg.QualityMaxRetries = 2
+	}
+	if cfg.QualityMaxRepairs == 0 && cfg.QualityRepairer != nil {
+		cfg.QualityMaxRepairs = 1
+	}
+	if cfg.QualityPolicy.MaxRewrites == 0 && cfg.QualityPolicy.QualityThreshold == 0 {
+		cfg.QualityPolicy = qualitygate.DefaultPolicy()
+	}
+	if err := cfg.QualityPolicy.Validate(); err != nil {
+		return nil, fmt.Errorf("quality policy: %w", err)
 	}
 	workspace, err := filepath.Abs(cfg.Workspace)
 	if err != nil {
