@@ -1,0 +1,45 @@
+name: Temporary Phase 6 evidence external merge gate
+
+on:
+  push:
+    branches: [ops/phase6-evidence-gate]
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: feng123-new/NovelForge
+      PR: '23'
+    steps:
+      - name: Reopen evidence only after exact-head CI succeeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=('Go lint, test and build' 'Frontend check, test and build' 'Windows test and build' 'Docker build')
+          head="$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)"
+          run=''
+          for _ in $(seq 1 210); do
+            row="$(gh api "repos/$REPO/actions/runs?head_sha=$head&event=pull_request&per_page=100" --jq '.workflow_runs[]|select(.name=="CI")|[.id,.status,(.conclusion//"")]|@tsv' | head -1)"
+            if [[ -n "$row" ]]; then
+              IFS=$'\t' read -r run status conclusion <<<"$row"
+              if [[ "$status" == completed ]]; then
+                [[ "$conclusion" == success ]] || { echo "CI $run failed: $conclusion" >&2; exit 1; }
+                break
+              fi
+            fi
+            sleep 10
+          done
+          [[ -n "$run" ]]
+          jobs="$(gh api "repos/$REPO/actions/runs/$run/jobs?per_page=100")"
+          for n in "${required[@]}"; do
+            [[ "$(jq --arg n "$n" '[.jobs[]|select(.name==$n and .conclusion=="success")]|length' <<<"$jobs")" == 1 ]]
+          done
+          gh api --method PATCH "repos/$REPO/pulls/$PR" -f state=open >/dev/null
+          echo "Evidence PR #$PR exact head $head passed CI $run"
