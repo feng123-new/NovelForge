@@ -34,24 +34,30 @@ func TestOpenAPICoversImplementedRoutesAndUniqueOperations(t *testing.T) {
 		t.Fatalf("invalid reusable IdempotencyKey parameter: %#v", idempotencyParameter)
 	}
 	expected := map[string][]string{
-		"/api/health":                   {"get"},
-		"/api/openapi.json":             {"get"},
-		"/api/events":                   {"get"},
-		"/api/models":                   {"get"},
-		"/api/settings":                 {"get"},
-		"/api/projects":                 {"get", "post"},
-		"/api/projects/{id}":            {"get", "patch", "delete"},
-		"/api/projects/{id}/archive":    {"post"},
-		"/api/projects/{id}/unarchive":  {"post"},
-		"/api/projects/{id}/duplicate":  {"post"},
-		"/api/projects/{id}/chapters":   {"get"},
-		"/api/projects/{id}/foundation": {"get", "post"},
-		"/api/truth/events":             {"get", "post"},
-		"/api/truth/state":              {"get"},
-		"/api/truth/state:batch":        {"post"},
-		"/api/truth/conflicts":          {"get"},
-		"/api/truth/rebuild":            {"post"},
-		"/api/truth/verify":             {"get"},
+		"/api/health":                                      {"get"},
+		"/api/openapi.json":                                {"get"},
+		"/api/events":                                      {"get"},
+		"/api/models":                                      {"get"},
+		"/api/settings":                                    {"get"},
+		"/api/projects":                                    {"get", "post"},
+		"/api/projects/{id}":                               {"get", "patch", "delete"},
+		"/api/projects/{id}/archive":                       {"post"},
+		"/api/projects/{id}/unarchive":                     {"post"},
+		"/api/projects/{id}/duplicate":                     {"post"},
+		"/api/projects/{id}/chapters":                      {"get"},
+		"/api/projects/{id}/foundation":                    {"get", "post"},
+		"/api/projects/{id}/chapters/{chapter}/quality":    {"get"},
+		"/api/projects/{id}/chapters/{chapter}/candidates": {"get"},
+		"/api/projects/{id}/chapters/{chapter}/generate":   {"post"},
+		"/api/projects/{id}/chapters/{chapter}/check":      {"post"},
+		"/api/projects/{id}/chapters/{chapter}/rewrite":    {"post"},
+		"/api/projects/{id}/chapters/{chapter}/finalize":   {"post"},
+		"/api/truth/events":                                {"get", "post"},
+		"/api/truth/state":                                 {"get"},
+		"/api/truth/state:batch":                           {"post"},
+		"/api/truth/conflicts":                             {"get"},
+		"/api/truth/rebuild":                               {"post"},
+		"/api/truth/verify":                                {"get"},
 	}
 	seenOperations := make(map[string]string)
 	for path, methods := range expected {
@@ -71,20 +77,13 @@ func TestOpenAPICoversImplementedRoutesAndUniqueOperations(t *testing.T) {
 				continue
 			}
 			if previous, exists := seenOperations[operation.OperationID]; exists {
-				t.Errorf(
-					"duplicate operationId %q for %s and %s %s",
-					operation.OperationID,
-					previous,
-					strings.ToUpper(method),
-					path,
-				)
+				t.Errorf("duplicate operationId %q for %s and %s %s", operation.OperationID, previous, strings.ToUpper(method), path)
 			}
 			seenOperations[operation.OperationID] = strings.ToUpper(method) + " " + path
 			if method != "get" {
 				hasIdempotencyKey := false
 				for _, parameter := range operation.Parameters {
-					if (parameter.Name == "Idempotency-Key" && parameter.In == "header") ||
-						parameter.Ref == "#/components/parameters/IdempotencyKey" {
+					if (parameter.Name == "Idempotency-Key" && parameter.In == "header") || parameter.Ref == "#/components/parameters/IdempotencyKey" {
 						hasIdempotencyKey = true
 					}
 				}
@@ -103,19 +102,12 @@ func TestOpenAPIErrorEnvelopeDoesNotExposeInternalFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	serialized := string(openAPISpec)
-	for _, forbidden := range []string{
-		"absolute_path",
-		"authorization_header",
-		"api_key",
-		"stack_trace",
-		"raw_sql",
-	} {
+	for _, forbidden := range []string{"absolute_path", "authorization_header", "api_key", "stack_trace", "raw_sql"} {
 		if strings.Contains(strings.ToLower(serialized), forbidden) {
 			t.Fatalf("OpenAPI exposes forbidden field %q", forbidden)
 		}
 	}
-	if !strings.Contains(serialized, `"ErrorEnvelope"`) ||
-		!strings.Contains(serialized, `"trace_id"`) {
+	if !strings.Contains(serialized, `"ErrorEnvelope"`) || !strings.Contains(serialized, `"trace_id"`) {
 		t.Fatal("OpenAPI is missing the common error envelope")
 	}
 }
@@ -144,6 +136,7 @@ func TestOpenAPITruthContractsMatchProductionTypes(t *testing.T) {
 					Enum     []string `json:"enum"`
 					Ref      string   `json:"$ref"`
 					MaxItems int      `json:"maxItems"`
+					Default  any      `json:"default"`
 				} `json:"properties"`
 			} `json:"schemas"`
 		} `json:"components"`
@@ -153,15 +146,7 @@ func TestOpenAPITruthContractsMatchProductionTypes(t *testing.T) {
 	}
 
 	authority := document.Components.Schemas["TruthEventInput"].Properties["authority"].Enum
-	wantAuthority := []string{
-		"llm_suggestion",
-		"story_compass",
-		"volume_plan",
-		"arc_plan",
-		"chapter_plan",
-		"generated_final",
-		"human_final",
-	}
+	wantAuthority := []string{"llm_suggestion", "story_compass", "volume_plan", "arc_plan", "chapter_plan", "generated_final", "human_final"}
 	if strings.Join(authority, ",") != strings.Join(wantAuthority, ",") {
 		t.Fatalf("truth authority enum = %v, want %v", authority, wantAuthority)
 	}
@@ -198,6 +183,18 @@ func TestOpenAPITruthContractsMatchProductionTypes(t *testing.T) {
 		if !eventParameters[name] {
 			t.Errorf("GET /api/truth/events is missing %q", name)
 		}
+	}
+
+	qualityTx := document.Components.Schemas["QualityTransaction"]
+	if got := strings.Join(qualityTx.Properties["state"].Enum, ","); !strings.Contains(got, "continuity_fail") || !strings.Contains(got, "truth_commit_pending") || !strings.Contains(got, "hold") {
+		t.Fatalf("quality transaction states incomplete: %s", got)
+	}
+	if got := qualityTx.Properties["max_rewrites"].Default; got != float64(2) {
+		t.Fatalf("quality max_rewrites default=%v, want 2", got)
+	}
+	continuity := document.Components.Schemas["ContinuityResult"]
+	if strings.Join(continuity.Properties["status"].Enum, ",") != "PASS,WARN,FAIL" {
+		t.Fatalf("continuity enum=%v", continuity.Properties["status"].Enum)
 	}
 }
 

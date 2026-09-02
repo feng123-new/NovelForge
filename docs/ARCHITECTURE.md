@@ -191,15 +191,16 @@ ainovel-cli code is Apache-2.0 and directly reused. show-me-the-story is MIT and
 
 The resolved Go module graph is recorded in `docs/DEPENDENCY_LICENSES.md` and checked by CI together with the CGo-disabled build.
 
+## 16. Temporal Truth Store
 
-## Temporal Truth Store
+The project database owns an append-only `truth_events` log and rebuildable `truth_facts` / `truth_conflicts` projections. Every event carries separate story-valid and system-knowledge chapter ranges; Chapter-N queries use their intersection so later state and discoveries cannot leak into earlier context. Conflicting values coexist until an authorized event explicitly supersedes or retracts a predecessor. Authority follows Accepted Human Final > Generated Final Chapter > Current Chapter Plan > Arc Plan > Volume Plan > Story Compass > LLM Suggestion, but ranking never causes a silent overwrite. Every source includes an explicit source chapter and source version. See `docs/TRUTH_STORE.md` for the storage, rebuild, verification, idempotency, and API contracts.
 
-The project database owns an append-only `truth_events` log and rebuildable `truth_facts` /
-`truth_conflicts` projections. Every event carries separate story-valid and system-knowledge
-chapter ranges; Chapter-N queries use their intersection so later state and discoveries
-cannot leak into earlier context. Conflicting values coexist until an authorized event
-explicitly supersedes or retracts a predecessor. Authority follows Accepted Human Final >
-Generated Final Chapter > Current Chapter Plan > Arc Plan > Volume Plan > Story Compass >
-LLM Suggestion, but ranking never causes a silent overwrite. Every source includes an
-explicit source chapter and source version. See `docs/TRUTH_STORE.md` for the storage,
-rebuild, verification, idempotency, and API contracts.
+## 17. Phase 5 chapter quality transaction
+
+Phase 5 makes the Chapter transaction target concrete in `internal/qualitygate` and project migration 3. The coordinator persists the Draft before invoking Librarian, persists Fact Proposal before Continuity, persists Continuity before Editor, and persists Editor scoring before deterministic candidate selection. Model-facing services receive only typed requests and model-call infrastructure; Writer and Librarian never receive a Truth repository.
+
+The model-call repository gives every paid/semantic operation a request hash and idempotency key. Completed same-hash calls replay without another provider invocation, while key/content conflicts fail closed. Provider retries and structured-output repairs have explicit caps.
+
+Continuity uses the Phase 4 Chapter-N Truth query for inventory, knowledge, location, relations, timeline, world rules and other blocking predicates. RAG is not consulted as authority. A blocking FAIL cannot be superseded by a high Editor score.
+
+Finalization is a recoverable saga: accepted candidate → idempotent generated-final Truth events → hash-checked chapter-file switch → durable checkpoint → `completed`. The chapter file switch preserves a same-directory backup across the Windows replace boundary, and retries do not repeat Truth events or model stages. See `docs/QUALITY_GATE.md`.

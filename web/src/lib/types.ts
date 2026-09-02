@@ -87,6 +87,115 @@ export interface ChapterList {
   next_offset?: number;
 }
 
+export interface ChapterPlan {
+  chapter: number;
+  title: string;
+  pov: string;
+  location: string;
+  objective: string;
+  conflict: string;
+  required_beats: string[];
+  forbidden_outcomes: string[];
+  knowledge_boundary: string[];
+  inventory_constraints: string[];
+  foreshadow_obligations: string[];
+  ending_hook: string;
+}
+
+export type QualityState =
+  | 'planned' | 'drafting' | 'draft_ready' | 'librarian_pending' | 'facts_proposed'
+  | 'continuity_pending' | 'continuity_pass' | 'continuity_warn' | 'continuity_fail'
+  | 'editor_pending' | 'reviewed' | 'rewrite_pending' | 'final_candidate'
+  | 'truth_commit_pending' | 'checkpoint_pending' | 'completed' | 'hold' | 'failed';
+
+export interface QualityTransaction {
+  transaction_id?: string;
+  project_id?: string;
+  chapter?: number;
+  state?: QualityState;
+  attempt?: number;
+  max_rewrites?: number;
+  quality_threshold?: number;
+  final_candidate_id?: string;
+  hold_reason?: string;
+  last_reason?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface QualityCandidate {
+  id: string;
+  transaction_id: string;
+  chapter: number;
+  attempt: number;
+  text_sha: string;
+  source_version: string;
+  continuity_status: '' | 'PASS' | 'WARN' | 'FAIL';
+  editor_score?: number | null;
+  selected: boolean;
+  selection_reason: string;
+  created_at: string;
+}
+
+export interface ContinuityIssue {
+  issue_code: string;
+  severity: 'INFO' | 'WARNING' | 'BLOCKING';
+  entity: string;
+  predicate: string;
+  expected: unknown;
+  actual: unknown;
+  evidence: string;
+  source_chapter: number;
+  source_version: string;
+  suggested_action: string;
+}
+
+export interface ContinuityResult {
+  status: 'PASS' | 'WARN' | 'FAIL';
+  blocking: boolean;
+  issues: ContinuityIssue[];
+}
+
+export interface EditorReview {
+  score: number;
+  strengths: string[];
+  weaknesses: string[];
+  line_level_issues: string[];
+  pacing: string;
+  characterization: string;
+  prose: string;
+  dialogue: string;
+  ending: string;
+  rewrite_recommended: boolean;
+  summary: string;
+}
+
+export interface QualitySnapshot {
+  transaction: QualityTransaction;
+  candidates: QualityCandidate[];
+  proposal?: Record<string, unknown>;
+  continuity?: ContinuityResult;
+  editor?: EditorReview;
+  state_changes: Array<Record<string, unknown>>;
+}
+
+export interface QualityActions {
+  generate: boolean;
+  check: boolean;
+  rewrite: boolean;
+  finalize: boolean;
+}
+
+export interface QualityView {
+  snapshot: QualitySnapshot;
+  actions: QualityActions;
+}
+
+export interface QualityCandidateList {
+  candidates: QualityCandidate[];
+  total: number;
+}
+
 export interface ModelEntry {
   provider: string;
   id: string;

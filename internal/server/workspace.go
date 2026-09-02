@@ -39,6 +39,7 @@ func (s *Server) registerWorkspaceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/projects/{id}/chapters", s.handleChapterCollection)
 	mux.HandleFunc("/api/projects/{id}/foundation", s.handleFoundationRequest)
+	s.registerQualityRoutes(mux)
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +98,10 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"foundation_request_storage":    true,
 			"foundation_worker_available":   false,
 			"autopilot_worker_available":    false,
+			"chapter_quality_gate":          true,
+			"quality_model_available":       s.qualityConfigured(),
+			"quality_max_rewrites":          s.cfg.QualityPolicy.MaxRewrites,
+			"quality_threshold":             s.cfg.QualityPolicy.QualityThreshold,
 			"credentials_exposed_to_web":    false,
 			"authoritative_state_is_server": true,
 		},

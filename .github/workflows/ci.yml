@@ -64,7 +64,7 @@ jobs:
       - name: Targeted race tests
         env:
           GOWORK: "off"
-        run: go test -race -buildvcs=false -count=1 ./internal/db/migrate ./internal/project ./internal/truthstore ./internal/server/...
+        run: go test -race -buildvcs=false -count=1 ./internal/db/migrate ./internal/project ./internal/qualitygate ./internal/truthstore ./internal/server/...
       - name: Truth Store 100k temporal index gate
         env:
           GOWORK: "off"

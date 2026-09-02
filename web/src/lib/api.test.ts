@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { APIClient, APIClientError } from './api';
+import { APIClient } from './api';
 
 describe('APIClient', () => {
   it('adds an idempotency key to writes', async () => {
@@ -22,6 +22,41 @@ describe('APIClient', () => {
     await expect(client.getProject('missing')).rejects.toEqual(expect.objectContaining({
       status: 404,
       payload: expect.objectContaining({ code: 'PROJECT_NOT_FOUND', trace_id: 'trace-1' })
+    }));
+  });
+
+  it('uses real chapter quality routes and idempotency for every write', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init });
+      return new Response(JSON.stringify({ snapshot: { transaction: {}, candidates: [], state_changes: [] }, actions: { generate: false, check: false, rewrite: false, finalize: false } }), { status: 202 });
+    });
+    const client = new APIClient('/api', fetcher);
+    const plan = { chapter: 7, title: 'Seven', pov: 'Mira', location: 'Gate', objective: 'enter', conflict: 'guard', required_beats: [], forbidden_outcomes: [], knowledge_boundary: [], inventory_constraints: [], foreshadow_obligations: [], ending_hook: 'bell' };
+    await client.generateChapter('p/1', 7, plan);
+    await client.checkChapter('p/1', 7);
+    await client.rewriteChapter('p/1', 7, plan);
+    await client.finalizeChapter('p/1', 7);
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/projects/p%2F1/chapters/7/generate',
+      '/api/projects/p%2F1/chapters/7/check',
+      '/api/projects/p%2F1/chapters/7/rewrite',
+      '/api/projects/p%2F1/chapters/7/finalize'
+    ]);
+    for (const call of calls) {
+      expect(call.init?.method).toBe('POST');
+      expect(call.init?.headers).toMatchObject({ 'Idempotency-Key': expect.stringMatching(/^web-/) });
+    }
+  });
+
+  it('reloads quality state with GET and preserves structured errors', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      error: { code: 'QUALITY_STATE_CONFLICT', message: 'conflict', details: {}, retryable: false, trace_id: 'trace-quality' }
+    }), { status: 409 }));
+    const client = new APIClient('/api', fetcher);
+    await expect(client.quality('p1', 2)).rejects.toEqual(expect.objectContaining({
+      status: 409,
+      payload: expect.objectContaining({ code: 'QUALITY_STATE_CONFLICT', trace_id: 'trace-quality' })
     }));
   });
 });
