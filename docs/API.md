@@ -46,3 +46,9 @@ The `actions` object is derived from server state and configured production serv
 ## Truth authority
 
 Truth APIs remain documented in [PROJECT_API.md](PROJECT_API.md) and [TRUTH_STORE.md](TRUTH_STORE.md). Phase 5 Finalize converts only the accepted candidate's persisted Fact Proposal into idempotent `generated_final` Truth events.
+
+## Narrative Ledger API (Phase 6)
+
+The project-scoped Foreshadow and Secret routes are documented in the embedded OpenAPI 3.1 document. Foreshadow reads accept `chapter`, status/overdue/importance/urgency/arc/entity/query filters and bounded pagination. Secret reads accept `chapter`, public/holder/query filters and an explicit administrative `include_truth` flag. Dashboard, diagnostics, and Planner Context are read-only Chapter-N views.
+
+All Narrative Ledger writes require `Idempotency-Key`, strict JSON, project boundary validation, and the common safe error envelope. Generic PATCH operations implement lifecycle actions through validated state changes rather than transport-side state logic. Holder add/close operations preserve effective chapter ranges and provenance.
