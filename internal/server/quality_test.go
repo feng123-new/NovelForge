@@ -44,7 +44,8 @@ func apiPlan(chapter int) []byte {
 }
 
 func TestQualityAPIRequiresProviderAndSafeEnvelope(t *testing.T) {
-	app, err := New(Config{Workspace: t.TempDir()})
+	workspace := t.TempDir()
+	app, err := New(Config{Workspace: workspace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +60,7 @@ func TestQualityAPIRequiresProviderAndSafeEnvelope(t *testing.T) {
 	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), `"code":"QUALITY_SERVICE_UNAVAILABLE"`) || !strings.Contains(response.Body.String(), `"trace_id"`) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), app.projects.Workspace()) {
+	if strings.Contains(response.Body.String(), workspace) {
 		t.Fatalf("absolute path leaked: %s", response.Body.String())
 	}
 }
