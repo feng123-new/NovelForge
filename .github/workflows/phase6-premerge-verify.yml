@@ -1,0 +1,91 @@
+name: Temporary Phase 6 pre-merge verifier
+
+on:
+  push:
+    branches:
+      - ops/phase6-premerge-verifier
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify exact PR head, clean delivery tree and accepted CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: '22'
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${REPOSITORY}"
+          header=(-H "Authorization: Bearer ${GH_TOKEN}" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
+          pr="$(curl -fsSL "${header[@]}" "${api}/pulls/${PR_NUMBER}")"
+          head_sha="$(jq -r '.head.sha' <<<"${pr}")"
+          test "$(jq -r '.state' <<<"${pr}")" = open
+          test "$(jq -r '.head.ref' <<<"${pr}")" = feature/phase-06-narrative-ledger
+
+          git init work
+          cd work
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
+          git fetch --depth=1 origin "${head_sha}"
+          git checkout --detach FETCH_HEAD
+
+          forbidden=(
+            .github/phase6_finalize.py
+            .github/workflows/phase6-finalize.yml
+            .github/workflows/phase6-source-export.yml
+            .github/workflows/phase6-dev-env-export.yml
+            .github/workflows/phase6-pr-monitor.yml
+            .github/workflows/phase6-premerge-verify.yml
+            internal/server/openapi_phase6.json
+          )
+          for path in "${forbidden[@]}"; do
+            test ! -e "${path}" || { echo "forbidden delivery artifact: ${path}" >&2; exit 1; }
+          done
+          test -f internal/narrativeledger/migration.go
+          test -f internal/narrativeledger/ledger_test.go
+          test -f internal/project/narrative_ledger.go
+          test -f internal/server/narrative_ledger.go
+          test -f web/src/pages/Foreshadows.svelte
+          test -f web/src/pages/Secrets.svelte
+          test -f web/src/pages/NarrativeLedgerDashboard.svelte
+          test -f docs/NARRATIVE_LEDGER.md
+          test "$(find .github/workflows -maxdepth 1 -type f -printf '%f\n' | sort | tr '\n' ' ')" = 'ci.yml '
+          grep -Fq '/api/projects/{id}/foreshadows' internal/server/openapi_phase5.json
+          grep -Fq '/api/projects/{id}/secrets' internal/server/openapi_phase5.json
+          grep -Fq 'Narrative Ledger 100k schedule index gate' .github/workflows/ci.yml
+          grep -Fq 'implementation complete; acceptance pending' docs/IMPLEMENTATION_STATUS.md
+          git diff --check
+
+          runs="$(curl -fsSL "${header[@]}" "${api}/actions/runs?event=pull_request&head_sha=${head_sha}&per_page=20")"
+          run="$(jq -c --arg sha "${head_sha}" --argjson pr "${PR_NUMBER}" '[.workflow_runs[] | select(.name == "CI" and .head_sha == $sha and .status == "completed" and .conclusion == "success" and any(.pull_requests[]?; .number == $pr))] | sort_by(.created_at) | last // empty' <<<"${runs}")"
+          test -n "${run}"
+          run_id="$(jq -r '.id' <<<"${run}")"
+          jobs="$(curl -fsSL "${header[@]}" "${api}/actions/runs/${run_id}/jobs?per_page=100")"
+          jq -e '
+            def succeeded($name): any(.jobs[]; .name == $name and .status == "completed" and .conclusion == "success");
+            succeeded("Go lint, test and build") and
+            succeeded("Frontend check, test and build") and
+            succeeded("Windows test and build") and
+            succeeded("Docker build")
+          ' <<<"${jobs}" >/dev/null
+
+          git checkout -B ops/phase6-ready-to-merge
+          mkdir -p .phase6
+          jq -n --arg sha "${head_sha}" --arg run "${run_id}" --arg checked "$(date -u +%FT%TZ)" \
+            '{pr:22, head_sha:$sha, pr_ci_run:$run, required_jobs_success:true, delivery_tree_clean:true, checked_at:$checked}' \
+            > .phase6/premerge.json
+          git add .phase6/premerge.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore: mark Phase 6 exact head ready to merge'
+          git push --force origin HEAD:refs/heads/ops/phase6-ready-to-merge
+
+          cd ..
+          curl -fsSL -X DELETE "${header[@]}" "${api}/git/refs/heads/ops%2Fphase6-premerge-verifier" || true
