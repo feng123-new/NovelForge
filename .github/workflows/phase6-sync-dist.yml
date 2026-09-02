@@ -1,0 +1,37 @@
+name: Temporary Phase 6 frontend asset sync
+
+on:
+  push:
+    branches:
+      - feature/phase-06-narrative-ledger
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/phase-06-narrative-ledger
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Rebuild and commit exact embedded assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd web
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+          cd ..
+          rm .github/workflows/phase6-sync-dist.yml
+          git add web/dist .github/workflows/phase6-sync-dist.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'build: sync Phase 6 frontend assets'
+          git push origin HEAD:feature/phase-06-narrative-ledger
