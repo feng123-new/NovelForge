@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/voocel/ainovel-cli/internal/narrativeledger"
 	"github.com/voocel/ainovel-cli/internal/truthstore"
 )
 
@@ -74,6 +75,30 @@ func TestCoordinatorBoundedRewriteAndBestCandidateSelection(t *testing.T) {
 	}
 }
 
+type recordingLedger struct {
+	mu       sync.Mutex
+	attempts int
+	commits  int
+	keys     map[string]narrativeledger.CommitResult
+}
+
+func (l *recordingLedger) CommitAcceptedFinal(_ context.Context, input narrativeledger.AcceptedFinalInput) (narrativeledger.CommitResult, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.attempts++
+	if l.keys == nil {
+		l.keys = make(map[string]narrativeledger.CommitResult)
+	}
+	if result, ok := l.keys[input.IdempotencyKey]; ok {
+		result.Replayed = true
+		return result, nil
+	}
+	l.commits++
+	result := narrativeledger.CommitResult{CommitID: "ledger-commit", TransactionID: input.TransactionID}
+	l.keys[input.IdempotencyKey] = result
+	return result, nil
+}
+
 func TestCoordinatorFinalizeIsRecoverableIdempotentAndConcurrentSafe(t *testing.T) {
 	store := openQualityTestStore(t)
 	truth := openTruthTestStore(t)
@@ -81,8 +106,9 @@ func TestCoordinatorFinalizeIsRecoverableIdempotentAndConcurrentSafe(t *testing.
 	librarian := &fakeLibrarian{change: FactChange{Subject: "character:hero", Predicate: "mood", Object: json.RawMessage(`"focused"`)}}
 	editor := &fixedEditor{score: 9}
 	finalWriter := &memoryFinalWriter{}
+	ledger := &recordingLedger{}
 	fault := &oneShotFault{point: "after_truth_commit"}
-	coordinator := Coordinator{Store: store, Truth: truth, Writer: writer, Librarian: librarian, Continuity: fixedContinuity{ContinuityResult{Status: ContinuityPass}}, Editor: editor, Policy: DefaultPolicy(), FinalWriter: finalWriter, Faults: fault}
+	coordinator := Coordinator{Store: store, Truth: truth, Ledger: ledger, Writer: writer, Librarian: librarian, Continuity: fixedContinuity{ContinuityResult{Status: ContinuityPass}}, Editor: editor, Policy: DefaultPolicy(), FinalWriter: finalWriter, Faults: fault}
 	ctx := context.Background()
 	_, _ = coordinator.Generate(ctx, "p", 4, ChapterPlan{Chapter: 4})
 	checked, err := coordinator.Check(ctx, "p", 4)
@@ -128,6 +154,9 @@ func TestCoordinatorFinalizeIsRecoverableIdempotentAndConcurrentSafe(t *testing.
 	}
 	if writer.calls != 1 || librarian.calls != 1 || editor.calls != 1 {
 		t.Fatalf("finalize repeated model stages writer=%d librarian=%d editor=%d", writer.calls, librarian.calls, editor.calls)
+	}
+	if ledger.commits != 1 || ledger.attempts < 2 {
+		t.Fatalf("Finalize did not use replay-safe ledger boundary: commits=%d attempts=%d", ledger.commits, ledger.attempts)
 	}
 }
 
