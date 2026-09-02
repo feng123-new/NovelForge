@@ -7,11 +7,22 @@ import type {
   FoundationRequest,
   FoundationRequestInput,
   Health,
+  ForeshadowInput,
+  ForeshadowPage,
+  Foreshadow,
+  ForeshadowPatch,
+  LedgerDashboard,
+  LedgerDiagnosticPage,
+  LedgerPlannerContext,
   ModelList,
   ProjectDetail,
   ProjectList,
   QualityCandidateList,
   QualityView,
+  SecretInput,
+  SecretPage,
+  SecretRecord,
+  SecretPatch,
   WorkspaceSettings
 } from './types';
 
@@ -92,6 +103,58 @@ export class APIClient {
 
   finalizeChapter(id: string, chapter: number): Promise<QualityView> {
     return this.write(`/projects/${encodeURIComponent(id)}/chapters/${chapter}/finalize`, 'POST', {});
+  }
+
+  listForeshadows(id: string, chapter: number, filters: Record<string, string> = {}): Promise<ForeshadowPage> {
+    const params = new URLSearchParams({ chapter: String(chapter), limit: '100', ...filters });
+    return this.request(`/projects/${encodeURIComponent(id)}/foreshadows?${params.toString()}`);
+  }
+
+  createForeshadow(id: string, input: ForeshadowInput): Promise<Foreshadow> {
+    return this.write(`/projects/${encodeURIComponent(id)}/foreshadows`, 'POST', input);
+  }
+
+  updateForeshadow(id: string, foreshadow: string, patch: ForeshadowPatch): Promise<Foreshadow> {
+    return this.write(`/projects/${encodeURIComponent(id)}/foreshadows/${encodeURIComponent(foreshadow)}`, 'PATCH', patch);
+  }
+
+  listSecrets(id: string, chapter: number, includeTruth = true): Promise<SecretPage> {
+    const params = new URLSearchParams({ chapter: String(chapter), limit: '100', include_truth: String(includeTruth) });
+    return this.request(`/projects/${encodeURIComponent(id)}/secrets?${params.toString()}`);
+  }
+
+  createSecret(id: string, input: SecretInput): Promise<SecretRecord> {
+    return this.write(`/projects/${encodeURIComponent(id)}/secrets`, 'POST', input);
+  }
+
+  updateSecret(id: string, secret: string, patch: SecretPatch): Promise<SecretRecord> {
+    return this.write(`/projects/${encodeURIComponent(id)}/secrets/${encodeURIComponent(secret)}`, 'PATCH', patch);
+  }
+
+  addSecretHolder(id: string, secret: string, holder: NonNullable<SecretInput['holders']>[number]): Promise<SecretRecord> {
+    return this.write(`/projects/${encodeURIComponent(id)}/secrets/${encodeURIComponent(secret)}/holders`, 'POST', holder);
+  }
+
+  closeSecretHolder(id: string, secret: string, holder: string, validToChapter: number, sourceVersion: string): Promise<SecretRecord> {
+    return this.write(`/projects/${encodeURIComponent(id)}/secrets/${encodeURIComponent(secret)}/holders/${encodeURIComponent(holder)}/close`, 'POST', {
+      valid_to_chapter: validToChapter,
+      source_version: sourceVersion
+    });
+  }
+
+  ledgerDashboard(id: string, chapter: number): Promise<LedgerDashboard> {
+    return this.request(`/projects/${encodeURIComponent(id)}/ledger/dashboard?chapter=${chapter}`);
+  }
+
+  ledgerDiagnostics(id: string, chapter: number): Promise<LedgerDiagnosticPage> {
+    return this.request(`/projects/${encodeURIComponent(id)}/ledger/diagnostics?chapter=${chapter}`);
+  }
+
+  ledgerPlannerContext(id: string, chapter: number, pov = '', arc = ''): Promise<LedgerPlannerContext> {
+    const params = new URLSearchParams({ chapter: String(chapter) });
+    if (pov.trim()) params.set('pov', pov.trim());
+    if (arc.trim()) params.set('arc', arc.trim());
+    return this.request(`/projects/${encodeURIComponent(id)}/ledger/planner-context?${params.toString()}`);
   }
 
   listModels(query = ''): Promise<ModelList> {

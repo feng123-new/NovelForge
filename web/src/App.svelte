@@ -4,6 +4,8 @@
   import Projects from './pages/Projects.svelte';
   import NewNovelWizard from './pages/NewNovelWizard.svelte';
   import Chapters from './pages/Chapters.svelte';
+  import Foreshadows from './pages/Foreshadows.svelte';
+  import Secrets from './pages/Secrets.svelte';
   import Models from './pages/Models.svelte';
   import Logs from './pages/Logs.svelte';
   import Settings from './pages/Settings.svelte';
@@ -16,6 +18,8 @@
     projects: Projects,
     new: NewNovelWizard,
     chapters: Chapters,
+    foreshadows: Foreshadows,
+    secrets: Secrets,
     models: Models,
     logs: Logs,
     settings: Settings
@@ -25,6 +29,8 @@
     { name: 'projects', label: 'Projects', icon: '◇', href: '#/projects' },
     { name: 'new', label: 'New Novel', icon: '＋', href: '#/new' },
     { name: 'chapters', label: 'Chapters', icon: '≡', href: '#/chapters' },
+    { name: 'foreshadows', label: 'Foreshadows', icon: '⌁', href: '#/foreshadows' },
+    { name: 'secrets', label: 'Secrets', icon: '◈', href: '#/secrets' },
     { name: 'models', label: 'Models', icon: '⌘', href: '#/models' },
     { name: 'logs', label: 'Logs', icon: '↯', href: '#/logs' },
     { name: 'settings', label: 'Settings', icon: '⚙', href: '#/settings' }
