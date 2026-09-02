@@ -45,6 +45,8 @@ jobs:
                   "await waitFor(() => expect(screen.getByRole('button', { name: 'Resolve' })).not.toBeDisabled());",
               "expect(await screen.findByText(\"The heir's origin\")).toBeInTheDocument();":
                   "expect((await screen.findAllByText(\"The heir's origin\")).length).toBeGreaterThan(0);",
+              "const revealButton = screen.getByRole('button', { name: 'Public Reveal' });":
+                  "const revealButton = await screen.findByRole('button', { name: 'Public Reveal' });",
               "await waitFor(() => expect(revealButton).not.toBeDisabled());":
                   "await waitFor(() => expect(screen.getByRole('button', { name: 'Public Reveal' })).not.toBeDisabled());",
           }
