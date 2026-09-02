@@ -76,9 +76,10 @@ jobs:
           go test -buildvcs=false -count=1 ./internal/server -run '^TestOpenAPI'
           CGO_ENABLED=0 go build -trimpath ./cmd/novelforge
           git diff --check
-      - name: Commit clean Phase 6 delivery
+      - name: Commit generated Phase 6 files
         run: |
-          git rm -f .github/workflows/phase6-finalize.yml .github/scripts/phase6_finalize.py
+          git checkout -- .github/workflows/ci.yml
+          git rm -f .github/scripts/phase6_finalize.py
           git add -A
           git diff --cached --check
           git config user.name "github-actions[bot]"
@@ -86,4 +87,4 @@ jobs:
           git commit -m "test: complete Phase 6 acceptance gates"
           git push origin HEAD:feature/phase-06-narrative-ledger
 
-# One-shot branch finalizer; the successful run removes this file before the delivery commit.
+# One-shot branch finalizer. The connector removes this workflow after the generated files are committed.
