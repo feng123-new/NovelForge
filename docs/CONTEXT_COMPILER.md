@@ -83,3 +83,15 @@ Ordering is stable across runs: layer, historical stage, mandatory status, prior
 ## Tests and benchmark
 
 Phase 7 tests cover default and configurable allocation, mandatory overflow, missing requirements, deterministic ordering/hash, exact retrieval stage order, duplicate handling, future-state rejection, Knowledge Boundary retention, FTS5 project/chapter isolation, upsert/delete synchronization, query-plan index use, legacy migration, and per-layer diagnostics. `BenchmarkCompilerFiveLayers` measures deterministic five-layer assembly with hundreds of bounded records.
+
+## Phase 8 correction boundary and invalidation
+
+The Context Compiler never watches raw chapter files and never treats browser/editor state as authority. Phase 8 first converts an external or in-Web edit into an immutable `human_revision`, evaluates it, and requires explicit Accept + Finalize. Only the resulting Active Human Final and rebuilt project projections are eligible to feed later prompt compilation.
+
+A Human Final at Chapter N invalidates derived state from N forward, not backward. Phase 8 records a bounded rebuild operation and rebuilds Truth/Ledger-dependent state beginning at N. Context requested for Chapter N-1 continues to resolve against the same earlier authority; context for N and later sees the newly accepted Human Final facts once rebuild completes.
+
+Downstream chapter-plan assumptions that conflict with the new Human Final are surfaced as `chapter_plan_impacts`. They are planning diagnostics, not automatic edits to historical plans. A future Planner/Autopilot worker may act on them only through the normal deterministic planning boundary.
+
+Historical FTS/vector material remains evidence after a correction. It may contain text from a superseded chapter version, but it cannot override the rebuilt Truth/Narrative layers. The mandatory authority layers are therefore selected before optional historical retrieval, preserving the Human Final > Generated Final authority order.
+
+Phase 8 Scenario B verifies the key boundary at Chapter 50: Chapter 49 context-driving Truth remains unchanged while Chapter 50+ projects the accepted human survival/injury/escape correction. See [CHAPTER_VERSIONS.md](CHAPTER_VERSIONS.md) and [TRUTH_STORE.md](TRUTH_STORE.md).
