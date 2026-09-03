@@ -18,34 +18,37 @@ jobs:
         with:
           ref: docs/phase-08-acceptance
       - name: Update implementation status from accepted production evidence
-        shell: python
+        shell: bash
         run: |
+          python - <<'PY'
           from pathlib import Path
 
-          path = Path('docs/IMPLEMENTATION_STATUS.md')
-          text = path.read_text(encoding='utf-8')
+          path = Path("docs/IMPLEMENTATION_STATUS.md")
+          text = path.read_text(encoding="utf-8")
 
-          anchor = '- Phase 7 Context Compiler and Hybrid Retrieval was delivered by PR #28 from exact head `b5600f21cbb91180aab8faed75865734dc515739`; PR CI `33716621992` succeeded, squash merge `30a91deac2dbe1add0ba8353c05f89401a53b108` passed merge-triggered main CI `33716865357`.'
-          phase8_state = '\n'.join([
-              '- Phase 8 Chapter Version and Human Edit Sync was delivered by PR #30 from exact head `dfc0c44ede7bfc59b1b56bd23e88643006f3ac62`.',
-              '- Phase 8 production PR CI `33745966937` succeeded; squash merge `502cbf06611515484cb4bad2b2418b717e92f6b3` passed merge-triggered `main` CI `33746266244` across Go, Frontend, Windows and Docker.',
-              '- Phase 8 acceptance details are recorded in `docs/PHASE_08_ACCEPTANCE.md`; the acceptance-record PR itself must pass exact-head and merge-triggered `main` CI before Phase 9 branch creation.'
+          anchor = "- Phase 7 Context Compiler and Hybrid Retrieval was delivered by PR #28 from exact head `b5600f21cbb91180aab8faed75865734dc515739`; PR CI `33716621992` succeeded, squash merge `30a91deac2dbe1add0ba8353c05f89401a53b108` passed merge-triggered main CI `33716865357`."
+          phase8_state = "\n".join([
+              "- Phase 8 Chapter Version and Human Edit Sync was delivered by PR #30 from exact head `dfc0c44ede7bfc59b1b56bd23e88643006f3ac62`.",
+              "- Phase 8 production PR CI `33745966937` succeeded; squash merge `502cbf06611515484cb4bad2b2418b717e92f6b3` passed merge-triggered `main` CI `33746266244` across Go, Frontend, Windows and Docker.",
+              "- Phase 8 acceptance details are recorded in `docs/PHASE_08_ACCEPTANCE.md`; the acceptance-record PR itself must pass exact-head and merge-triggered `main` CI before Phase 9 branch creation."
           ])
           if phase8_state.splitlines()[0] not in text:
-              text = text.replace(anchor, anchor + '\n' + phase8_state)
+              if anchor not in text:
+                  raise SystemExit("Verified repository state anchor not found")
+              text = text.replace(anchor, anchor + "\n" + phase8_state, 1)
 
-          old_status = '| 8–13 | not started | Phase 8 begins from the accepted Phase 7 `main`. |'
-          new_status = '\n'.join([
-              '| 8 — Chapter Version and Human Edit Sync | complete | PR #30 exact-head CI `33745966937`, squash merge `502cbf06611515484cb4bad2b2418b717e92f6b3`, and merged-main CI `33746266244` passed; acceptance evidence is recorded separately. |',
-              '| 9–13 | not started | Phase 9 begins only after the Phase 8 acceptance-record PR and its final `main` CI succeed. |'
+          old_status = "| 8–13 | not started | Phase 8 begins from the accepted Phase 7 `main`. |"
+          new_status = "\n".join([
+              "| 8 — Chapter Version and Human Edit Sync | complete | PR #30 exact-head CI `33745966937`, squash merge `502cbf06611515484cb4bad2b2418b717e92f6b3`, and merged-main CI `33746266244` passed; acceptance evidence is recorded separately. |",
+              "| 9–13 | not started | Phase 9 begins only after the Phase 8 acceptance-record PR and its final `main` CI succeed. |"
           ])
           if old_status not in text:
-              raise SystemExit('Phase status anchor not found')
-          text = text.replace(old_status, new_status)
+              raise SystemExit("Phase status anchor not found")
+          text = text.replace(old_status, new_status, 1)
 
-          marker = '\n## Next phase\n'
+          marker = "\n## Next phase\n"
           if marker not in text:
-              raise SystemExit('Next phase marker not found')
+              raise SystemExit("Next phase marker not found")
           prefix = text.split(marker, 1)[0].rstrip()
           phase8 = r'''
 
@@ -119,12 +122,18 @@ feature/phase-09-autopilot
 4. Create `feature/phase-09-autopilot` from that exact accepted `main` SHA.
 5. Do not implement Phase 9 in the Phase 8 acceptance delivery.
 '''
-          path.write_text(prefix + phase8, encoding='utf-8')
+          path.write_text(prefix + phase8, encoding="utf-8")
+          PY
       - name: Commit implementation status
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/IMPLEMENTATION_STATUS.md
           git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "Implementation status already matches the accepted production evidence."
+            exit 0
+          fi
           git commit -m "docs: record Phase 8 implementation status"
           git push origin HEAD:docs/phase-08-acceptance
