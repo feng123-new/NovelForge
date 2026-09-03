@@ -276,17 +276,30 @@ func (s *Store) List(ctx context.Context, chapter int, options ListOptions) (Lis
 	if err != nil {
 		return ListResult{}, newError(CodeStorage, "chapter versions could not be listed", true, err)
 	}
-	defer rows.Close()
 
 	all := []Version{}
 	for rows.Next() {
 		version, err := scanVersion(rows, options.IncludeContent)
 		if err != nil {
+			_ = rows.Close()
 			return ListResult{}, newError(CodeStorage, "chapter version row could not be decoded", true, err)
 		}
-		if err := s.decorate(ctx, &version); err != nil {
+		all = append(all, version)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return ListResult{}, newError(CodeStorage, "chapter version iteration failed", true, err)
+	}
+	if err := rows.Close(); err != nil {
+		return ListResult{}, newError(CodeStorage, "chapter version rows could not be closed", true, err)
+	}
+
+	filtered := make([]Version, 0, len(all))
+	for i := range all {
+		if err := s.decorate(ctx, &all[i]); err != nil {
 			return ListResult{}, err
 		}
+		version := all[i]
 		if options.Type != "" && version.Type != options.Type {
 			continue
 		}
@@ -296,22 +309,19 @@ func (s *Store) List(ctx context.Context, chapter int, options ListOptions) (Lis
 		if options.Status != "" && version.Status != options.Status {
 			continue
 		}
-		all = append(all, version)
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, newError(CodeStorage, "chapter version iteration failed", true, err)
+		filtered = append(filtered, version)
 	}
 
-	result := ListResult{Versions: []Version{}, Total: len(all), Limit: options.Limit, Offset: options.Offset}
-	if options.Offset >= len(all) {
+	result := ListResult{Versions: []Version{}, Total: len(filtered), Limit: options.Limit, Offset: options.Offset}
+	if options.Offset >= len(filtered) {
 		return result, nil
 	}
 	end := options.Offset + options.Limit
-	if end > len(all) {
-		end = len(all)
+	if end > len(filtered) {
+		end = len(filtered)
 	}
-	result.Versions = append(result.Versions, all[options.Offset:end]...)
-	if end < len(all) {
+	result.Versions = append(result.Versions, filtered[options.Offset:end]...)
+	if end < len(filtered) {
 		next := end
 		result.NextOffset = &next
 	}
