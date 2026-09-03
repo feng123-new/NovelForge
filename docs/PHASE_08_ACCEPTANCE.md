@@ -1,6 +1,6 @@
 # Phase 8 Acceptance Evidence
 
-Status: **complete pending acceptance-record merge**
+Status: **complete**
 
 Date: 2026-09-03
 
@@ -18,6 +18,18 @@ Date: 2026-09-03
 The exact production PR head passed all required jobs before merge: Go lint/test/build, Windows test/build, Frontend check/test/build, and Docker build. The Go job also passed the dedicated Phase 8 Scenario B, targeted race tests including `internal/chapterversion/...`, the Truth Store 100,000-fact temporal-index gate, OpenAPI route/schema validation, `CGO_ENABLED=0` build, module/dependency-license checks, embedded Web asset validation, lifecycle smoke, install/upgrade/uninstall smoke, and brand audit. The Frontend job passed Svelte/TypeScript checks, Vitest, production build, high-severity audit, dependency-license inventory, and committed build-drift verification.
 
 The squash merge was independently revalidated on `main` by CI run `33746266244`, where Go, Windows, Frontend, and Docker all succeeded.
+
+## Formal acceptance closure
+
+| Evidence | Value |
+| --- | --- |
+| Acceptance record PR | #31 — `docs: record Phase 8 acceptance evidence` |
+| Exact green acceptance head | `300e0e944069b3e902c19514503cdea5505c852c` |
+| Exact-head acceptance CI | `33747489810` — success |
+| Acceptance squash merge | `8cc2759bd44d554b9c259531192fba120f38e5da` |
+| Acceptance merge-triggered `main` CI | `33747741718` — success |
+
+PR #31 changed only `docs/IMPLEMENTATION_STATUS.md` and this evidence file. Its exact Head passed Go, Frontend, Windows, and Docker, and the resulting `main` commit passed the same four-job workflow. Phase 8 is therefore formally accepted; Phase 9 may begin only from an accepted `main` descendant that preserves these gates.
 
 ## Delivered production behavior
 
@@ -82,6 +94,8 @@ Phase 8 adds no new npm or Go dependency. `web/dist/assets/app.css` and `web/dis
 
 The production PR was the only open Phase 8 production PR. A temporary artifact-sync workflow used during delivery was removed before the final acceptance head and therefore was not merged into `main`. The accepted production tree contains the normal permanent `.github/workflows/ci.yml` only for Phase 8 CI hardening; no recovery helper, probe, payload fragment, source generator or self-modifying finalizer was merged.
 
-## Acceptance rule
+At formal acceptance closure there were no open Pull Requests. The acceptance branch contained only the two intended documentation changes at merge time. The accepted `main` contained no temporary Phase 8 workflow or status-generation script.
 
-This document records production evidence only. Phase 8 becomes fully accepted when the acceptance-record PR containing this file and the corresponding `docs/IMPLEMENTATION_STATUS.md` update passes exact-head CI, is squash-merged to `main`, and that merge-triggered `main` CI succeeds. Only then may `feature/phase-09-autopilot` be created from the accepted `main` head.
+## Acceptance result
+
+Phase 8 is complete. Production PR #30 and acceptance PR #31 both passed exact-head CI, both were squash-merged, and both merge-triggered `main` workflows succeeded. `docs/IMPLEMENTATION_STATUS.md` marks Phase 8 complete and records Phase 9 as not started. The next permitted branch is `feature/phase-09-autopilot`, created from the final accepted `main` after repository hygiene verification.
