@@ -1226,3 +1226,31 @@ func TestContextToolInjectsRuleViolations(t *testing.T) {
 		t.Fatal("无违规章节不应带 rule_violations 字段")
 	}
 }
+
+func TestFinalizeContextPayloadIncludesLayerDiagnostics(t *testing.T) {
+	result := map[string]any{
+		"current_chapter_plan": map[string]any{"goal": "cross the gate"},
+		"pov_character_state":  map[string]any{"location": "gate"},
+		"recent_summaries":     []string{"chapter 8", "chapter 9"},
+		"style_reference":      "restrained",
+	}
+	data, err := finalizeContextPayload(result, 10, 32*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	diagnostics, ok := decoded["_context_compiler"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing context compiler diagnostics: %s", data)
+	}
+	if diagnostics["context_sha"] == "" {
+		t.Fatalf("missing deterministic context hash: %+v", diagnostics)
+	}
+	layers, ok := diagnostics["layers"].(map[string]any)
+	if !ok || len(layers) != 5 {
+		t.Fatalf("layers=%#v", diagnostics["layers"])
+	}
+}

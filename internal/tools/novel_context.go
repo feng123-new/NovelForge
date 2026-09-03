@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/voocel/agentcore/schema"
+	"github.com/voocel/ainovel-cli/internal/contextcompiler"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
@@ -173,6 +174,7 @@ func finalizeContextPayload(result map[string]any, chapter, budget int) (json.Ra
 		return nil, err
 	}
 	result["_loading_summary"] = buildLoadingSummary(result, chapter)
+	attachContextCompilerDiagnostics(result, chapter, budget)
 
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -182,6 +184,59 @@ func finalizeContextPayload(result map[string]any, chapter, budget int) (json.Ra
 		return nil, fmt.Errorf("context payload exceeds budget after summary rebuild: size=%d budget=%d", len(data), budget)
 	}
 	return data, nil
+}
+
+func attachContextCompilerDiagnostics(result map[string]any, chapter, byteBudget int) {
+	tokenBudget := byteBudget / 4
+	if tokenBudget < 256 {
+		tokenBudget = 256
+	}
+	compiled, err := contextcompiler.CompileLegacyMap(context.Background(), result, contextcompiler.Request{
+		Chapter:            chapter,
+		TotalTokens:        tokenBudget,
+		RecentChapterCount: 3,
+		Budget:             contextcompiler.DefaultBudgetConfig(),
+	}, nil)
+	if err != nil {
+		result["_context_compiler"] = map[string]any{
+			"status": "unavailable",
+			"error":  "context compilation failed",
+		}
+		return
+	}
+	layers := make(map[string]any, len(compiled.Diagnostics.Layers))
+	for _, layer := range []contextcompiler.Layer{
+		contextcompiler.LayerTruth,
+		contextcompiler.LayerNarrative,
+		contextcompiler.LayerRecent,
+		contextcompiler.LayerHistorical,
+		contextcompiler.LayerStyle,
+	} {
+		diagnostic := compiled.Diagnostics.Layers[layer]
+		layers[string(layer)] = map[string]any{
+			"allocated_tokens": diagnostic.AllocatedTokens,
+			"input_tokens":     diagnostic.InputTokens,
+			"used_tokens":      diagnostic.UsedTokens,
+			"selected_count":   diagnostic.SelectedCount,
+			"trimmed_count":    len(diagnostic.Trimmed),
+			"trimmed":          diagnostic.Trimmed,
+		}
+	}
+	result["_context_compiler"] = map[string]any{
+		"version":          1,
+		"context_sha":      compiled.ContextSHA,
+		"total_tokens":     compiled.Diagnostics.TotalTokens,
+		"system_tokens":    compiled.Diagnostics.SystemTokens,
+		"used_tokens":      compiled.Diagnostics.UsedTokens,
+		"remaining_tokens": compiled.Diagnostics.RemainingTokens,
+		"layers":           layers,
+	}
+	// Diagnostics are observability metadata, not story context. Preserve the
+	// established hard payload boundary if a nearly-full legacy payload cannot
+	// carry the additional report.
+	if data, marshalErr := json.Marshal(result); marshalErr != nil || len(data) > byteBudget {
+		delete(result, "_context_compiler")
+	}
 }
 
 // buildLoadingSummary 从已组装的 result 中统计各项数据量，生成一行可读摘要。

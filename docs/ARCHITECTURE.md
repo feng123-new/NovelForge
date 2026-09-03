@@ -213,3 +213,9 @@ Phase 6 introduces `internal/narrativeledger` as an indexed, project-local proje
 The Chapter Commit Coordinator applies accepted Truth events and Narrative Ledger changes as replay-safe saga steps keyed by the same chapter transaction. Rejected candidates, Continuity failures, HOLD states, and unaccepted Librarian proposals cannot mutate the Ledger. Re-entry after a crash returns the prior Ledger commit rather than duplicating Foreshadow, Secret, holder, or reveal events.
 
 Foreshadow `OVERDUE` is a Chapter-N calculation, never a stored lifecycle state. Secret truth is separated from role knowledge through temporal holder ranges and public-reveal boundaries. The Planner adapter returns all overdue and critical Foreshadows as mandatory items, known Secret summaries only for an authorized POV, and explicit truth-free unknown boundaries for everything else. Phase 7 consumes this stable provider under token budgets without weakening those rules.
+
+## 19. Phase 7 Context Compiler
+
+`internal/contextcompiler` is the deterministic prompt-input boundary. It assembles Truth, Narrative, Recent, Historical, and Style layers under a configurable token budget while reserving System capacity. Required plan, POV, hard-rule, Foreshadow, knowledge-boundary, and contract-beat records are pinned and fail closed when they cannot fit.
+
+Historical retrieval has a fixed Structured → Timeline → Foreshadow → Relation → Recent → FTS5 → optional Vector order. FTS5 and vectors remain evidence rather than authority, and every item is checked against Chapter N before selection. The existing `novel_context` tool uses the legacy-map adapter and exposes per-layer diagnostics without removing its established fields.
