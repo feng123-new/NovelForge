@@ -20,36 +20,14 @@ type scenarioBLibrarian struct{}
 func (scenarioBLibrarian) Propose(_ context.Context, request qualitygate.LibrarianRequest) (qualitygate.FactProposal, error) {
 	change := func(predicate string, object any) qualitygate.FactChange {
 		value, _ := json.Marshal(object)
-		return qualitygate.FactChange{
-			Subject:           "character:A",
-			Predicate:         predicate,
-			Object:            value,
-			SourceChapter:     request.Chapter,
-			SourceVersion:     request.Candidate.SourceVersion,
-			SourceSHA:         request.Candidate.TextSHA,
-			Extractor:         "scenario-b-fake-librarian",
-			Confidence:        1,
-			ProposedAuthority: string(truthstore.AuthorityLLMSuggestion),
-			ValidFromChapter:  request.Chapter,
-			KnownFromChapter:  request.Chapter,
-			Reason:            "deterministic Scenario B extraction",
-		}
+		return qualitygate.FactChange{Subject: "character:A", Predicate: predicate, Object: value, SourceChapter: request.Chapter, SourceVersion: request.Candidate.SourceVersion, SourceSHA: request.Candidate.TextSHA, Extractor: "scenario-b-fake-librarian", Confidence: 1, ProposedAuthority: string(truthstore.AuthorityLLMSuggestion), ValidFromChapter: request.Chapter, KnownFromChapter: request.Chapter, Reason: "deterministic Scenario B extraction"}
 	}
-	proposal := qualitygate.FactProposal{
-		ProposalID:    "proposal-scenario-b-" + request.Candidate.ID,
-		ProjectID:     request.ProjectID,
-		Chapter:       request.Chapter,
-		SourceVersion: request.Candidate.SourceVersion,
-		SourceSHA:     request.Candidate.TextSHA,
-		Extractor:     "scenario-b-fake-librarian",
-		Authority:     string(truthstore.AuthorityLLMSuggestion),
-		CharacterChanges: []qualitygate.FactChange{
-			change("alive", true),
-			change("escaped", true),
-		},
-		Injuries: []qualitygate.FactChange{change("injury", "severe")},
-	}
-	return proposal, nil
+	return qualitygate.FactProposal{
+		ProposalID: "proposal-scenario-b-" + request.Candidate.ID, ProjectID: request.ProjectID, Chapter: request.Chapter,
+		SourceVersion: request.Candidate.SourceVersion, SourceSHA: request.Candidate.TextSHA, Extractor: "scenario-b-fake-librarian", Authority: string(truthstore.AuthorityLLMSuggestion),
+		CharacterChanges: []qualitygate.FactChange{change("alive", true), change("escaped", true)},
+		Injuries:         []qualitygate.FactChange{change("injury", "severe")},
+	}, nil
 }
 
 type scenarioBContinuity struct{ calls int }
@@ -65,11 +43,10 @@ func (w scenarioBWriter) WriteFinalChapter(_ context.Context, _ string, chapter 
 	if domain.ChapterContentSHA256(domain.NormalizeChapterContent(content)) != sha {
 		return os.ErrInvalid
 	}
-	path := filepath.Join(w.root, "chapters", "050.md")
 	if chapter != 50 {
-		path = filepath.Join(w.root, "chapters", "chapter.md")
+		return os.ErrInvalid
 	}
-	return os.WriteFile(path, []byte(domain.NormalizeChapterContent(content)), 0o600)
+	return os.WriteFile(filepath.Join(w.root, "chapters", "050.md"), []byte(domain.NormalizeChapterContent(content)), 0o600)
 }
 
 func TestScenarioBHumanEditSyncSupersedesDeathAndRebuildsFromChapter50(t *testing.T) {
@@ -88,34 +65,17 @@ func TestScenarioBHumanEditSyncSupersedesDeathAndRebuildsFromChapter50(t *testin
 	defer ledger.Close()
 
 	alive49, err := truth.Append(ctx, truthstore.AppendInput{
-		IdempotencyKey:   "scenario-b-alive-49",
-		Kind:             truthstore.EventAssert,
-		SubjectType:      "character",
-		SubjectID:        "A",
-		Predicate:        "alive",
-		Value:            json.RawMessage(`true`),
-		ValidFromChapter: 1,
-		KnownFromChapter: 1,
-		Authority:        truthstore.AuthorityGeneratedFinal,
-		Confidence:       1,
+		IdempotencyKey: "scenario-b-alive-49", Kind: truthstore.EventAssert, SubjectType: "character", SubjectID: "A", Predicate: "alive", Value: json.RawMessage(`true`),
+		ValidFromChapter: 1, KnownFromChapter: 1, Authority: truthstore.AuthorityGeneratedFinal, Confidence: 1,
 		Source: truthstore.Source{Type: "chapter_final", ID: "chapter-49", Chapter: 49, Version: "v49"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	death50, err := truth.Append(ctx, truthstore.AppendInput{
-		IdempotencyKey:    "scenario-b-death-50",
-		Kind:              truthstore.EventSupersede,
-		SubjectType:       "character",
-		SubjectID:         "A",
-		Predicate:         "alive",
-		Value:             json.RawMessage(`false`),
-		ValidFromChapter:  50,
-		KnownFromChapter:  50,
-		Authority:         truthstore.AuthorityGeneratedFinal,
-		Confidence:        1,
-		Source:            truthstore.Source{Type: "chapter_final", ID: "chapter-50", Chapter: 50, Version: "generated-50"},
-		SupersedesEventID: alive49.Event.ID,
+		IdempotencyKey: "scenario-b-death-50", Kind: truthstore.EventSupersede, SubjectType: "character", SubjectID: "A", Predicate: "alive", Value: json.RawMessage(`false`),
+		ValidFromChapter: 50, KnownFromChapter: 50, Authority: truthstore.AuthorityGeneratedFinal, Confidence: 1,
+		Source: truthstore.Source{Type: "chapter_final", ID: "chapter-50", Chapter: 50, Version: "generated-50"}, SupersedesEventID: alive49.Event.ID,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -125,13 +85,16 @@ func TestScenarioBHumanEditSyncSupersedesDeathAndRebuildsFromChapter50(t *testin
 	if err != nil || len(before49.Facts) != 1 || string(before49.Facts[0].Value) != "true" {
 		t.Fatalf("Chapter 49 baseline = %#v, err=%v", before49, err)
 	}
+	beforeDigest49, err := store.ProjectionBoundaryDigest(ctx, 49)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeDigest50, err := store.ProjectionBoundaryDigest(ctx, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	oldFinal, err := store.Create(ctx, 50, chapterversion.CreateInput{
-		Content:    "Character A died.\n",
-		Type:       chapterversion.TypeFinal,
-		AuthorType: chapterversion.AuthorSystem,
-		Provenance: json.RawMessage(`{"source":"generated_final"}`),
-	})
+	oldFinal, err := store.Create(ctx, 50, chapterversion.CreateInput{Content: "Character A died.\n", Type: chapterversion.TypeFinal, AuthorType: chapterversion.AuthorSystem, Provenance: json.RawMessage(`{"source":"generated_final"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,14 +124,7 @@ func TestScenarioBHumanEditSyncSupersedesDeathAndRebuildsFromChapter50(t *testin
 	}
 
 	continuity := &scenarioBContinuity{}
-	coordinator := chapterversion.Coordinator{
-		Store:       store,
-		Truth:       truth,
-		Ledger:      ledger,
-		Librarian:   scenarioBLibrarian{},
-		Continuity:  continuity,
-		FinalWriter: scenarioBWriter{root: root},
-	}
+	coordinator := chapterversion.Coordinator{Store: store, Truth: truth, Ledger: ledger, Librarian: scenarioBLibrarian{}, Continuity: continuity, FinalWriter: scenarioBWriter{root: root}}
 	synced, err := coordinator.SyncExternal(ctx, 50, "scenario-b-sync", status.ObservedSHA)
 	if err != nil {
 		t.Fatal(err)
@@ -182,9 +138,9 @@ func TestScenarioBHumanEditSyncSupersedesDeathAndRebuildsFromChapter50(t *testin
 	if replay, err := coordinator.SyncExternal(ctx, 50, "scenario-b-sync", status.ObservedSHA); err != nil || replay.Version.ID != synced.Version.ID {
 		t.Fatalf("sync replay = %#v err=%v", replay, err)
 	}
-	counts, err := store.DebugCounts(ctx, 50)
-	if err != nil || counts["versions"] != 2 {
-		t.Fatalf("repeated sync duplicated version: %#v err=%v", counts, err)
+	var versionCount int
+	if err := store.Database().QueryRowContext(ctx, `SELECT COUNT(*) FROM chapter_versions WHERE chapter=?`, 50).Scan(&versionCount); err != nil || versionCount != 2 {
+		t.Fatalf("repeated sync duplicated version: count=%d err=%v", versionCount, err)
 	}
 
 	accepted, err := coordinator.Accept(ctx, 50, "scenario-b-accept", synced.Version.ID, "accept corrected human edit")
@@ -195,11 +151,8 @@ func TestScenarioBHumanEditSyncSupersedesDeathAndRebuildsFromChapter50(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !finalized.ActiveFinal.ActiveFinal || finalized.ActiveFinal.Authority != chapterversion.AuthorityHumanFinal || finalized.ActiveFinal.Type != chapterversion.TypeFinal {
+	if !finalized.ActiveFinal.ActiveFinal || finalized.ActiveFinal.Authority != chapterversion.AuthorityHumanFinal || finalized.ActiveFinal.Type != chapterversion.TypeFinal || finalized.ActiveFinal.ID == oldFinal.ID {
 		t.Fatalf("human final = %#v", finalized.ActiveFinal)
-	}
-	if finalized.ActiveFinal.ID == oldFinal.ID {
-		t.Fatal("Human Final overwrote/reused the original generated Final")
 	}
 	if replay, err := coordinator.Finalize(ctx, 50, "scenario-b-finalize", accepted.ID); err != nil || replay.ActiveFinal.ID != finalized.ActiveFinal.ID {
 		t.Fatalf("finalize replay = %#v err=%v", replay, err)
@@ -208,6 +161,14 @@ func TestScenarioBHumanEditSyncSupersedesDeathAndRebuildsFromChapter50(t *testin
 	after49, err := truth.State(ctx, truthstore.StateQuery{Chapter: 49, SubjectType: "character", SubjectID: "A", Predicate: "alive", Limit: 10})
 	if err != nil || len(after49.Facts) != 1 || string(after49.Facts[0].Value) != "true" || after49.Facts[0].ID != before49.Facts[0].ID {
 		t.Fatalf("Chapter 49 changed across boundary rebuild: before=%#v after=%#v err=%v", before49, after49, err)
+	}
+	afterDigest49, err := store.ProjectionBoundaryDigest(ctx, 49)
+	if err != nil || afterDigest49 != beforeDigest49 {
+		t.Fatalf("Chapter 49 digest changed: before=%s after=%s err=%v", beforeDigest49, afterDigest49, err)
+	}
+	afterDigest50, err := store.ProjectionBoundaryDigest(ctx, 50)
+	if err != nil || afterDigest50 == beforeDigest50 {
+		t.Fatalf("Chapter 50 digest did not change: before=%s after=%s err=%v", beforeDigest50, afterDigest50, err)
 	}
 	after50, err := truth.State(ctx, truthstore.StateQuery{Chapter: 50, SubjectType: "character", SubjectID: "A", Predicate: "alive", Limit: 10})
 	if err != nil || len(after50.Facts) != 1 || string(after50.Facts[0].Value) != "true" || after50.Facts[0].Authority != truthstore.AuthorityHumanFinal {
@@ -237,12 +198,12 @@ func TestScenarioBHumanEditSyncSupersedesDeathAndRebuildsFromChapter50(t *testin
 	}
 
 	rebuild, ok, err := store.LatestRebuild(ctx, 50)
-	if err != nil || !ok || rebuild.State != "completed" || rebuild.BoundaryChapter != 50 || rebuild.BeforeDigest == rebuild.AfterDigest {
+	if err != nil || !ok || rebuild.State != "completed" || rebuild.BoundaryChapter != 50 {
 		t.Fatalf("boundary rebuild = %#v ok=%v err=%v", rebuild, ok, err)
 	}
-	impacts, err := store.ListPlanImpacts(ctx, 50, 100, 0)
-	if err != nil || len(impacts) < 3 {
-		t.Fatalf("Chapter 51+ plan impacts = %#v err=%v", impacts, err)
+	impacts, total, err := store.ListPlanImpacts(ctx, 51, 100, 0)
+	if err != nil || total < 3 || len(impacts) < 3 {
+		t.Fatalf("Chapter 51+ plan impacts = %#v total=%d err=%v", impacts, total, err)
 	}
 	for _, impact := range impacts {
 		if impact.Chapter != 51 || impact.SourceVersion != finalized.ActiveFinal.ID {
