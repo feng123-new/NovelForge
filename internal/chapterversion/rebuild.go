@@ -3,13 +3,9 @@ package chapterversion
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -39,18 +35,17 @@ func (c *Coordinator) RebuildDerivedState(ctx context.Context, operationID strin
 	if err != nil {
 		return Rebuild{}, err
 	}
-	affected := map[string]any{
-		"truth_projection":  true,
-		"timeline":          true,
-		"relations":         true,
-		"knowledge":         true,
-		"inventory":         true,
-		"character_state":   true,
-		"context_documents": true,
-		"foreshadows":       ledgerAffected["foreshadows"],
-		"secrets":           ledgerAffected["secrets"],
-		"secret_holders":    ledgerAffected["secret_holders"],
-	}
+	affected := map[string]any{}
+	affected["truth_projection"] = true
+	affected["timeline"] = true
+	affected["relations"] = true
+	affected["knowledge"] = true
+	affected["inventory"] = true
+	affected["character_state"] = true
+	affected["context_documents"] = true
+	affected["foreshadows"] = ledgerAffected["foreshadows"]
+	affected["secrets"] = ledgerAffected["secrets"]
+	affected["secret_holders"] = ledgerAffected["secret_holders"]
 	affectedJSON, _ := json.Marshal(affected)
 	now := c.Store.now().UTC()
 	_, err = c.Store.db.ExecContext(ctx, `INSERT INTO derived_state_rebuilds(operation_id,project_id,boundary_chapter,source_version,state,current_step,affected_json,before_digest,started_at)
@@ -62,17 +57,11 @@ func (c *Coordinator) RebuildDerivedState(ctx context.Context, operationID strin
 		}
 		return Rebuild{}, newError(CodeRebuildFailed, "boundary rebuild record could not be started", true, err)
 	}
-	_ = c.Store.AppendEvent(
-		ctx,
-		source.Chapter,
-		source.ID,
-		"rebuild_started",
-		"derived state invalidated from chapter boundary",
-		mustJSON(map[string]any{"operation_id": operationID, "before_digest": before.ProjectionDigest}),
-	)
+	payload := map[string]any{}
+	payload["operation_id"] = operationID
+	payload["before_digest"] = before.ProjectionDigest
+	_ = c.Store.AppendEvent(ctx, source.Chapter, source.ID, "rebuild_started", "derived state invalidated from chapter boundary", mustJSON(payload))
 
-	// Invalidate FTS/summary-style derived documents at the boundary before Truth
-	// replay so stale future prose/facts cannot be selected by Context Compiler.
 	if _, err := c.Store.db.ExecContext(ctx, `DELETE FROM context_documents WHERE project_id=? AND source_chapter>=?`, c.Store.projectID, source.Chapter); err != nil {
 		return c.failRebuild(ctx, operationID, source, "CONTEXT_INVALIDATION_FAILED", err)
 	}
@@ -109,14 +98,13 @@ func (c *Coordinator) RebuildDerivedState(ctx context.Context, operationID strin
 	if err != nil {
 		return Rebuild{}, newError(CodeRebuildFailed, "boundary rebuild completion could not be recorded", true, err)
 	}
-	payload := mustJSON(map[string]any{
-		"operation_id":          operationID,
-		"before_digest":         before.ProjectionDigest,
-		"after_digest":          after.ProjectionDigest,
-		"truth_events_replayed": truthResult.EventsReplayed,
-		"truth_facts_projected": truthResult.FactsProjected,
-	})
-	if err := c.Store.AppendEvent(ctx, source.Chapter, source.ID, "rebuild_completed", "derived state boundary rebuild completed", payload); err != nil {
+	completePayload := map[string]any{}
+	completePayload["operation_id"] = operationID
+	completePayload["before_digest"] = before.ProjectionDigest
+	completePayload["after_digest"] = after.ProjectionDigest
+	completePayload["truth_events_replayed"] = truthResult.EventsReplayed
+	completePayload["truth_facts_projected"] = truthResult.FactsProjected
+	if err := c.Store.AppendEvent(ctx, source.Chapter, source.ID, "rebuild_completed", "derived state boundary rebuild completed", mustJSON(completePayload)); err != nil {
 		return Rebuild{}, err
 	}
 	result, _, err := c.Store.getRebuildByOperation(ctx, operationID)
@@ -126,14 +114,10 @@ func (c *Coordinator) RebuildDerivedState(ctx context.Context, operationID strin
 func (c *Coordinator) failRebuild(ctx context.Context, operationID string, source Version, code string, cause error) (Rebuild, error) {
 	_, _ = c.Store.db.ExecContext(ctx, `UPDATE derived_state_rebuilds SET state='failed',current_step='failed',error_code=?,completed_at=? WHERE operation_id=?`,
 		code, c.Store.now().UTC().Format(time.RFC3339Nano), operationID)
-	_ = c.Store.AppendEvent(
-		ctx,
-		source.Chapter,
-		source.ID,
-		"rebuild_failed",
-		"derived state boundary rebuild failed",
-		mustJSON(map[string]string{"operation_id": operationID, "error_code": code}),
-	)
+	payload := map[string]string{}
+	payload["operation_id"] = operationID
+	payload["error_code"] = code
+	_ = c.Store.AppendEvent(ctx, source.Chapter, source.ID, "rebuild_failed", "derived state boundary rebuild failed", mustJSON(payload))
 	return Rebuild{}, newError(CodeRebuildFailed, "derived state boundary rebuild failed", true, cause)
 }
 
@@ -155,23 +139,25 @@ func (c *Coordinator) rebuildContextDocuments(ctx context.Context, boundary int)
 
 	fts := contextcompiler.NewFTSStore(c.Store.db)
 	for rows.Next() {
-		var id, content, created string
+		var id string
+		var content string
+		var created string
 		var chapter int
 		if err := rows.Scan(&id, &chapter, &content, &created); err != nil {
 			return newError(CodeRebuildFailed, "active final context source could not be decoded", true, err)
 		}
 		createdAt, _ := time.Parse(time.RFC3339Nano, created)
-		if err := fts.Upsert(ctx, contextcompiler.Document{
-			ID:            fmt.Sprintf("chapter-final:%04d", chapter),
-			ProjectID:     c.Store.projectID,
-			Kind:          "chapter_final",
-			Title:         fmt.Sprintf("Chapter %d Final", chapter),
-			Content:       content,
-			SourceChapter: chapter,
-			SourceVersion: id,
-			Priority:      100,
-			CreatedAt:     createdAt.UTC(),
-		}); err != nil {
+		document := contextcompiler.Document{}
+		document.ID = fmt.Sprintf("chapter-final:%04d", chapter)
+		document.ProjectID = c.Store.projectID
+		document.Kind = "chapter_final"
+		document.Title = fmt.Sprintf("Chapter %d Final", chapter)
+		document.Content = content
+		document.SourceChapter = chapter
+		document.SourceVersion = id
+		document.Priority = 100
+		document.CreatedAt = createdAt.UTC()
+		if err := fts.Upsert(ctx, document); err != nil {
 			return newError(CodeRebuildFailed, "active final context source could not be rebuilt", true, err)
 		}
 	}
@@ -179,19 +165,25 @@ func (c *Coordinator) rebuildContextDocuments(ctx context.Context, boundary int)
 }
 
 func (s *Store) ledgerAffectedCounts(ctx context.Context, boundary int) (map[string]int, error) {
-	result := map[string]int{"foreshadows": 0, "secrets": 0, "secret_holders": 0}
-	queries := map[string]string{
-		"foreshadows":    `SELECT COUNT(DISTINCT foreshadow_id) FROM foreshadow_events WHERE project_id=? AND chapter>=?`,
-		"secrets":        `SELECT COUNT(DISTINCT secret_id) FROM secret_events WHERE project_id=? AND chapter>=?`,
-		"secret_holders": `SELECT COUNT(*) FROM secret_holders h JOIN secrets s ON s.id=h.secret_id WHERE s.project_id=? AND (h.valid_to_chapter IS NULL OR h.valid_to_chapter>=?)`,
+	result := map[string]int{}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT foreshadow_id) FROM foreshadow_events WHERE project_id=? AND chapter>=?`, s.projectID, boundary).Scan(new(int)); err != nil {
+		return nil, newError(CodeRebuildFailed, "Narrative Ledger boundary impact could not be measured", true, err)
 	}
-	for key, query := range queries {
-		var count int
-		if err := s.db.QueryRowContext(ctx, query, s.projectID, boundary).Scan(&count); err != nil {
-			return nil, newError(CodeRebuildFailed, "Narrative Ledger boundary impact could not be measured", true, err)
-		}
-		result[key] = count
+	var foreshadows int
+	var secrets int
+	var holders int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT foreshadow_id) FROM foreshadow_events WHERE project_id=? AND chapter>=?`, s.projectID, boundary).Scan(&foreshadows); err != nil {
+		return nil, newError(CodeRebuildFailed, "Narrative Ledger foreshadow impact could not be measured", true, err)
 	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT secret_id) FROM secret_events WHERE project_id=? AND chapter>=?`, s.projectID, boundary).Scan(&secrets); err != nil {
+		return nil, newError(CodeRebuildFailed, "Narrative Ledger secret impact could not be measured", true, err)
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM secret_holders h JOIN secrets s ON s.id=h.secret_id WHERE s.project_id=? AND (h.valid_to_chapter IS NULL OR h.valid_to_chapter>=?)`, s.projectID, boundary).Scan(&holders); err != nil {
+		return nil, newError(CodeRebuildFailed, "Narrative Ledger holder impact could not be measured", true, err)
+	}
+	result["foreshadows"] = foreshadows
+	result["secrets"] = secrets
+	result["secret_holders"] = holders
 	return result, nil
 }
 
@@ -232,143 +224,10 @@ func compactJSON(raw json.RawMessage) string {
 	return strings.TrimSpace(string(raw))
 }
 
-func (s *Store) getRebuildByOperation(ctx context.Context, operationID string) (Rebuild, bool, error) {
-	var item Rebuild
-	var affected, started, completed sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT operation_id,project_id,boundary_chapter,source_version,state,current_step,affected_json,before_digest,after_digest,started_at,completed_at,error_code
-		FROM derived_state_rebuilds WHERE operation_id=?`, operationID).Scan(
-		&item.OperationID,
-		&item.ProjectID,
-		&item.BoundaryChapter,
-		&item.SourceVersion,
-		&item.State,
-		&item.CurrentStep,
-		&affected,
-		&item.BeforeDigest,
-		&item.AfterDigest,
-		&started,
-		&completed,
-		&item.ErrorCode,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Rebuild{}, false, nil
-	}
-	if err != nil {
-		return Rebuild{}, false, newError(CodeRebuildFailed, "boundary rebuild could not be read", true, err)
-	}
-	item.Affected = json.RawMessage(affected.String)
-	if parsed, err := time.Parse(time.RFC3339Nano, started.String); err == nil {
-		item.StartedAt = parsed.UTC()
-	}
-	if completed.Valid {
-		if parsed, err := time.Parse(time.RFC3339Nano, completed.String); err == nil {
-			parsed = parsed.UTC()
-			item.CompletedAt = &parsed
-		}
-	}
-	return item, true, nil
-}
-
-func (s *Store) LatestRebuild(ctx context.Context, boundary int) (Rebuild, bool, error) {
-	var operationID string
-	err := s.db.QueryRowContext(ctx, `SELECT operation_id FROM derived_state_rebuilds WHERE project_id=? AND boundary_chapter<=? ORDER BY started_at DESC,operation_id DESC LIMIT 1`, s.projectID, boundary).Scan(&operationID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Rebuild{}, false, nil
-	}
-	if err != nil {
-		return Rebuild{}, false, newError(CodeRebuildFailed, "latest boundary rebuild could not be read", true, err)
-	}
-	return s.getRebuildByOperation(ctx, operationID)
-}
-
-func (s *Store) ListPlanImpacts(ctx context.Context, chapter, limit, offset int) ([]PlanImpact, int, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 100 {
-		limit = 100
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chapter_plan_impacts WHERE project_id=? AND chapter>=?`, s.projectID, chapter).Scan(&total); err != nil {
-		return nil, 0, newError(CodeStorage, "plan impact count could not be read", true, err)
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,plan_id,chapter,severity,affected_fact,previous_assumption,new_truth,action_required,reason,source_version,created_at
-		FROM chapter_plan_impacts WHERE project_id=? AND chapter>=? ORDER BY chapter,severity DESC,id LIMIT ? OFFSET ?`, s.projectID, chapter, limit, offset)
-	if err != nil {
-		return nil, 0, newError(CodeStorage, "plan impacts could not be read", true, err)
-	}
-	defer rows.Close()
-
-	items := []PlanImpact{}
-	for rows.Next() {
-		var item PlanImpact
-		var created string
-		if err := rows.Scan(
-			&item.ID,
-			&item.PlanID,
-			&item.Chapter,
-			&item.Severity,
-			&item.AffectedFact,
-			&item.PreviousAssumption,
-			&item.NewTruth,
-			&item.ActionRequired,
-			&item.Reason,
-			&item.SourceVersion,
-			&created,
-		); err != nil {
-			return nil, 0, newError(CodeStorage, "plan impact row could not be decoded", true, err)
-		}
-		item.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
-		items = append(items, item)
-	}
-	return items, total, rows.Err()
-}
-
-func (s *Store) ProjectionBoundaryDigest(ctx context.Context, throughChapter int) (string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT event_id,subject_type,subject_id,predicate,value_hash,effective_from_chapter,COALESCE(effective_to_chapter,-1),authority
-		FROM truth_facts WHERE effective_from_chapter<=? ORDER BY event_id`, throughChapter)
-	if err != nil {
-		return "", err
-	}
-	defer rows.Close()
-
-	lines := []string{}
-	for rows.Next() {
-		var id, subjectType, subjectID, predicate, valueHash, authority string
-		var fromChapter, toChapter int
-		if err := rows.Scan(&id, &subjectType, &subjectID, &predicate, &valueHash, &fromChapter, &toChapter, &authority); err != nil {
-			return "", err
-		}
-		lines = append(lines, fmt.Sprintf(
-			"%s|%s|%s|%s|%s|%d|%d|%s",
-			id,
-			subjectType,
-			subjectID,
-			predicate,
-			valueHash,
-			fromChapter,
-			toChapter,
-			authority,
-		))
-	}
-	if err := rows.Err(); err != nil {
-		return "", err
-	}
-	sort.Strings(lines)
-	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
-	return hex.EncodeToString(sum[:]), nil
-}
-
 func isSQLiteBusyOrUnique(err error) bool {
 	if err == nil {
 		return false
 	}
 	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "busy") ||
-		strings.Contains(message, "locked") ||
-		strings.Contains(message, "unique") ||
-		strings.Contains(message, "constraint")
+	return strings.Contains(message, "busy") || strings.Contains(message, "locked") || strings.Contains(message, "unique") || strings.Contains(message, "constraint")
 }
