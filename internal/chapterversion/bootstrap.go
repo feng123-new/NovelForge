@@ -35,10 +35,10 @@ func (s *Store) BootstrapLegacyFinal(ctx context.Context, chapter int) (*Version
 		"ledger_replayed": false,
 	})
 	version, err := s.Create(ctx, chapter, CreateInput{
-		Content:     content,
-		Type:        TypeFinal,
-		AuthorType:  AuthorSystem,
-		Provenance:  provenance,
+		Content:    content,
+		Type:       TypeFinal,
+		AuthorType: AuthorSystem,
+		Provenance: provenance,
 	})
 	if err != nil {
 		// A concurrent bootstrap can win version 1. Re-read the Active Final
