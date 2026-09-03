@@ -146,3 +146,13 @@ The blocking regression scenario plants a critical Foreshadow at Chapter 20 with
 - remain mandatory in Planner Context.
 
 The same scenario is exercised at repository and HTTP integration boundaries.
+
+## Phase 8 Human Final synchronization
+
+Phase 8 routes accepted human chapter corrections through the same ledger authority model instead of allowing a raw editor save to mutate Foreshadows or Secrets. A `human_revision`, including one created from an external file sync, may carry Librarian proposals but those proposals remain non-authoritative until explicit Accept and Finalize.
+
+During Human Final Finalize, `chapterversion.Coordinator` commits accepted `foreshadow_updates` and `secrets` through `CommitAcceptedFinal` using the recoverable Finalize operation identity. It then calls `PromoteAcceptedFinalAuthority` so ledger rows created by the accepted human correction are projected with Human Final authority. Replay uses the same operation/idempotency keys and does not duplicate ledger events.
+
+A Chapter-N correction also creates a durable derived-state rebuild record. Rebuild begins at the edited chapter boundary and refreshes Truth/Ledger-dependent planning state for that chapter and later. Earlier chapter knowledge boundaries remain unchanged. Any downstream plan assumption affected by the accepted Human Final is recorded in `chapter_plan_impacts` rather than silently rewriting historical plans.
+
+Human Final promotion never makes an unknown Secret retroactively known to a POV. Holder ranges and reveal chapters continue to enforce Chapter-N visibility after rebuild. See [CHAPTER_VERSIONS.md](CHAPTER_VERSIONS.md) and [TRUTH_STORE.md](TRUTH_STORE.md).
