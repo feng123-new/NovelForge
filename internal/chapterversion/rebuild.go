@@ -1,6 +1,7 @@
 package chapterversion
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -9,11 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/voocel/ainovel-cli/internal/contextcompiler"
-	"github.com/voocel/ainovel-cli/internal/qualitygate"
 )
 
 // RebuildDerivedState invalidates future context documents before replaying
@@ -29,6 +30,7 @@ func (c *Coordinator) RebuildDerivedState(ctx context.Context, operationID strin
 	} else if ok && existing.State == "completed" {
 		return existing, nil
 	}
+
 	before, err := c.Truth.Verify(ctx)
 	if err != nil {
 		return Rebuild{}, newError(CodeRebuildFailed, "pre-rebuild Truth digest could not be verified", true, err)
@@ -38,16 +40,16 @@ func (c *Coordinator) RebuildDerivedState(ctx context.Context, operationID strin
 		return Rebuild{}, err
 	}
 	affected := map[string]any{
-		"truth_projection": true,
-		"timeline":         true,
-		"relations":        true,
-		"knowledge":        true,
-		"inventory":        true,
-		"character_state":  true,
+		"truth_projection":  true,
+		"timeline":          true,
+		"relations":         true,
+		"knowledge":         true,
+		"inventory":         true,
+		"character_state":   true,
 		"context_documents": true,
-		"foreshadows":      ledgerAffected["foreshadows"],
-		"secrets":          ledgerAffected["secrets"],
-		"secret_holders":   ledgerAffected["secret_holders"],
+		"foreshadows":       ledgerAffected["foreshadows"],
+		"secrets":           ledgerAffected["secrets"],
+		"secret_holders":    ledgerAffected["secret_holders"],
 	}
 	affectedJSON, _ := json.Marshal(affected)
 	now := c.Store.now().UTC()
@@ -60,7 +62,14 @@ func (c *Coordinator) RebuildDerivedState(ctx context.Context, operationID strin
 		}
 		return Rebuild{}, newError(CodeRebuildFailed, "boundary rebuild record could not be started", true, err)
 	}
-	_ = c.Store.AppendEvent(ctx, source.Chapter, source.ID, "rebuild_started", "derived state invalidated from chapter boundary", mustJSON(map[string]any{"operation_id": operationID, "before_digest": before.ProjectionDigest}))
+	_ = c.Store.AppendEvent(
+		ctx,
+		source.Chapter,
+		source.ID,
+		"rebuild_started",
+		"derived state invalidated from chapter boundary",
+		mustJSON(map[string]any{"operation_id": operationID, "before_digest": before.ProjectionDigest}),
+	)
 
 	// Invalidate FTS/summary-style derived documents at the boundary before Truth
 	// replay so stale future prose/facts cannot be selected by Context Compiler.
@@ -86,6 +95,7 @@ func (c *Coordinator) RebuildDerivedState(ctx context.Context, operationID strin
 	if err := c.Store.recordPlanImpacts(ctx, source, evaluation); err != nil {
 		return c.failRebuild(ctx, operationID, source, "PLAN_IMPACT_FAILED", err)
 	}
+
 	after, err := c.Truth.Verify(ctx)
 	if err != nil || !after.Valid {
 		if err == nil {
@@ -93,9 +103,6 @@ func (c *Coordinator) RebuildDerivedState(ctx context.Context, operationID strin
 		}
 		return c.failRebuild(ctx, operationID, source, "REBUILD_VERIFY_FAILED", err)
 	}
-	// Use the Truth Store's deterministic projection digest as the authoritative
-	// before/after boundary evidence. Context rows are rebuilt only from Active
-	// Finals and do not alter Chapter N-1 Truth state.
 	completed := c.Store.now().UTC()
 	_, err = c.Store.db.ExecContext(ctx, `UPDATE derived_state_rebuilds SET state='completed',current_step='completed',after_digest=?,completed_at=?,error_code='' WHERE operation_id=?`,
 		after.ProjectionDigest, completed.Format(time.RFC3339Nano), operationID)
@@ -103,8 +110,11 @@ func (c *Coordinator) RebuildDerivedState(ctx context.Context, operationID strin
 		return Rebuild{}, newError(CodeRebuildFailed, "boundary rebuild completion could not be recorded", true, err)
 	}
 	payload := mustJSON(map[string]any{
-		"operation_id": operationID, "before_digest": before.ProjectionDigest, "after_digest": after.ProjectionDigest,
-		"truth_events_replayed": truthResult.EventsReplayed, "truth_facts_projected": truthResult.FactsProjected,
+		"operation_id":          operationID,
+		"before_digest":         before.ProjectionDigest,
+		"after_digest":          after.ProjectionDigest,
+		"truth_events_replayed": truthResult.EventsReplayed,
+		"truth_facts_projected": truthResult.FactsProjected,
 	})
 	if err := c.Store.AppendEvent(ctx, source.Chapter, source.ID, "rebuild_completed", "derived state boundary rebuild completed", payload); err != nil {
 		return Rebuild{}, err
@@ -116,7 +126,14 @@ func (c *Coordinator) RebuildDerivedState(ctx context.Context, operationID strin
 func (c *Coordinator) failRebuild(ctx context.Context, operationID string, source Version, code string, cause error) (Rebuild, error) {
 	_, _ = c.Store.db.ExecContext(ctx, `UPDATE derived_state_rebuilds SET state='failed',current_step='failed',error_code=?,completed_at=? WHERE operation_id=?`,
 		code, c.Store.now().UTC().Format(time.RFC3339Nano), operationID)
-	_ = c.Store.AppendEvent(ctx, source.Chapter, source.ID, "rebuild_failed", "derived state boundary rebuild failed", mustJSON(map[string]string{"operation_id": operationID, "error_code": code}))
+	_ = c.Store.AppendEvent(
+		ctx,
+		source.Chapter,
+		source.ID,
+		"rebuild_failed",
+		"derived state boundary rebuild failed",
+		mustJSON(map[string]string{"operation_id": operationID, "error_code": code}),
+	)
 	return Rebuild{}, newError(CodeRebuildFailed, "derived state boundary rebuild failed", true, cause)
 }
 
@@ -135,6 +152,7 @@ func (c *Coordinator) rebuildContextDocuments(ctx context.Context, boundary int)
 		return newError(CodeRebuildFailed, "active final context sources could not be read", true, err)
 	}
 	defer rows.Close()
+
 	fts := contextcompiler.NewFTSStore(c.Store.db)
 	for rows.Next() {
 		var id, content, created string
@@ -144,9 +162,15 @@ func (c *Coordinator) rebuildContextDocuments(ctx context.Context, boundary int)
 		}
 		createdAt, _ := time.Parse(time.RFC3339Nano, created)
 		if err := fts.Upsert(ctx, contextcompiler.Document{
-			ID: fmt.Sprintf("chapter-final:%04d", chapter), ProjectID: c.Store.projectID, Kind: "chapter_final",
-			Title: fmt.Sprintf("Chapter %d Final", chapter), Content: content, SourceChapter: chapter, SourceVersion: id,
-			Priority: 100, CreatedAt: createdAt.UTC(),
+			ID:            fmt.Sprintf("chapter-final:%04d", chapter),
+			ProjectID:     c.Store.projectID,
+			Kind:          "chapter_final",
+			Title:         fmt.Sprintf("Chapter %d Final", chapter),
+			Content:       content,
+			SourceChapter: chapter,
+			SourceVersion: id,
+			Priority:      100,
+			CreatedAt:     createdAt.UTC(),
 		}); err != nil {
 			return newError(CodeRebuildFailed, "active final context source could not be rebuilt", true, err)
 		}
@@ -157,14 +181,16 @@ func (c *Coordinator) rebuildContextDocuments(ctx context.Context, boundary int)
 func (s *Store) ledgerAffectedCounts(ctx context.Context, boundary int) (map[string]int, error) {
 	result := map[string]int{"foreshadows": 0, "secrets": 0, "secret_holders": 0}
 	queries := map[string]string{
-		"foreshadows": `SELECT COUNT(DISTINCT foreshadow_id) FROM foreshadow_events WHERE project_id=? AND chapter>=?`,
-		"secrets": `SELECT COUNT(DISTINCT secret_id) FROM secret_events WHERE project_id=? AND chapter>=?`,
+		"foreshadows":    `SELECT COUNT(DISTINCT foreshadow_id) FROM foreshadow_events WHERE project_id=? AND chapter>=?`,
+		"secrets":        `SELECT COUNT(DISTINCT secret_id) FROM secret_events WHERE project_id=? AND chapter>=?`,
 		"secret_holders": `SELECT COUNT(*) FROM secret_holders h JOIN secrets s ON s.id=h.secret_id WHERE s.project_id=? AND (h.valid_to_chapter IS NULL OR h.valid_to_chapter>=?)`,
 	}
 	for key, query := range queries {
-		if err := s.db.QueryRowContext(ctx, query, s.projectID, boundary).Scan(&result[key]); err != nil {
+		var count int
+		if err := s.db.QueryRowContext(ctx, query, s.projectID, boundary).Scan(&count); err != nil {
 			return nil, newError(CodeRebuildFailed, "Narrative Ledger boundary impact could not be measured", true, err)
 		}
+		result[key] = count
 	}
 	return result, nil
 }
@@ -199,22 +225,31 @@ func (s *Store) recordPlanImpacts(ctx context.Context, source Version, evaluatio
 }
 
 func compactJSON(raw json.RawMessage) string {
-	var buffer strings.Builder
-	if err := json.Compact(writerString{&buffer}, raw); err == nil {
+	var buffer bytes.Buffer
+	if err := json.Compact(&buffer, raw); err == nil {
 		return buffer.String()
 	}
 	return strings.TrimSpace(string(raw))
 }
 
-type writerString struct{ *strings.Builder }
-func (w writerString) Write(p []byte) (int, error) { return w.Builder.Write(p) }
-
 func (s *Store) getRebuildByOperation(ctx context.Context, operationID string) (Rebuild, bool, error) {
 	var item Rebuild
 	var affected, started, completed sql.NullString
 	err := s.db.QueryRowContext(ctx, `SELECT operation_id,project_id,boundary_chapter,source_version,state,current_step,affected_json,before_digest,after_digest,started_at,completed_at,error_code
-		FROM derived_state_rebuilds WHERE operation_id=?`, operationID).Scan(&item.OperationID, &item.ProjectID, &item.BoundaryChapter, &item.SourceVersion,
-		&item.State, &item.CurrentStep, &affected, &item.BeforeDigest, &item.AfterDigest, &started, &completed, &item.ErrorCode)
+		FROM derived_state_rebuilds WHERE operation_id=?`, operationID).Scan(
+		&item.OperationID,
+		&item.ProjectID,
+		&item.BoundaryChapter,
+		&item.SourceVersion,
+		&item.State,
+		&item.CurrentStep,
+		&affected,
+		&item.BeforeDigest,
+		&item.AfterDigest,
+		&started,
+		&completed,
+		&item.ErrorCode,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Rebuild{}, false, nil
 	}
@@ -227,6 +262,7 @@ func (s *Store) getRebuildByOperation(ctx context.Context, operationID string) (
 	}
 	if completed.Valid {
 		if parsed, err := time.Parse(time.RFC3339Nano, completed.String); err == nil {
+			parsed = parsed.UTC()
 			item.CompletedAt = &parsed
 		}
 	}
@@ -265,11 +301,24 @@ func (s *Store) ListPlanImpacts(ctx context.Context, chapter, limit, offset int)
 		return nil, 0, newError(CodeStorage, "plan impacts could not be read", true, err)
 	}
 	defer rows.Close()
+
 	items := []PlanImpact{}
 	for rows.Next() {
 		var item PlanImpact
 		var created string
-		if err := rows.Scan(&item.ID, &item.PlanID, &item.Chapter, &item.Severity, &item.AffectedFact, &item.PreviousAssumption, &item.NewTruth, &item.ActionRequired, &item.Reason, &item.SourceVersion, &created); err != nil {
+		if err := rows.Scan(
+			&item.ID,
+			&item.PlanID,
+			&item.Chapter,
+			&item.Severity,
+			&item.AffectedFact,
+			&item.PreviousAssumption,
+			&item.NewTruth,
+			&item.ActionRequired,
+			&item.Reason,
+			&item.SourceVersion,
+			&created,
+		); err != nil {
 			return nil, 0, newError(CodeStorage, "plan impact row could not be decoded", true, err)
 		}
 		item.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
@@ -285,18 +334,32 @@ func (s *Store) ProjectionBoundaryDigest(ctx context.Context, throughChapter int
 		return "", err
 	}
 	defer rows.Close()
+
 	lines := []string{}
 	for rows.Next() {
-		var id, st, sid, pred, valueHash, authority string
-		var from, to int
-		if err := rows.Scan(&id, &st, &sid, &pred, &valueHash, &from, &to, &authority); err != nil {
+		var id, subjectType, subjectID, predicate, valueHash, authority string
+		var fromChapter, toChapter int
+		if err := rows.Scan(&id, &subjectType, &subjectID, &predicate, &valueHash, &fromChapter, &toChapter, &authority); err != nil {
 			return "", err
 		}
-		lines = append(lines, fmt.Sprintf("%s|%s|%s|%s|%s|%d|%d|%s", id, st, sid, pred, valueHash, from, to, authority))
+		lines = append(lines, fmt.Sprintf(
+			"%s|%s|%s|%s|%s|%d|%d|%s",
+			id,
+			subjectType,
+			subjectID,
+			predicate,
+			valueHash,
+			fromChapter,
+			toChapter,
+			authority,
+		))
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
 	}
 	sort.Strings(lines)
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
-	return hex.EncodeToString(sum[:]), rows.Err()
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func isSQLiteBusyOrUnique(err error) bool {
@@ -304,7 +367,8 @@ func isSQLiteBusyOrUnique(err error) bool {
 		return false
 	}
 	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "busy") || strings.Contains(message, "locked") || strings.Contains(message, "unique") || strings.Contains(message, "constraint")
+	return strings.Contains(message, "busy") ||
+		strings.Contains(message, "locked") ||
+		strings.Contains(message, "unique") ||
+		strings.Contains(message, "constraint")
 }
-
-var _ qualitygate.FactProposal
