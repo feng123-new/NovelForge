@@ -166,9 +166,6 @@ func (c *Coordinator) rebuildContextDocuments(ctx context.Context, boundary int)
 
 func (s *Store) ledgerAffectedCounts(ctx context.Context, boundary int) (map[string]int, error) {
 	result := map[string]int{}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT foreshadow_id) FROM foreshadow_events WHERE project_id=? AND chapter>=?`, s.projectID, boundary).Scan(new(int)); err != nil {
-		return nil, newError(CodeRebuildFailed, "Narrative Ledger boundary impact could not be measured", true, err)
-	}
 	var foreshadows int
 	var secrets int
 	var holders int
