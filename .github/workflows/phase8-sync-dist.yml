@@ -1,0 +1,45 @@
+name: Phase 8 temporary dist sync
+
+on:
+  push:
+    branches:
+      - feature/phase-08-chapter-versions
+    paths:
+      - .github/workflows/phase8-sync-dist.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  sync-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/phase-08-chapter-versions
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-metadata-33745513259
+          path: /tmp/phase8-frontend
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 33745513259
+      - name: Install exact CI-generated Web assets
+        run: |
+          rm -rf web/dist
+          mkdir -p web/dist
+          cp -a /tmp/phase8-frontend/web/dist/. web/dist/
+          cp /tmp/phase8-frontend/web/package-lock.json web/package-lock.json
+          git status --short -- web/dist web/package-lock.json
+      - name: Commit generated assets
+        run: |
+          if [ -z "$(git status --porcelain -- web/dist web/package-lock.json)" ]; then
+            echo "Generated assets already match the repository."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/dist web/package-lock.json
+          git commit -m "build: refresh embedded web assets for Phase 8"
+          git push origin HEAD:feature/phase-08-chapter-versions
