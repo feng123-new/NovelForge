@@ -193,3 +193,30 @@ feature/phase-07-context-compiler
 3. Fast-forward or recreate `feature/phase-07-context-compiler` from that exact accepted `main`.
 4. Run the full Go, Frontend, Windows and Docker baseline.
 5. Implement the five-layer Context Compiler, token budgets, mandatory retention, deterministic ordering, Chapter-N safety, FTS5 hybrid retrieval, diagnostics and Scenario C/D/E regressions without reopening accepted Phase 6 scope.
+
+## Phase 7 — Context Compiler and Hybrid Retrieval
+
+### Delivery candidate
+
+- Five deterministic context layers: Truth, Narrative, Recent, Historical Retrieval, and Style.
+- Configurable default token allocation 20/15/25/20/10 plus a separate 10% System reservation.
+- Fail-closed retention for Current Chapter Plan, POV Character State, Critical World Rules, Critical Foreshadows, explicit Knowledge Boundary, and required contract beats.
+- Fixed Structured → Timeline → Foreshadow → Relation → Recent → FTS5 → optional Vector retrieval sequence.
+- Project-local Migration 5 with bounded, project-scoped, Chapter-N FTS5 retrieval.
+- Stable context ordering, stable SHA-256, per-layer token diagnostics, and explicit trim reasons.
+- Incremental `novel_context` adapter; existing fields and regression behavior are retained.
+- Deterministic unit, migration, temporal-boundary, overflow, ordering, retention, FTS5, race, and benchmark coverage.
+
+### Local validation evidence
+
+- Local candidate commit: `a55cefbd4d57816fe49a062dfd2428b86fda16e5`.
+- Go toolchain: `go1.25.5 linux/amd64`.
+- Targeted tests: success.
+- Targeted Race Detector: success.
+- Full existing Go suite: success when run as an unprivileged user; the root-only run correctly exposed the pre-existing readonly-file test assumption.
+- `CGO_ENABLED=0 go build -trimpath ./cmd/novelforge`: success.
+- Benchmark: `BenchmarkCompilerFiveLayers-4`, 2,274,568 ns/op, 1,093,564 B/op, 2,911 allocs/op on Intel Xeon Platinum 8573C.
+
+### Remote acceptance
+
+Pending because this execution session exposes only read-only GitHub connector actions. Do not mark Phase 7 complete until an exact-head PR workflow, squash merge, and merge-triggered `main` workflow all succeed and their immutable IDs are recorded here.
