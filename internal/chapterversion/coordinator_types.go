@@ -34,10 +34,10 @@ type CandidateConflict struct {
 
 type Evaluation struct {
 	Proposal    qualitygate.FactProposal     `json:"proposal"`
-	Continuity qualitygate.ContinuityResult `json:"continuity"`
-	Review     *qualitygate.EditorReview    `json:"review,omitempty"`
-	Conflicts  []CandidateConflict          `json:"conflicts"`
-	EvaluatedAt time.Time                   `json:"evaluated_at"`
+	Continuity  qualitygate.ContinuityResult `json:"continuity"`
+	Review      *qualitygate.EditorReview    `json:"review,omitempty"`
+	Conflicts   []CandidateConflict          `json:"conflicts"`
+	EvaluatedAt time.Time                    `json:"evaluated_at"`
 }
 
 type Coordinator struct {
