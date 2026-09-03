@@ -180,8 +180,7 @@ CI runs a 100,000-fact fixture, asserts that SQLite uses `idx_truth_facts_asof`,
 
 ## Phase boundaries
 
-Phase 4 does not allow an LLM proposal to become authoritative by itself. Phase 5 will connect Librarian proposals, Continuity results, Final chapter selection, and atomic Truth commit. Phase 8 will use `Rebuild(from_chapter)` after an accepted human revision. Phase 9 will invoke the same repository through durable Autopilot jobs.
-
+Phase 4 does not allow an LLM proposal to become authoritative by itself. Phase 5 connects Librarian proposals, Continuity results, Final chapter selection, and atomic Truth commit. Phase 8 uses `Rebuild(from_chapter)` after an accepted human revision. Phase 9 invokes the same repository through durable Autopilot jobs.
 
 ## Narrative Ledger integration
 
@@ -189,4 +188,16 @@ Narrative Ledger migration 4 shares the project database and the existing migrat
 
 Model-originated Ledger writes are accepted only after the Phase 5 coordinator selects and finalizes a continuity-safe candidate. Each accepted change carries source chapter, source version, authority, confidence, and provenance compatible with Truth events. A replayed Finalize operation returns the existing Ledger commit, while a changed payload under the same transaction/idempotency identity fails closed.
 
-Chapter-N Secret visibility is determined independently from authority truth. Holder ranges and public reveal chapters prevent later knowledge from leaking into earlier Planner or Writer context. Rebuild and future Human Edit synchronization must preserve this boundary together with Truth projections.
+Chapter-N Secret visibility is determined independently from authority truth. Holder ranges and public reveal chapters prevent later knowledge from leaking into earlier Planner or Writer context. Rebuild and Human Edit synchronization preserve this boundary together with Truth projections.
+
+## Phase 8 Human Final correction semantics
+
+A Phase 8 `human_revision` is not authoritative merely because a person typed or saved it. The revision remains an immutable candidate until it has passed the explicit review path and is finalized. External chapter-file edits are likewise only evidence until explicit synchronization creates a `human_revision` and evaluates it.
+
+When a Human Final is finalized, the ChapterVersion coordinator converts its persisted proposal into Truth events with `human_final` authority. Existing contradictory generated-final facts are not mutated in place. The coordinator appends explicit supersede/assert events with provenance tied to the accepted Human Final version. The old events remain in `truth_events` for audit and verification.
+
+The rebuild boundary is the edited chapter N. `truthstore.Rebuild(N)` may change projections that intersect Chapter N and later, but it must not contaminate Chapter N-1 or earlier. Phase 8 acceptance Scenario B verifies this with a Chapter 50 correction: the original generated death event remains auditable, the Human Final supersedes it with `alive=true`, adds severe injury and escape facts, Chapter 49 still projects the original pre-edit state, and Chapter 50+ reflects the accepted correction.
+
+Human Final is the highest defined authority. A generated Final cannot later supersede or downgrade an Accepted Human Final fact. Repeated Finalize with the same idempotency identity replays the same Truth result rather than appending duplicate events.
+
+See [CHAPTER_VERSIONS.md](CHAPTER_VERSIONS.md) for the full save/check/accept/finalize/sync transaction and [CONTEXT_COMPILER.md](CONTEXT_COMPILER.md) for how rebuilt Chapter-N state reaches later prompts.
