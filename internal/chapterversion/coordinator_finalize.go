@@ -77,7 +77,7 @@ func (c *Coordinator) Finalize(ctx context.Context, chapter int, key, versionID 
 		}
 	}
 
-	operationID := "fin_" + hashText(key+"\x00"+digest)[:28]
+	operationID := "fin_" + hashText(key + "\x00" + digest)[:28]
 	if err := c.Store.ensureFinalizeSaga(ctx, operationID, chapter, candidate.ID, authority, mustJSON(evaluation.Proposal)); err != nil {
 		return FinalizeResult{}, err
 	}
