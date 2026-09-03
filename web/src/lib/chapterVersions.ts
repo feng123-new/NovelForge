@@ -15,6 +15,8 @@ export interface ChapterVersion {
   content?: string;
   content_sha: string;
   parent_version?: string;
+  /** Compatibility alias populated by the client from parent_version for the editor view. */
+  parent_version_id?: string;
   author_type: ChapterAuthorType;
   provider?: string;
   model?: string;
@@ -64,6 +66,7 @@ export interface DiffLine {
   new_line?: number;
   old_text?: string;
   new_text?: string;
+  text?: string;
 }
 
 export interface DiffHunk {
@@ -97,6 +100,8 @@ export interface DerivedStateRebuild {
   boundary_chapter: number;
   source_version?: string;
   status: string;
+  /** Compatibility alias populated by the client from status for the current view. */
+  state?: string;
   current_step?: string;
   affected?: Record<string, unknown>;
   before_digest?: string;
@@ -152,6 +157,8 @@ export interface ChapterSyncResult {
   review?: Record<string, unknown>;
   conflicts: number;
   sync_required: boolean;
+  /** Client-side view model assembled from the server's persisted sync evaluation fields. */
+  evaluation?: ChapterEvaluation;
 }
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -202,8 +209,16 @@ export class ChapterVersionAPI {
     return this.request(`${this.chapterPath(project, chapter)}/sync-status`);
   }
 
-  sync(project: string, chapter: number, observedSHA: string): Promise<ChapterSyncResult> {
-    return this.write(`${this.chapterPath(project, chapter)}/sync`, observedSHA ? { observed_sha: observedSHA } : {});
+  async sync(project: string, chapter: number, observedSHA: string): Promise<ChapterSyncResult> {
+    const result = await this.write<ChapterSyncResult>(`${this.chapterPath(project, chapter)}/sync`, observedSHA ? { observed_sha: observedSHA } : {});
+    result.evaluation = {
+      version_id: result.version?.id,
+      proposal: result.proposal,
+      review: result.review,
+      continuity: result.continuity,
+      conflicts: Array.from({ length: Math.max(0, result.conflicts ?? 0) }, () => ({}))
+    };
+    return result;
   }
 
   rebuild(project: string, chapter: number): Promise<DerivedStateRebuild> {
@@ -268,8 +283,25 @@ export class ChapterVersionAPI {
       const payload = envelope?.error;
       throw new APIClientError(payload?.message ?? `Request failed with status ${response.status}`, response.status, payload);
     }
+    normalizeChapterVersionPayload(data);
     return data as T;
   }
+}
+
+function normalizeChapterVersionPayload(value: unknown): void {
+  if (!value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    value.forEach(normalizeChapterVersionPayload);
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.parent_version === 'string' && record.parent_version_id === undefined) {
+    record.parent_version_id = record.parent_version;
+  }
+  if (typeof record.status === 'string' && record.boundary_chapter !== undefined && record.state === undefined) {
+    record.state = record.status;
+  }
+  Object.values(record).forEach(normalizeChapterVersionPayload);
 }
 
 export const chapterVersions = new ChapterVersionAPI();
