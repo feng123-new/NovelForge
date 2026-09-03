@@ -13,7 +13,7 @@ Last updated: 2026-09-03
 - Phase 6 acceptance record PR #25 exact-head CI `33638270944` succeeded; squash merge `dff822c14ef9a5eae7f37695fa755d00b875f047` was followed by successful main CI `33638643303`.
 - Phase 6 acceptance hardening PR #26 exact head `b2944cd8c3d7977753c1ff20ca3cf48f41ceb76c` passed PR CI `33639657423`.
 - PR #26 squash merge `12bc259e39df20664c1bf950cf95f8978572ff64` passed merge-triggered main CI `33639951628` across Go, Frontend, Windows and Docker.
-- Phase 7 production is implemented on `delivery/phase-07-context-compiler-clean`; formal completion remains gated on exact-head PR CI, squash merge, and merge-triggered `main` CI.
+- Phase 7 Context Compiler and Hybrid Retrieval was delivered by PR #28 from exact head `b5600f21cbb91180aab8faed75865734dc515739`; PR CI `33716621992` succeeded, squash merge `30a91deac2dbe1add0ba8353c05f89401a53b108` passed merge-triggered main CI `33716865357`.
 
 ## Phase status
 
@@ -26,8 +26,8 @@ Last updated: 2026-09-03
 | 4 — Structured Truth Store | complete | PR #13 merged; exact-head and merged-main CI passed. |
 | 5 — Librarian / Continuity / Quality Gate | complete | PR #19 merged; exact-head and merged-main CI passed. |
 | 6 — Narrative Ledger | complete | PR #24 production, PR #25 acceptance evidence and PR #26 hardening all merged and validated. |
-| 7 — Context Compiler and Hybrid Retrieval | in progress | Normal production source is on the clean delivery branch; remote acceptance is pending. |
-| 8–13 | not started | Begin Phase 8 only after Phase 7 is merged and its `main` CI succeeds. |
+| 7 — Context Compiler and Hybrid Retrieval | complete | PR #28 exact-head CI and merge-triggered `main` CI passed. |
+| 8–13 | not started | Phase 8 begins from the accepted Phase 7 `main`. |
 
 ## Phase 6 — Narrative Ledger
 
@@ -180,43 +180,134 @@ The accepted `main` contains only the normal `.github/workflows/ci.yml`; it cont
 
 No Phase 6 data-integrity, temporal-boundary, OpenAPI, generated-asset, Windows, Docker, dependency-license or race-gate blocker remains. Context compilation, FTS5 hybrid retrieval and token budgeting are intentionally Phase 7 work.
 
+
+## Phase 7 — Context Compiler and Hybrid Retrieval
+
+### Completed
+
+- Added `internal/contextcompiler` as the deterministic, read-only prompt-input boundary.
+- Added five stable layers: Truth, Narrative, Recent, Historical Retrieval and Style, plus a separate System reservation.
+- Added configurable default allocation `20/15/25/20/10` plus `10%` System and fail-closed validation that the complete budget totals 100%.
+- Added mandatory retention for Current Chapter Plan, POV Character State, Critical World Rules, Critical Foreshadows, explicit Knowledge Boundary and required contract beats.
+- Added deterministic overflow behavior: missing, future or unfit mandatory records return structured errors instead of being silently dropped.
+- Added fixed Structured → Timeline → Foreshadow → Relation → Recent → FTS5 → optional Vector retrieval ordering.
+- Added a `VectorRetriever` interface without an external vector-database dependency.
+- Added project-scoped, Chapter-N bounded FTS5 retrieval through project Migration 5.
+- Added read-only Truth Store and Narrative Ledger adapters, including authorized Secret knowledge and truth-free unknown boundaries.
+- Added deterministic ordering, stable rendering, SHA-256 context identity, per-layer token diagnostics and explicit trim reasons.
+- Integrated incrementally with the established `novel_context` tool while retaining its existing fields and regression behavior.
+
+### Changed files
+
+Production, test and documentation paths delivered by PR #28:
+
+```text
+.github/workflows/ci.yml
+docs/ARCHITECTURE.md
+docs/CONTEXT_COMPILER.md
+docs/IMPLEMENTATION_STATUS.md
+internal/contextcompiler/*.go
+internal/project/context_migration.go
+internal/tools/novel_context.go
+internal/tools/novel_context_test.go
+```
+
+### Architecture decisions
+
+- Truth Store remains authoritative; FTS5 and optional vector results are retrieval evidence and cannot override Truth.
+- The compiler receives read-only providers and has no world-state, Ledger or Chapter Final write capability.
+- All provider items are evaluated against the requested Chapter N before allocation.
+- Mandatory safety constraints are selected before optional context and fail closed when they cannot fit.
+- Stable layer, stage, priority, source-chapter, kind and ID tie-breaks prevent map, SQL-default or filesystem-order nondeterminism.
+- The existing `novel_context` path is migrated through an adapter rather than being destructively replaced.
+
+### Database / migration changes
+
+Project Migration 5 adds:
+
+```text
+context_documents
+context_documents_fts
+idx_context_documents_project_chapter
+context_documents_ai
+context_documents_ad
+context_documents_au
+```
+
+The FTS index is external-content based, project scoped and maintained through insert, update and delete synchronization triggers. Queries are bounded by project and `source_chapter <= Chapter N`. The existing migration runner continues to provide checksums, backup, transactionality and rollback behavior.
+
+### API and UI changes
+
+Phase 7 adds no state-changing HTTP route and no speculative UI control. Context diagnostics are exposed through the existing authoritative `novel_context` result as `_context_compiler`; no browser-held state is promoted to authority.
+
+### Tests executed
+
+The exact PR and merged-main workflows passed:
+
+```text
+gofmt drift check
+go vet ./...
+go test -buildvcs=false -count=1 ./...
+targeted race including internal/contextcompiler
+Truth Store 100,000-fact temporal index gate
+OpenAPI route/schema validation
+CGO_ENABLED=0 NovelForge build
+module-lock and Go dependency-license gates
+lifecycle smoke and brand audit
+npm ci
+Svelte/TypeScript check
+Vitest
+Vite production build
+npm high-severity audit
+frontend dependency-license inventory
+committed Web build-drift check
+Windows full tests and build
+Docker build
+```
+
+Deterministic Phase 7 tests cover default and custom budget allocation, invalid-budget rejection, mandatory overflow, missing requirements, future mandatory failure, future optional trimming, stable order and context hash, exact retrieval stage order, duplicate removal, per-layer diagnostics, Truth and Ledger adapters, Secret knowledge boundaries, FTS5 project/chapter isolation, upsert/delete synchronization, query-plan index use, migration and legacy `novel_context` integration.
+
+### Performance
+
+`BenchmarkCompilerFiveLayers-4` on the delivery candidate recorded:
+
+```text
+1,626,468 ns/op
+1,089,548 B/op
+2,910 allocs/op
+```
+
+This is a Phase 7 diagnostic benchmark, not the final Phase 13 100/500/1000-chapter release benchmark.
+
+### License review
+
+Phase 7 adds no Go or npm dependency. The existing Apache-2.0 fail-closed Go and frontend dependency-license gates remained enabled and passed. No GPL/AGPL reference implementation, SQL, test, component or prompt was copied.
+
+### Acceptance evidence
+
+| Delivery | Exact head | PR CI | Merge | Main CI |
+| --- | --- | --- | --- | --- |
+| Phase 7 production PR #28 | `b5600f21cbb91180aab8faed75865734dc515739` | `33716621992` — success | `30a91deac2dbe1add0ba8353c05f89401a53b108` | `33716865357` — success |
+
+### Repository hygiene
+
+The production PR contains only normal source, tests, Migration 5, permanent CI hardening and documentation. No payload fragment, source generator, temporary workflow, self-modifying finalizer or Phase 8 implementation was merged into `main`.
+
+### Known issues
+
+No Phase 7 data-integrity, future-state leakage, deterministic-ordering, FTS5, race, Windows, Docker, generated-asset, OpenAPI or dependency-license blocker remains. The vector provider is intentionally optional and V1 has no external vector-database dependency.
+
 ## Next phase
 
 ```text
-Phase 7 — Context Compiler and Hybrid Retrieval
-delivery/phase-07-context-compiler-clean
+Phase 8 — Chapter Version and Human Edit Sync
+feature/phase-08-chapter-versions
 ```
 
 ## Exact resume point
 
-1. Fetch and prune the repository after this evidence record is merged and its merge-triggered `main` CI succeeds.
-2. Verify the exact current `main` SHA and that no unrelated open PR requires reconciliation.
-3. Review `delivery/phase-07-context-compiler-clean` against that exact accepted `main`.
-4. Require the exact production head to pass Go, Frontend, Windows, and Docker CI.
-5. Squash merge only after all required jobs succeed, then verify the merge-triggered `main` workflow before recording Phase 7 as complete.
-
-## Phase 7 — Context Compiler and Hybrid Retrieval
-
-### Delivery candidate
-
-- Five deterministic context layers: Truth, Narrative, Recent, Historical Retrieval, and Style.
-- Configurable default token allocation 20/15/25/20/10 plus a separate 10% System reservation.
-- Fail-closed retention for Current Chapter Plan, POV Character State, Critical World Rules, Critical Foreshadows, explicit Knowledge Boundary, and required contract beats.
-- Fixed Structured → Timeline → Foreshadow → Relation → Recent → FTS5 → optional Vector retrieval sequence.
-- Project-local Migration 5 with bounded, project-scoped, Chapter-N FTS5 retrieval.
-- Stable context ordering, stable SHA-256, per-layer token diagnostics, and explicit trim reasons.
-- Incremental `novel_context` adapter; existing fields and regression behavior are retained.
-- Deterministic unit, migration, temporal-boundary, overflow, ordering, retention, FTS5, race, and benchmark coverage.
-
-### Local validation evidence
-
-- Go toolchain: `go1.25.5 linux/amd64`.
-- Targeted tests: success.
-- Targeted Race Detector: success.
-- Full existing Go suite: success when run as an unprivileged user; the root-only run correctly exposed the pre-existing readonly-file test assumption.
-- `CGO_ENABLED=0 go build -trimpath ./cmd/novelforge`: success.
-- Benchmark: `BenchmarkCompilerFiveLayers-4`, 1,626,468 ns/op, 1,089,548 B/op, 2,910 allocs/op on AMD EPYC 9V74.
-
-### Remote acceptance
-
-The normal production source is on `delivery/phase-07-context-compiler-clean`. Do not mark Phase 7 complete until its exact-head Pull Request workflow, squash merge, and merge-triggered `main` workflow all succeed and their immutable IDs are recorded here.
+1. Fetch and prune after this acceptance record is merged and its merge-triggered `main` CI succeeds.
+2. Verify the exact accepted `main` SHA and that no unrelated Pull Request requires reconciliation.
+3. Create or fast-forward `feature/phase-08-chapter-versions` from that exact accepted `main`.
+4. Run the full Go, Frontend, Windows and Docker baseline.
+5. Implement immutable ChapterVersion history, diff, restore, active-final uniqueness, Human Revision synchronization and Chapter-N derived-state rebuild without reopening accepted Phase 7 scope.
