@@ -39,6 +39,7 @@ func (s *Server) registerWorkspaceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/projects/{id}/chapters", s.handleChapterCollection)
 	mux.HandleFunc("/api/projects/{id}/foundation", s.handleFoundationRequest)
+	s.registerChapterVersionRoutes(mux)
 	s.registerQualityRoutes(mux)
 	s.registerLedgerRoutes(mux)
 }
@@ -100,6 +101,11 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"foundation_worker_available":   false,
 			"autopilot_worker_available":    false,
 			"chapter_quality_gate":          true,
+			"chapter_versions":              true,
+			"chapter_inline_diff":           true,
+			"chapter_side_by_side_diff":     true,
+			"human_edit_sync":               true,
+			"chapter_boundary_rebuild":      true,
 			"narrative_ledger":              true,
 			"quality_model_available":       s.qualityConfigured(),
 			"quality_max_rewrites":          s.cfg.QualityPolicy.MaxRewrites,
