@@ -2,8 +2,10 @@ package chapterversion
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
@@ -39,7 +41,8 @@ func (s *Service) SaveHuman(ctx context.Context, chapter int, key, content strin
 	if active != nil {
 		parent = active.ID
 	}
-	digest := requestDigest("human_save", s.Store.projectID, string(rune(chapter)), parent, domain.ChapterContentSHA256(content))
+	sha := domain.ChapterContentSHA256(content)
+	digest := requestDigest("human_save", s.Store.projectID, strconv.Itoa(chapter), parent, sha)
 	op, replay, err := s.Store.BeginOperation(ctx, key, "human_save", chapter, parent, digest)
 	if err != nil {
 		return Version{}, err
@@ -50,7 +53,7 @@ func (s *Service) SaveHuman(ctx context.Context, chapter int, key, content strin
 		} else if ok {
 			return result, nil
 		}
-		if existing, findErr := s.Store.findMatching(ctx, chapter, parent, TypeHumanRevision, AuthorHuman, domain.ChapterContentSHA256(content)); findErr == nil && existing != nil {
+		if existing, findErr := s.Store.findMatching(ctx, chapter, parent, TypeHumanRevision, AuthorHuman, sha); findErr == nil && existing != nil {
 			_ = s.Store.CompleteOperation(ctx, key, *existing)
 			return *existing, nil
 		}
@@ -58,7 +61,7 @@ func (s *Service) SaveHuman(ctx context.Context, chapter int, key, content strin
 	provenance, _ := json.Marshal(map[string]any{
 		"source":       "human_editor",
 		"parent_final": parent,
-		"content_sha":  domain.ChapterContentSHA256(content),
+		"content_sha":  sha,
 	})
 	version, err := s.Store.Create(ctx, chapter, CreateInput{Content: content, Type: TypeHumanRevision, ParentVersionID: parent, AuthorType: AuthorHuman, Provenance: provenance})
 	if err != nil {
@@ -160,7 +163,7 @@ func (s *Store) findMatching(ctx context.Context, chapter int, parent string, ty
 		AND version_type=? AND author_type=? AND content_sha=? ORDER BY version_number ASC LIMIT 1`,
 		s.projectID, chapter, parent, string(typ), string(author), sha).Scan(&id)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) || strings.Contains(err.Error(), "no rows") {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, newError(CodeStorage, "chapter version idempotency lookup failed", true, err)
