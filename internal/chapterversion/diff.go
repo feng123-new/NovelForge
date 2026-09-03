@@ -116,6 +116,17 @@ func (s *Store) Diff(ctx context.Context, chapter int, fromID, toID string, mode
 				}
 				hunk.NewLines++
 			}
+			switch atom.kind {
+			case "add":
+				hunk.Additions++
+			case "delete":
+				hunk.Deletions++
+			case "replace":
+				hunk.Additions++
+				hunk.Deletions++
+			default:
+				hunk.Unchanged++
+			}
 			hunk.Lines = append(hunk.Lines, line)
 		}
 		result.Hunks = append(result.Hunks, hunk)
