@@ -131,11 +131,14 @@ type DiffLine struct {
 }
 
 type DiffHunk struct {
-	OldStart int        `json:"old_start"`
-	OldLines int        `json:"old_lines"`
-	NewStart int        `json:"new_start"`
-	NewLines int        `json:"new_lines"`
-	Lines    []DiffLine `json:"lines"`
+	OldStart  int        `json:"old_start"`
+	OldLines  int        `json:"old_lines"`
+	NewStart  int        `json:"new_start"`
+	NewLines  int        `json:"new_lines"`
+	Additions int        `json:"additions"`
+	Deletions int        `json:"deletions"`
+	Unchanged int        `json:"unchanged"`
+	Lines     []DiffLine `json:"lines"`
 }
 
 type DiffResult struct {
