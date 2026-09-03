@@ -14,7 +14,7 @@ export interface ChapterVersion {
   status: string;
   content?: string;
   content_sha: string;
-  parent_version_id?: string;
+  parent_version?: string;
   author_type: ChapterAuthorType;
   provider?: string;
   model?: string;
@@ -27,6 +27,7 @@ export interface ChapterVersion {
   rejected: boolean;
   active_final: boolean;
   authority?: string;
+  rejection_reason?: string;
 }
 
 export interface ChapterVersionPage {
@@ -63,7 +64,6 @@ export interface DiffLine {
   new_line?: number;
   old_text?: string;
   new_text?: string;
-  text?: string;
 }
 
 export interface DiffHunk {
@@ -74,7 +74,7 @@ export interface DiffHunk {
   additions: number;
   deletions: number;
   unchanged: number;
-  lines?: DiffLine[];
+  lines: DiffLine[];
 }
 
 export interface ChapterDiff {
@@ -96,7 +96,7 @@ export interface DerivedStateRebuild {
   project_id?: string;
   boundary_chapter: number;
   source_version?: string;
-  state: string;
+  status: string;
   current_step?: string;
   affected?: Record<string, unknown>;
   before_digest?: string;
@@ -104,13 +104,11 @@ export interface DerivedStateRebuild {
   started_at?: string;
   completed_at?: string;
   error_code?: string;
-  status?: string;
 }
 
 export interface ChapterPlanImpact {
   id: string;
   source_version: string;
-  boundary_chapter: number;
   plan_id: string;
   chapter: number;
   severity: string;
@@ -148,10 +146,12 @@ export interface ChapterFinalizeResult {
 }
 
 export interface ChapterSyncResult {
-  version?: ChapterVersion;
-  evaluation?: ChapterEvaluation;
-  sync_status?: ChapterSyncStatus;
-  [key: string]: unknown;
+  version: ChapterVersion;
+  proposal?: Record<string, unknown>;
+  continuity?: { status?: string; blocking?: boolean; issues?: unknown[] };
+  review?: Record<string, unknown>;
+  conflicts: number;
+  sync_required: boolean;
 }
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
