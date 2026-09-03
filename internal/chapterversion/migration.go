@@ -27,14 +27,15 @@ CREATE TABLE chapter_versions (
     review_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(review_json)),
     continuity_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(continuity_json)),
     provenance_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(provenance_json)),
-    created_at TEXT NOT NULL,
-    UNIQUE(project_id, chapter, version_number)
+    created_at TEXT NOT NULL
 );
-CREATE INDEX idx_chapter_versions_project_chapter_created
+CREATE UNIQUE INDEX idx_chapter_versions_number
+    ON chapter_versions(project_id, chapter, version_number);
+CREATE INDEX idx_chapter_versions_created
     ON chapter_versions(project_id, chapter, created_at, version_number);
 CREATE INDEX idx_chapter_versions_parent
     ON chapter_versions(parent_version_id);
-CREATE INDEX idx_chapter_versions_content_sha
+CREATE INDEX idx_chapter_versions_sha
     ON chapter_versions(project_id, chapter, content_sha);
 CREATE TRIGGER chapter_versions_parent_same_chapter_insert
 BEFORE INSERT ON chapter_versions
@@ -152,7 +153,7 @@ CREATE TABLE derived_state_rebuilds (
     completed_at TEXT,
     error_code TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX idx_derived_state_rebuilds_boundary_state
+CREATE INDEX idx_derived_rebuild_boundary
     ON derived_state_rebuilds(project_id, boundary_chapter, state, started_at);
 CREATE UNIQUE INDEX uq_derived_state_rebuilds_running
     ON derived_state_rebuilds(project_id, boundary_chapter)
