@@ -135,15 +135,18 @@ func (c *Coordinator) rebuildContextDocuments(ctx context.Context, boundary int)
 	if err != nil {
 		return newError(CodeRebuildFailed, "active final context sources could not be read", true, err)
 	}
-	defer rows.Close()
 
-	fts := contextcompiler.NewFTSStore(c.Store.db)
+	// The project SQLite handle deliberately allows one open connection. Fully
+	// materialize and close the read cursor before FTS writes so rebuild cannot
+	// deadlock waiting for a second connection from the same sql.DB.
+	documents := []contextcompiler.Document{}
 	for rows.Next() {
 		var id string
 		var content string
 		var created string
 		var chapter int
 		if err := rows.Scan(&id, &chapter, &content, &created); err != nil {
+			_ = rows.Close()
 			return newError(CodeRebuildFailed, "active final context source could not be decoded", true, err)
 		}
 		createdAt, _ := time.Parse(time.RFC3339Nano, created)
@@ -157,11 +160,23 @@ func (c *Coordinator) rebuildContextDocuments(ctx context.Context, boundary int)
 		document.SourceVersion = id
 		document.Priority = 100
 		document.CreatedAt = createdAt.UTC()
+		documents = append(documents, document)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return newError(CodeRebuildFailed, "active final context source iteration failed", true, err)
+	}
+	if err := rows.Close(); err != nil {
+		return newError(CodeRebuildFailed, "active final context sources could not be closed", true, err)
+	}
+
+	fts := contextcompiler.NewFTSStore(c.Store.db)
+	for _, document := range documents {
 		if err := fts.Upsert(ctx, document); err != nil {
 			return newError(CodeRebuildFailed, "active final context source could not be rebuilt", true, err)
 		}
 	}
-	return rows.Err()
+	return nil
 }
 
 func (s *Store) ledgerAffectedCounts(ctx context.Context, boundary int) (map[string]int, error) {
