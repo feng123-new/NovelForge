@@ -169,18 +169,18 @@ type FinalizeResult struct {
 }
 
 type Rebuild struct {
-	OperationID      string          `json:"operation_id"`
-	ProjectID        string          `json:"project_id"`
-	BoundaryChapter  int             `json:"boundary_chapter"`
-	SourceVersion    string          `json:"source_version"`
-	State            string          `json:"status"`
-	CurrentStep      string          `json:"current_step"`
-	Affected         json.RawMessage `json:"affected"`
-	BeforeDigest     string          `json:"before_digest"`
-	AfterDigest      string          `json:"after_digest"`
-	StartedAt        time.Time       `json:"started_at"`
-	CompletedAt      *time.Time      `json:"completed_at,omitempty"`
-	ErrorCode        string          `json:"error_code,omitempty"`
+	OperationID     string          `json:"operation_id"`
+	ProjectID       string          `json:"project_id"`
+	BoundaryChapter int             `json:"boundary_chapter"`
+	SourceVersion   string          `json:"source_version"`
+	State           string          `json:"status"`
+	CurrentStep     string          `json:"current_step"`
+	Affected        json.RawMessage `json:"affected"`
+	BeforeDigest    string          `json:"before_digest"`
+	AfterDigest     string          `json:"after_digest"`
+	StartedAt       time.Time       `json:"started_at"`
+	CompletedAt     *time.Time      `json:"completed_at,omitempty"`
+	ErrorCode       string          `json:"error_code,omitempty"`
 }
 
 type PlanImpact struct {
@@ -198,10 +198,10 @@ type PlanImpact struct {
 }
 
 type SyncResult struct {
-	Version      Version      `json:"version"`
+	Version      Version         `json:"version"`
 	Proposal     json.RawMessage `json:"proposal,omitempty"`
 	Continuity   json.RawMessage `json:"continuity,omitempty"`
 	Review       json.RawMessage `json:"review,omitempty"`
-	Conflicts    int          `json:"conflicts"`
-	SyncRequired bool         `json:"sync_required"`
+	Conflicts    int             `json:"conflicts"`
+	SyncRequired bool            `json:"sync_required"`
 }
