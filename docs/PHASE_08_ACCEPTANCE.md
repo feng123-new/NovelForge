@@ -29,7 +29,19 @@ The squash merge was independently revalidated on `main` by CI run `33746266244`
 | Acceptance squash merge | `8cc2759bd44d554b9c259531192fba120f38e5da` |
 | Acceptance merge-triggered `main` CI | `33747741718` — success |
 
-PR #31 changed only `docs/IMPLEMENTATION_STATUS.md` and this evidence file. Its exact Head passed Go, Frontend, Windows, and Docker, and the resulting `main` commit passed the same four-job workflow. Phase 8 is therefore formally accepted; Phase 9 may begin only from an accepted `main` descendant that preserves these gates.
+PR #31 changed only `docs/IMPLEMENTATION_STATUS.md` and this evidence file. Its exact Head passed Go, Frontend, Windows, and Docker, and the resulting `main` commit passed the same four-job workflow.
+
+## Final closure correction
+
+| Evidence | Value |
+| --- | --- |
+| Closure correction PR | #32 — `docs: finalize Phase 8 acceptance closure` |
+| Exact green closure head | `bb7a532bf00fad371b6eedb010ef388c8c324bfc` |
+| Exact-head closure CI | `33748179603` — success |
+| Closure squash merge | `2718a0728321328e51cfc6773c5f8fd40178f908` |
+| Final closure `main` CI | `33748407175` — success |
+
+PR #32 changed only this evidence file, removed the stale pending label, passed all four exact-head jobs, and its merge passed all four `main` jobs. Phase 8 is therefore formally and internally consistently accepted.
 
 ## Delivered production behavior
 
@@ -98,4 +110,4 @@ At formal acceptance closure there were no open Pull Requests. The acceptance br
 
 ## Acceptance result
 
-Phase 8 is complete. Production PR #30 and acceptance PR #31 both passed exact-head CI, both were squash-merged, and both merge-triggered `main` workflows succeeded. `docs/IMPLEMENTATION_STATUS.md` marks Phase 8 complete and records Phase 9 as not started. The next permitted branch is `feature/phase-09-autopilot`, created from the final accepted `main` after repository hygiene verification.
+Phase 8 is complete. Production PR #30, acceptance record PR #31 and final closure correction PR #32 each passed exact-head CI, were squash-merged, and passed merge-triggered `main` CI. `docs/IMPLEMENTATION_STATUS.md` marks Phase 8 complete and Phase 9 not started. `feature/phase-09-autopilot` was created only after final closure CI and contains no Phase 9 product implementation at handoff.
