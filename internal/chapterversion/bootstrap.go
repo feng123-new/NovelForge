@@ -29,13 +29,16 @@ func (s *Store) BootstrapLegacyFinal(ctx context.Context, chapter int) (*Version
 		return nil, err
 	}
 	provenance, _ := json.Marshal(map[string]any{
-		"source": "pre_phase8_final_bootstrap",
-		"content_sha": sha,
-		"truth_replayed": false,
+		"source":          "pre_phase8_final_bootstrap",
+		"content_sha":     sha,
+		"truth_replayed":  false,
 		"ledger_replayed": false,
 	})
 	version, err := s.Create(ctx, chapter, CreateInput{
-		Content: content, Type: TypeFinal, AuthorType: AuthorSystem, Provenance: provenance,
+		Content:     content,
+		Type:        TypeFinal,
+		AuthorType:  AuthorSystem,
+		Provenance:  provenance,
 	})
 	if err != nil {
 		// A concurrent bootstrap can win version 1. Re-read the Active Final
