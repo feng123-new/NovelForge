@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	projectMigrations = append(projectMigrations, chapterversion.Migration())
+	projectMigrations = append(projectMigrations, chapterversion.Migration(), chapterversion.CounterMigration())
 }
 
 // OpenChapterVersionStore resolves an opaque project ID, applies all registered
