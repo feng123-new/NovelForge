@@ -114,7 +114,7 @@ func truthSource(final Version, extractor string, authority truthstore.Authority
 }
 
 func safeTruthKey(operationID string, index int, suffix string) string {
-	return "p8:" + hashText(operationID+":"+strconv.Itoa(index)+":"+suffix)[:48]
+	return "p8:" + hashText(operationID + ":" + strconv.Itoa(index) + ":" + suffix)[:48]
 }
 
 func truthSourceType(authority truthstore.Authority) string {
