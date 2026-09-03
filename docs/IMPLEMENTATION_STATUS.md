@@ -1,6 +1,6 @@
 # NovelForge Implementation Status
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 ## Verified repository state
 
@@ -13,7 +13,7 @@ Last updated: 2026-09-02
 - Phase 6 acceptance record PR #25 exact-head CI `33638270944` succeeded; squash merge `dff822c14ef9a5eae7f37695fa755d00b875f047` was followed by successful main CI `33638643303`.
 - Phase 6 acceptance hardening PR #26 exact head `b2944cd8c3d7977753c1ff20ca3cf48f41ceb76c` passed PR CI `33639657423`.
 - PR #26 squash merge `12bc259e39df20664c1bf950cf95f8978572ff64` passed merge-triggered main CI `33639951628` across Go, Frontend, Windows and Docker.
-- Phase 7 production work has not started. The exact next delivery branch is `feature/phase-07-context-compiler`.
+- Phase 7 production is implemented on `delivery/phase-07-context-compiler-clean`; formal completion remains gated on exact-head PR CI, squash merge, and merge-triggered `main` CI.
 
 ## Phase status
 
@@ -26,7 +26,8 @@ Last updated: 2026-09-02
 | 4 — Structured Truth Store | complete | PR #13 merged; exact-head and merged-main CI passed. |
 | 5 — Librarian / Continuity / Quality Gate | complete | PR #19 merged; exact-head and merged-main CI passed. |
 | 6 — Narrative Ledger | complete | PR #24 production, PR #25 acceptance evidence and PR #26 hardening all merged and validated. |
-| 7–13 | not started | Begin Phase 7 only from the latest accepted `main`. |
+| 7 — Context Compiler and Hybrid Retrieval | in progress | Normal production source is on the clean delivery branch; remote acceptance is pending. |
+| 8–13 | not started | Begin Phase 8 only after Phase 7 is merged and its `main` CI succeeds. |
 
 ## Phase 6 — Narrative Ledger
 
@@ -183,16 +184,16 @@ No Phase 6 data-integrity, temporal-boundary, OpenAPI, generated-asset, Windows,
 
 ```text
 Phase 7 — Context Compiler and Hybrid Retrieval
-feature/phase-07-context-compiler
+delivery/phase-07-context-compiler-clean
 ```
 
 ## Exact resume point
 
 1. Fetch and prune the repository after this evidence record is merged and its merge-triggered `main` CI succeeds.
 2. Verify the exact current `main` SHA and that no unrelated open PR requires reconciliation.
-3. Fast-forward or recreate `feature/phase-07-context-compiler` from that exact accepted `main`.
-4. Run the full Go, Frontend, Windows and Docker baseline.
-5. Implement the five-layer Context Compiler, token budgets, mandatory retention, deterministic ordering, Chapter-N safety, FTS5 hybrid retrieval, diagnostics and Scenario C/D/E regressions without reopening accepted Phase 6 scope.
+3. Review `delivery/phase-07-context-compiler-clean` against that exact accepted `main`.
+4. Require the exact production head to pass Go, Frontend, Windows, and Docker CI.
+5. Squash merge only after all required jobs succeed, then verify the merge-triggered `main` workflow before recording Phase 7 as complete.
 
 ## Phase 7 — Context Compiler and Hybrid Retrieval
 
@@ -209,14 +210,13 @@ feature/phase-07-context-compiler
 
 ### Local validation evidence
 
-- Local candidate commit: `a55cefbd4d57816fe49a062dfd2428b86fda16e5`.
 - Go toolchain: `go1.25.5 linux/amd64`.
 - Targeted tests: success.
 - Targeted Race Detector: success.
 - Full existing Go suite: success when run as an unprivileged user; the root-only run correctly exposed the pre-existing readonly-file test assumption.
 - `CGO_ENABLED=0 go build -trimpath ./cmd/novelforge`: success.
-- Benchmark: `BenchmarkCompilerFiveLayers-4`, 2,274,568 ns/op, 1,093,564 B/op, 2,911 allocs/op on Intel Xeon Platinum 8573C.
+- Benchmark: `BenchmarkCompilerFiveLayers-4`, 1,626,468 ns/op, 1,089,548 B/op, 2,910 allocs/op on AMD EPYC 9V74.
 
 ### Remote acceptance
 
-Pending because this execution session exposes only read-only GitHub connector actions. Do not mark Phase 7 complete until an exact-head PR workflow, squash merge, and merge-triggered `main` workflow all succeed and their immutable IDs are recorded here.
+The normal production source is on `delivery/phase-07-context-compiler-clean`. Do not mark Phase 7 complete until its exact-head Pull Request workflow, squash merge, and merge-triggered `main` workflow all succeed and their immutable IDs are recorded here.
