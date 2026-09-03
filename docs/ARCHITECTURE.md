@@ -205,7 +205,6 @@ Continuity uses the Phase 4 Chapter-N Truth query for inventory, knowledge, loca
 
 Finalization is a recoverable saga: accepted candidate → idempotent generated-final Truth events → hash-checked chapter-file switch → durable checkpoint → `completed`. The chapter file switch preserves a same-directory backup across the Windows replace boundary, and retries do not repeat Truth events or model stages. See `docs/QUALITY_GATE.md`.
 
-
 ## 18. Phase 6 Narrative Ledger
 
 Phase 6 introduces `internal/narrativeledger` as an indexed, project-local projection for Foreshadows and Secrets. It does not create a competing truth authority: accepted chapter Finals remain the only model-originated write boundary, and all Ledger changes retain Truth-compatible authority and provenance.
@@ -219,3 +218,15 @@ Foreshadow `OVERDUE` is a Chapter-N calculation, never a stored lifecycle state.
 `internal/contextcompiler` is the deterministic prompt-input boundary. It assembles Truth, Narrative, Recent, Historical, and Style layers under a configurable token budget while reserving System capacity. Required plan, POV, hard-rule, Foreshadow, knowledge-boundary, and contract-beat records are pinned and fail closed when they cannot fit.
 
 Historical retrieval has a fixed Structured → Timeline → Foreshadow → Relation → Recent → FTS5 → optional Vector order. FTS5 and vectors remain evidence rather than authority, and every item is checked against Chapter N before selection. The existing `novel_context` tool uses the legacy-map adapter and exposes per-layer diagnostics without removing its established fields.
+
+## 20. Phase 8 immutable ChapterVersion boundary
+
+Phase 8 makes `internal/chapterversion` the deterministic chapter-text authority boundary. `chapter_versions` is append-only for content, SHA, parent and source provenance; workflow decisions are audit events. `chapter_active_finals` is a one-row-per-project/chapter pointer that can reference only an immutable `final` version. Historical Finals and rejected revisions remain queryable.
+
+Web saves, explicit external-file sync and restore operations always create new versions. They never write chapter files or Truth directly. Human revisions must run Librarian Fact Proposal, Continuity and Truth conflict evaluation before acceptance. A blocking Continuity FAIL cannot be overridden by Editor score. Only a Final produced by the Phase 8 coordinator can cross the Truth commit boundary.
+
+Finalize extends the established commit-chapter recovery model rather than replacing it. The persisted saga records final-version creation, Truth event IDs, Narrative Ledger commit, chapter-file switch, Active Final switch, Context FTS update, Chapter-N boundary rebuild and checkpoint. Replay reuses completed evidence and does not repeat Truth or Ledger events. Accepted Human Finals use the highest `human_final` authority and explicitly supersede lower-authority generated facts instead of deleting history.
+
+When the finalized chapter file SHA changes externally, the server records `sync_required` without mutating the Active Final. Explicit Sync revalidates the observed SHA, creates a parented `human_revision`, reruns semantic checks and retains the revision on failure. After an accepted Human Final, Truth and Context derived state are invalidated/rebuilt from Chapter N, Chapter N-1 and earlier remain unchanged, and Chapter N+1 plan impacts are recorded without silently rewriting future plans.
+
+See `docs/CHAPTER_VERSIONS.md` for the model, Diff/Restore/API/Web contracts, fault recovery and Scenario B acceptance path.
