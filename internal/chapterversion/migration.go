@@ -61,7 +61,7 @@ CREATE TABLE chapter_version_events (
     chapter INTEGER NOT NULL CHECK(chapter >= 1),
     version_id TEXT NOT NULL REFERENCES chapter_versions(id) ON DELETE RESTRICT,
     event_type TEXT NOT NULL CHECK(event_type IN (
-        'created','accept','reject','restore','finalize','active_final_switched',
+        'created','evaluation_completed','accept','reject','restore','finalize','active_final_switched',
         'external_change_detected','sync_started','sync_completed',
         'rebuild_started','rebuild_completed','rebuild_failed'
     )),
@@ -154,6 +154,9 @@ CREATE TABLE derived_state_rebuilds (
 );
 CREATE INDEX idx_derived_state_rebuilds_boundary_state
     ON derived_state_rebuilds(project_id, boundary_chapter, state, started_at);
+CREATE UNIQUE INDEX uq_derived_state_rebuilds_running
+    ON derived_state_rebuilds(project_id, boundary_chapter)
+    WHERE state IN ('pending','running');
 
 CREATE TABLE chapter_plan_impacts (
     id TEXT PRIMARY KEY,
@@ -191,6 +194,9 @@ CREATE TABLE chapter_finalize_sagas (
 );
 CREATE INDEX idx_chapter_finalize_sagas_project_chapter_state
     ON chapter_finalize_sagas(project_id, chapter, state, created_at);
+CREATE UNIQUE INDEX uq_chapter_finalize_sagas_running
+    ON chapter_finalize_sagas(project_id, chapter)
+    WHERE state IN ('pending','running');
 
 CREATE TABLE chapter_version_checkpoints (
     operation_id TEXT PRIMARY KEY REFERENCES chapter_finalize_sagas(operation_id) ON DELETE RESTRICT,
