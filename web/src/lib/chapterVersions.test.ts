@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { APIClientError } from './api';
 import { ChapterVersionAPI } from './chapterVersions';
 
 function jsonResponse(body: unknown, status = 200) {
@@ -16,7 +15,7 @@ describe('ChapterVersionAPI', () => {
       return jsonResponse({
         id: 'cv-human', project_id: 'p1', chapter: 50, version_number: 3,
         type: 'human_revision', status: 'human_revision', content: 'Character A escaped.',
-        content_sha: 'a'.repeat(64), parent_version_id: 'cv-final', author_type: 'human',
+        content_sha: 'a'.repeat(64), parent_version: 'cv-final', author_type: 'human',
         created_at: '2026-09-03T00:00:00Z', accepted: false, rejected: false, active_final: false
       }, 201);
     });
@@ -52,7 +51,7 @@ describe('ChapterVersionAPI', () => {
       error: { code: 'DIFF_TOO_LARGE', message: 'diff exceeds bounded input size', details: {}, retryable: false, trace_id: 'trace-1' }
     }, 413));
     const client = new ChapterVersionAPI('/api', fetcher);
-    await expect(client.diff('p1', 50, 'a', 'b', 'inline')).rejects.toMatchObject<Partial<APIClientError>>({
+    await expect(client.diff('p1', 50, 'a', 'b', 'inline')).rejects.toMatchObject({
       status: 413,
       payload: expect.objectContaining({ code: 'DIFF_TOO_LARGE', trace_id: 'trace-1' })
     });
