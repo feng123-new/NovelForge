@@ -80,6 +80,7 @@ describe('ChapterVersions page', () => {
       expect.objectContaining({ method: 'POST' })
     ));
     expect(await screen.findByText(/Human revision v3 已创建/)).toBeInTheDocument();
-    expect(screen.getByText('v2')).toBeInTheDocument();
+    const history = await screen.findByTestId('version-history');
+    expect(within(history).getByText('v2 · final')).toBeInTheDocument();
   });
 });
