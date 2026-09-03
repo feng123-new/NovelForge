@@ -259,7 +259,7 @@ func (s *Server) handleQualityRewrite(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleQualityFinalize(w http.ResponseWriter, r *http.Request) {
 	s.handleQualityEmptyAction(w, r, "chapter.quality.finalize", false, func(c *qualitygate.Coordinator, projectID string, chapter int, key string) (qualitygate.Snapshot, error) {
-		return c.Finalize(r.Context(), projectID, chapter, key)
+		return s.finalizeQualityPhase8(r, c, projectID, chapter, key)
 	})
 }
 

@@ -41,3 +41,17 @@ See [QUALITY_GATE.md](QUALITY_GATE.md) for state transitions, recovery and HTTP 
 - **Planner** consumes `NarrativeLedgerContextProvider`; OVERDUE and critical items are mandatory, and Secret truth is filtered by role/Chapter-N knowledge.
 - **Continuity** may use the full authority view for checks, but its result cannot make a character know a Secret.
 - **Retrieval/RAG** is not a writer and never overrides ledger/Truth authority.
+
+## Phase 8 human-edit and version boundaries
+
+Phase 8 does not give any model agent permission to mutate an accepted human chapter. `ChapterVersion` persistence and the `Coordinator` remain deterministic Go-owned boundaries.
+
+- **Human editor / external file** may supply prose only. Saving creates `human_revision`; it is not a Truth write and does not replace Active Final.
+- **Librarian** may extract a new proposal from that immutable revision. It cannot auto-accept the revision, switch Active Final, or supersede Truth.
+- **Continuity** may return PASS/WARN/FAIL against Chapter-N Truth. A blocking FAIL prevents acceptance/finalization and cannot be overruled by Editor prose quality.
+- **Editor** may score and explain a revision but cannot promote authority or suppress a Truth conflict.
+- **Planner / Context Compiler** consume rebuilt Chapter-N state after an accepted Human Final; they do not infer the correction from the raw edited file.
+- **Retrieval/RAG** remains evidence only and is rebuilt/read after the authoritative boundary, never used as the reason to accept a human revision.
+- **ChapterVersion Coordinator** owns explicit `Check`, `Accept`, `Finalize`, external synchronization, Active Final switching, Human Final authority promotion and bounded rebuild orchestration.
+
+A human revision becomes authoritative only through explicit acceptance followed by successful Finalize. The accepted Human Final has higher authority than generated finals, so later model output cannot silently downgrade it. See [CHAPTER_VERSIONS.md](CHAPTER_VERSIONS.md).

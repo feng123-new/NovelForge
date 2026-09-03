@@ -39,7 +39,7 @@ The shell is responsive, keyboard reachable and supports light and dark themes. 
 - **Logs** consumes durable and replayed SSE events.
 - **Settings** reads path-free, credential-free server settings and capabilities.
 
-Chapter editing, Truth views, version/diff controls and durable Autopilot controls belong to later phases. The interface does not display those actions before their production APIs exist.
+Later phases add quality, Truth/Ledger and version workflows only after their production APIs exist. The interface does not display unsupported fake actions.
 
 ## API client
 
@@ -77,7 +77,6 @@ The client opens one process-wide `EventSource`. It exposes `connecting`, `conne
 - Chapter inspection skips symlinks and reads at most 1 MiB per file.
 - The existing restrictive CSP works because production JavaScript and CSS are self-hosted files with no inline executable script.
 
-
 ## Phase 6 Narrative Ledger pages
 
 Phase 6 adds real **Foreshadows** and **Secrets** routes to the embedded workspace. Both pages load projects and Chapter-N state through the typed API client, use server-generated authority as the source of truth, disable writes while pending, display structured error codes and trace IDs, and reload after each successful mutation.
@@ -85,3 +84,26 @@ Phase 6 adds real **Foreshadows** and **Secrets** routes to the embedded workspa
 The Foreshadows page exposes computed OVERDUE metrics, stable filtered lists, creation, progress, resolve, and abandon operations. The Secrets page deliberately separates the management-only authority truth from Chapter-N holder ranges and public status; it supports private creation, temporal holder addition, and explicit public reveal.
 
 Component tests cover empty and structured-error states, idempotent writes, pending-state button protection, lifecycle transitions, temporal holder writes, public reveal, and authoritative refresh. `web/dist` is rebuilt from the committed lockfile and remains a CI-checked `go:embed` release input.
+
+## Phase 8 Chapter Versions workspace
+
+Phase 8 adds a real **Versions** route alongside Chapters. It is backed only by the ChapterVersion REST API and does not keep an independent browser version database. The route accepts `project` and `chapter` query parameters and reloads authoritative server state after every successful write.
+
+The workspace includes:
+
+- immutable version History with version number, type, SHA, Active Final and Rejected badges;
+- a Markdown editor/reader that loads the selected immutable version;
+- **Save Human Revision**, which always appends a `human_revision` and never overwrites Active Final;
+- **Check**, **Accept**, **Reject**, **Restore as New Version** and **Finalize** controls mapped to the corresponding idempotent server operations;
+- an Inspector for Active Final, Continuity, conflict count, derived-state/rebuild status, parent version, SHA and authority;
+- downstream Plan Impact records;
+- Inline and Side-by-side bounded Diff with deterministic next-cursor support;
+- an External Edit warning showing expected and observed SHA plus an explicit **Sync External Edit** action.
+
+The UI never treats the textarea as authority. After save/sync/finalize it enters a pending state, then reloads History and chapter state from the server. Component tests verify that saving a human edit posts to the collection endpoint with a fresh `Idempotency-Key`, creates a human revision, and leaves the displayed Active Final unchanged until Finalize.
+
+External modification is intentionally noisy. If the chapter file SHA differs from the immutable Active Final SHA, the workspace displays `Sync required`; it does not silently choose either the file or database value. Sync submits the observed SHA to protect against time-of-check/time-of-use changes and the server re-runs Librarian/Continuity/Truth-conflict evaluation before the revision can be accepted.
+
+The Phase 8 client uses `web/src/lib/chapterVersions.ts`. It normalizes the Go transport names (`parent_version`, rebuild `status`) only for compatibility with the current component view model and assembles a display evaluation from the persisted sync response; the canonical public contract remains the OpenAPI schema.
+
+No new frontend dependency is introduced by Phase 8. The same `npm ci`, Svelte/TypeScript check, Vitest suite, production build, vulnerability audit, dependency-license inventory and committed `web/dist` drift gate remain mandatory before merge. See [CHAPTER_VERSIONS.md](CHAPTER_VERSIONS.md).
