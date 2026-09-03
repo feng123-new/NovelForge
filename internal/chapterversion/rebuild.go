@@ -200,7 +200,7 @@ func (s *Store) recordPlanImpacts(ctx context.Context, source Version, evaluatio
 		if strings.Contains(predicate, "alive") || strings.Contains(predicate, "dead") || strings.Contains(predicate, "location") || strings.Contains(predicate, "injur") {
 			severity = "blocking"
 		}
-		id := "impact_" + hashText(source.ID+"\x00"+strconv.Itoa(index)+"\x00"+affectedFact)[:28]
+		id := "impact_" + hashText(source.ID + "\x00" + strconv.Itoa(index) + "\x00" + affectedFact)[:28]
 		planID := fmt.Sprintf("chapter:%d", source.Chapter+1)
 		reason := fmt.Sprintf("Accepted Human Final at Chapter %d changed a fact consumed by downstream planning", source.Chapter)
 		_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO chapter_plan_impacts(id,project_id,source_version,boundary_chapter,plan_id,chapter,severity,affected_fact,previous_assumption,new_truth,action_required,reason,created_at)
