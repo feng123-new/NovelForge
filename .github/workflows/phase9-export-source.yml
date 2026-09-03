@@ -1,0 +1,29 @@
+name: Phase 9 temporary source export
+
+on:
+  push:
+    branches:
+      - feature/phase-09-autopilot
+    paths:
+      - .github/workflows/phase9-export-source.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/phase-09-autopilot
+          fetch-depth: 1
+      - name: Package repository source
+        run: |
+          tar --exclude=.git --exclude=.github/workflows/phase9-export-source.yml -czf /tmp/novelforge-phase9-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: novelforge-phase9-source
+          path: /tmp/novelforge-phase9-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
