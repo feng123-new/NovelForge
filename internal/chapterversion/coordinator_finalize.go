@@ -31,11 +31,6 @@ func (c *Coordinator) Finalize(ctx context.Context, chapter int, key, versionID 
 	if !candidate.Accepted {
 		return FinalizeResult{}, newError(CodeFinalizeNotAllowed, "chapter version must be accepted before finalization", false, nil)
 	}
-	if existing, ok, existingErr := c.Store.activeFinalForCandidate(ctx, candidate); existingErr != nil {
-		return FinalizeResult{}, existingErr
-	} else if ok {
-		return existing, nil
-	}
 
 	evaluation, ok, err := c.Store.latestEvaluation(ctx, candidate.ID)
 	if err != nil {
@@ -75,6 +70,20 @@ func (c *Coordinator) Finalize(ctx context.Context, chapter int, key, versionID 
 		} else if done {
 			return result, nil
 		}
+	}
+
+	// A different idempotency key may legitimately retry an already completed
+	// candidate. Reuse it only when the saga and checkpoint prove completion.
+	// An Active Final by itself is not enough: a crash may have switched the
+	// pointer before rebuild/checkpoint/operation completion, and that path must
+	// resume rather than silently return partial success.
+	if existing, ok, existingErr := c.Store.completedFinalForCandidate(ctx, candidate); existingErr != nil {
+		return FinalizeResult{}, existingErr
+	} else if ok {
+		if err := c.Store.CompleteOperation(ctx, key, existing); err != nil {
+			return FinalizeResult{}, err
+		}
+		return existing, nil
 	}
 
 	operationID := "fin_" + hashText(key + "\x00" + digest)[:28]
@@ -186,28 +195,43 @@ func (c *Coordinator) Finalize(ctx context.Context, chapter int, key, versionID 
 	return result, nil
 }
 
-func (s *Store) activeFinalForCandidate(ctx context.Context, candidate Version) (FinalizeResult, bool, error) {
+func (s *Store) completedFinalForCandidate(ctx context.Context, candidate Version) (FinalizeResult, bool, error) {
 	var finalID string
-	var authority string
-	err := s.db.QueryRowContext(ctx, `SELECT v.id,a.authority FROM chapter_active_finals a JOIN chapter_versions v ON v.id=a.version_id
-		WHERE a.project_id=? AND a.chapter=? AND v.parent_version_id=? AND v.content_sha=?`,
-		s.projectID, candidate.Chapter, candidate.ID, candidate.ContentSHA).Scan(&finalID, &authority)
+	var operationID string
+	var truthIDsJSON string
+	err := s.db.QueryRowContext(ctx, `SELECT v.id,s.operation_id,s.truth_event_ids_json
+		FROM chapter_active_finals a
+		JOIN chapter_versions v ON v.id=a.version_id
+		JOIN chapter_finalize_sagas s ON s.final_version_id=v.id
+		JOIN chapter_version_checkpoints cp ON cp.operation_id=s.operation_id AND cp.version_id=v.id
+		WHERE a.project_id=? AND a.chapter=? AND v.parent_version_id=?
+		  AND v.content_sha=? AND s.candidate_version_id=? AND s.state='completed'
+		ORDER BY s.updated_at DESC LIMIT 1`,
+		s.projectID, candidate.Chapter, candidate.ID, candidate.ContentSHA, candidate.ID).Scan(&finalID, &operationID, &truthIDsJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return FinalizeResult{}, false, nil
 	}
 	if err != nil {
-		return FinalizeResult{}, false, newError(CodeStorage, "existing finalization could not be inspected", true, err)
+		return FinalizeResult{}, false, newError(CodeStorage, "completed finalization could not be inspected", true, err)
 	}
 	final, err := s.Get(ctx, candidate.Chapter, finalID, true)
 	if err != nil {
 		return FinalizeResult{}, false, err
 	}
+	truthIDs := []string{}
+	if strings.TrimSpace(truthIDsJSON) != "" {
+		if err := json.Unmarshal([]byte(truthIDsJSON), &truthIDs); err != nil {
+			return FinalizeResult{}, false, newError(CodeStorage, "completed finalization Truth evidence is invalid", false, err)
+		}
+	}
 	result := FinalizeResult{}
 	result.Version = final
 	result.ActiveFinal = final
+	result.OperationID = operationID
+	result.TruthEvents = len(truthIDs)
 	result.RebuildStatus = "ready"
-	if authority == AuthorityHumanFinal {
-		if rebuild, ok, rebuildErr := s.LatestRebuild(ctx, candidate.Chapter); rebuildErr != nil {
+	if final.Authority == AuthorityHumanFinal || isHumanCandidate(ctx, s, candidate) {
+		if rebuild, ok, rebuildErr := s.getRebuildByOperation(ctx, operationID+":rebuild"); rebuildErr != nil {
 			return FinalizeResult{}, false, rebuildErr
 		} else if ok {
 			result.RebuildStatus = rebuild.State
