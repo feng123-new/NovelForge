@@ -53,7 +53,11 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-phase9-final" ./cmd/novelforge
           git diff --exit-code f16f753530c71ad7ca2221c82a93efd1a0455c2e -- .github go.mod go.sum web/package-lock.json docs/archive
           test -z "$(git ls-remote --heads origin feat/phase-09-durable-autopilot)"
-          git diff --cached --check
+          # Generated JS contains semantic whitespace inside string literals.
+          # Keep Vite's exact output; check source whitespace, not literal data.
+          git diff --cached --check -- . ':!web/dist/**'
+          node --check web/dist/assets/app.js
+          test -z "$(git diff --name-only)"
           git config user.name feng123-new
           git config user.email 203426027+feng123-new@users.noreply.github.com
           git commit -m 'feat: deliver durable Phase 9 Autopilot [skip ci]' -m 'Configured Foundation/ChapterPlan generation, durable local task controls, existing quality and immutable Final workflow, safe review/stop/restart, Web controls and current contracts. Targeted checks only; no full suites, scale simulation or paid model calls.'
