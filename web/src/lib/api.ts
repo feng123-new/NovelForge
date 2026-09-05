@@ -42,7 +42,13 @@ type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
 
 import type { AutopilotPage, AutopilotStart, AutopilotDetail, AutopilotJob, AutopilotApproval } from './autopilot';
 
+import type { AuthoringState, AuthoringMutation, AuthoringChange, AuthoringSearch, AuthoringLint } from './authoring';
+
 export class APIClient {
+  authoring(id: string, kind = '', offset = 0): Promise<AuthoringState> { return this.request(`/projects/${encodeURIComponent(id)}/authoring?limit=50&offset=${offset}&kind=${encodeURIComponent(kind)}`); }
+  saveAuthoring(id: string, input: AuthoringMutation): Promise<AuthoringChange> { return this.write(`/projects/${encodeURIComponent(id)}/authoring`, 'POST', input); }
+  searchAuthoring(id: string, kind: string, q: string, chapter: number, pov: string): Promise<AuthoringSearch> { const params=new URLSearchParams({kind,q,chapter:String(chapter),pov}); return this.request(`/projects/${encodeURIComponent(id)}/authoring/search?${params}`); }
+  lintAuthoring(id: string, chapter: number, text: string): Promise<AuthoringLint> { return this.write(`/projects/${encodeURIComponent(id)}/authoring/lint`, 'POST', {chapter,text}); }
   constructor(
     private readonly baseURL = '/api',
     private readonly fetcher?: FetchLike

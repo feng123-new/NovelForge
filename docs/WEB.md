@@ -117,3 +117,8 @@ The Autopilot route lists persisted jobs for the selected project and supports r
 Every-chapter/every-N policies pause before the selected candidate is committed as Final. The page exposes candidate text and the chapter plan for review, then offers explicit approval. Approvals are bound to the selected candidate ID. Read-only details remain available while a task runs; edits require a paused/stopped job and the shared project lease. Archiving/deleting requires stopping any unfinished task.
 
 The changed UI passed Svelte/TypeScript checking, one focused component test and a production asset build. The existing broad suites remain in the repository but were not run for this limited-scope delivery. New dependencies and local-storage credentials were not added. Task semantics, recovery and API contracts are in [AUTOPILOT.md](AUTOPILOT.md).
+
+
+## Phase 10 authoring systems
+
+Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](AUTHORING.md) for limits, storage and actual runtime behavior. Phase 11–13 remain paused; no full-suite or long-book acceptance is claimed.

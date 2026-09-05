@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import Dashboard from './pages/Dashboard.svelte';
   import Autopilot from './pages/Autopilot.svelte';
+  import Authoring from './pages/Authoring.svelte';
   import Projects from './pages/Projects.svelte';
   import NewNovelWizard from './pages/NewNovelWizard.svelte';
   import Chapters from './pages/Chapters.svelte';
@@ -18,6 +19,7 @@
   const pages = {
     dashboard: Dashboard,
     autopilot: Autopilot,
+    authoring: Authoring,
     projects: Projects,
     new: NewNovelWizard,
     chapters: Chapters,
@@ -32,6 +34,7 @@
     { name: 'dashboard', label: 'Dashboard', icon: '◫', href: '#/dashboard' },
     { name: 'projects', label: 'Projects', icon: '◇', href: '#/projects' },
     { name: 'autopilot', label: 'Autopilot', icon: '▷', href: '#/autopilot' },
+    { name: 'authoring', label: 'Skills & Libraries', icon: '✎', href: '#/authoring' },
     { name: 'new', label: 'New Novel', icon: '＋', href: '#/new' },
     { name: 'chapters', label: 'Chapters', icon: '≡', href: '#/chapters' },
     { name: 'versions', label: 'Versions', icon: '↺', href: '#/versions' },
