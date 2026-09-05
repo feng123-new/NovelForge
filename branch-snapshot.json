@@ -1,0 +1,743 @@
+{
+  "schema": 1,
+  "repository": "feng123-new/NovelForge",
+  "base": "48fb03aa1d9d91ee994edc935317d6bbfe6d8b06",
+  "archive_tag": "archive/phase-01-08-cleanup-20260905",
+  "rules": [
+    "Never delete main, frozen later-phase, protected or open-PR refs.",
+    "Only merged ancestry, exact delivered PR heads, duplicate temporary aliases, or workflow-only temporary changes qualify.",
+    "Archive every original head as a parent before deleting; recheck exact remote SHA immediately before deletion."
+  ],
+  "branches": [
+    {
+      "name": "__probe-release-tool-loading",
+      "sha": "13f084e2ed2f1a57b3b05718e3972fa37248f2c1",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "audit/phase-04-completion-20260902",
+      "sha": "c73c03406c60e72cc3a4756e5a170756f132aa7c",
+      "protected": false,
+      "decision": "retain",
+      "reason": "unique_work_retained"
+    },
+    {
+      "name": "delivery/phase-04-final-controller",
+      "sha": "56886a14eedbb1ec149f33e50f2f8405538213e5",
+      "protected": false,
+      "decision": "retain",
+      "reason": "unique_work_retained"
+    },
+    {
+      "name": "delivery/phase-06-clean",
+      "sha": "6e3a7613ebf65ad90ac5bc7952c05c0251d5c934",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 24
+    },
+    {
+      "name": "docs/phase-01-08-consolidation",
+      "sha": "f64726ecbfd5eacefec3826a7fceeabe894cf6a0",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 34
+    },
+    {
+      "name": "docs/phase-03-acceptance",
+      "sha": "27bfe9c5cc2547ebae5a2e59e218c988abc7586b",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 9
+    },
+    {
+      "name": "docs/phase-04-acceptance",
+      "sha": "56ca6087bba0691bfee7d699a9050314434fef59",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 14
+    },
+    {
+      "name": "docs/phase-04-complete",
+      "sha": "617fc20a96b307b0656a6267e3657ea9ff9f5147",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "docs/phase-04-final-acceptance",
+      "sha": "c4ab20c3663e3a9cc7c0f36ba613134bcc128337",
+      "protected": false,
+      "decision": "retain",
+      "reason": "unique_work_retained"
+    },
+    {
+      "name": "docs/phase-06-acceptance",
+      "sha": "f8c0e695b5b37869c2830bf38f8f2874d1ec7000",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 25
+    },
+    {
+      "name": "docs/phase-06-hardening-evidence",
+      "sha": "ff4446d868dc4c04cae08692c0bcb7fe7c8ec9e3",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 27
+    },
+    {
+      "name": "docs/phase-08-acceptance",
+      "sha": "300e0e944069b3e902c19514503cdea5505c852c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 31
+    },
+    {
+      "name": "docs/phase-08-acceptance-final",
+      "sha": "bb7a532bf00fad371b6eedb010ef388c8c324bfc",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 32
+    },
+    {
+      "name": "docs/phase-08-final-state",
+      "sha": "ab67b9f8d016c0189b2b688d40d9758bed3c0924",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 33
+    },
+    {
+      "name": "feat/phase-1-compatibility-migration",
+      "sha": "3400b868a04c228841316156d56e36dba06b7e02",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "feature/phase-02-project-api",
+      "sha": "c877292cdf75ab77e85d179e8fa1748f4e65fa28",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 7
+    },
+    {
+      "name": "feature/phase-03-web-workspace",
+      "sha": "6dfe97257b4e280601a65ceb290071c4e1498907",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 8
+    },
+    {
+      "name": "feature/phase-04-truth-store",
+      "sha": "9e0d054e6fff6cb8c2f97725fea07e26389df7d9",
+      "protected": false,
+      "decision": "retain",
+      "reason": "unique_work_retained"
+    },
+    {
+      "name": "feature/phase-06-narrative-ledger",
+      "sha": "2a4c3803a8aecf11859b85eb2fe45caef6282609",
+      "protected": false,
+      "decision": "retain",
+      "reason": "unique_work_retained"
+    },
+    {
+      "name": "feature/phase-06-narrative-ledger-delivery",
+      "sha": "77bff5dbbde74bf928129d614b168ac704ad3969",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "feature/phase-08-chapter-versions",
+      "sha": "dfc0c44ede7bfc59b1b56bd23e88643006f3ac62",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 30
+    },
+    {
+      "name": "feature/phase-09-autopilot",
+      "sha": "dac5cd4499285a04be880c828d6859339c0fdcec",
+      "protected": false,
+      "decision": "retain",
+      "reason": "protected_active_or_frozen"
+    },
+    {
+      "name": "feature/phase-1-compatibility-completion",
+      "sha": "63c7f73710a7ea3214369fa463233d7f639c339f",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "feature/phase-1-compatibility-tooling",
+      "sha": "b663707ea36a6de3e5bec48d30e8ae069d4d3fd5",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "feature/phase-1-server-foundation",
+      "sha": "10ec3cd1da783680e40cfe1ef0671f68915e4c80",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "fix/phase-01-08-five-issues",
+      "sha": "cc57e2dfbc5cd4be11f9638fb0a3ac6450e3d1d8",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 35
+    },
+    {
+      "name": "fix/phase-01-08-integration",
+      "sha": "6e9162425b00394beb06bc9f9644feb63082f16d",
+      "protected": false,
+      "decision": "retain",
+      "reason": "unique_work_retained"
+    },
+    {
+      "name": "fix/phase-04-truth-store-landing",
+      "sha": "078c18aa69929469d219dfd00f5e47aa2c348d86",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 13
+    },
+    {
+      "name": "hardening/phase-06-acceptance",
+      "sha": "b2944cd8c3d7977753c1ff20ca3cf48f41ceb76c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "exact_delivered_pr_head",
+      "pr": 26
+    },
+    {
+      "name": "main",
+      "sha": "48fb03aa1d9d91ee994edc935317d6bbfe6d8b06",
+      "protected": false,
+      "decision": "retain",
+      "reason": "protected_active_or_frozen"
+    },
+    {
+      "name": "ops/phase-01-08-cleanup-20260905",
+      "sha": "5c4d6f6ad356eb9c31aceb840d04b4f5ec82be51",
+      "protected": false,
+      "decision": "retain",
+      "reason": "protected_active_or_frozen"
+    },
+    {
+      "name": "ops/phase-01-08-five-fixes",
+      "sha": "6493a298842416283f7c46cbf9aede86415e8127",
+      "protected": false,
+      "decision": "retain",
+      "reason": "unique_work_retained"
+    },
+    {
+      "name": "ops/phase4-ready",
+      "sha": "69a6376d1c0f4e433a06f8163c8a7ef5e9dc1fa1",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase4-ready-transition.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-accept",
+      "sha": "ad05ce0d7626a65ca0c8e2b5e7adb49274062646",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-accept.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-accept-v2",
+      "sha": "57c091d04019773e0062fe2a8c322a48dbbb8161",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-accept-v2.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-acceptance-marker",
+      "sha": "188d3fa4a11174baf4c5f26b41ba7dcab7cc10fa",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-acceptance-marker.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-actual-work",
+      "sha": "ee6eea67da3ab0c1e426053e97bd12e484990310",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-apply",
+      "sha": "65386e3a0366f7d67a17391689bf2ca22d92f9ee",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-apply.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-apply-v3",
+      "sha": "9e4cf3aa00029bdf1dab729db844a2fd20500d60",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-apply-v3.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-apply-v4",
+      "sha": "de59c83333ffff2c39f1f0ca11646552ed3d4c4e",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-apply-v4.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-apply-v5",
+      "sha": "d4fd50668ae7aae3ff133156dcd2d66fec520030",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-apply-v5.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-apply-v6",
+      "sha": "ed4896536e7d31db4bed538be99e27778a64aaab",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-code-staging",
+      "sha": "ee6eea67da3ab0c1e426053e97bd12e484990310",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-core-staging",
+      "sha": "ee6eea67da3ab0c1e426053e97bd12e484990310",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-delivery-controller",
+      "sha": "b5d1f46cbd0c5de706fa39dbaf8387ed0a04dd2f",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-delivery-controller.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-evidence-ci-monitor",
+      "sha": "ba041debff0fe141a38c74a5ae6b5d1b96863870",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-evidence-monitor.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-evidence-gate",
+      "sha": "11cc9ff9d0002f3bef9abab72da0ad214c0a49f4",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-evidence-gate.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-evidence-stage",
+      "sha": "957e1dc8087af0fb39ae35c8fa06c7038265f479",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-evidence-stage.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-final-acceptance-monitor",
+      "sha": "4387723191dc960b93744ee2153208bcdc8be156",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-final-acceptance.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-final-acceptance-verifier-v2",
+      "sha": "4114b9e55535f24137beb67c48710d548f890dc8",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-final-acceptance-verifier-v2.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-final-record-stage",
+      "sha": "edd7e0bb0fd371132ab2d9aa0bc99ebd75cc7e76",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-final-record-stage.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-final-staging",
+      "sha": "ee6eea67da3ab0c1e426053e97bd12e484990310",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-final-verifier",
+      "sha": "216a5a4a63b900090c85b0b2010a467017bd8dfa",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-final-verifier.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-finalizer",
+      "sha": "1c0a73743a4abf432ca62a28799939f58a6534c9",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-finalize.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-implementation-bootstrap",
+      "sha": "ee6eea67da3ab0c1e426053e97bd12e484990310",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-ledger-staging",
+      "sha": "ee6eea67da3ab0c1e426053e97bd12e484990310",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-local-transfer-anchor",
+      "sha": "ed4896536e7d31db4bed538be99e27778a64aaab",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-main-ci-monitor",
+      "sha": "e37c626469eb94d8de8aa742cfcd6aaf683a797a",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-main-monitor.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-polish",
+      "sha": "bccb8850a348e23f0b610fb6929e5dc39e0c3904",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-polish.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-pr-ci-monitor",
+      "sha": "c2449ef7f22f5765b2cbab05332f499ab411ac29",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-pr-monitor.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-pr-gate",
+      "sha": "6a6823176eeda2ea117b0e6027be80495554764d",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-pr-gate.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-pr-readiness",
+      "sha": "33632d1884cbeb7aabba07d84591107f8b900931",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-pr-readiness.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-premerge-verifier",
+      "sha": "9753045f29a90ba93276fa172f3b3437d9010304",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-premerge-verify.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-release-transfer",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "retain",
+      "reason": "unique_work_retained"
+    },
+    {
+      "name": "ops/phase6-release-transfer-attempt",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-release-transfer"
+    },
+    {
+      "name": "ops/phase6-release-transfer-call",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-release-transfer"
+    },
+    {
+      "name": "ops/phase6-release-transfer-call2",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-release-transfer"
+    },
+    {
+      "name": "ops/phase6-release-transfer-call3",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-release-transfer"
+    },
+    {
+      "name": "ops/phase6-release-transfer-call4",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-release-transfer"
+    },
+    {
+      "name": "ops/phase6-release-transfer-final",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-release-transfer"
+    },
+    {
+      "name": "ops/phase6-release-transfer-probe",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-release-transfer"
+    },
+    {
+      "name": "ops/phase6-release-transfer-ready",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-release-transfer"
+    },
+    {
+      "name": "ops/phase6-release-transfer-test-target",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-release-transfer"
+    },
+    {
+      "name": "ops/phase6-release-transfer-test-target2",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-release-transfer"
+    },
+    {
+      "name": "ops/phase6-release-transfer-test-target3",
+      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-release-transfer"
+    },
+    {
+      "name": "ops/phase6-repair",
+      "sha": "30e0601a5d0689b17486f319e4a97af7a5f77d5b",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-repair.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-stop-branching",
+      "sha": "ee6eea67da3ab0c1e426053e97bd12e484990310",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-tag-gate",
+      "sha": "ecb6251c30670fa4a9b5212811849e6fe056550a",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-tag-gate.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-transfer-release-anchor",
+      "sha": "28c587f08e49bcacd81ccedb90bc2f795354623a",
+      "protected": false,
+      "decision": "retain",
+      "reason": "unique_work_retained"
+    },
+    {
+      "name": "ops/phase6-transfer-release-anchor-2",
+      "sha": "28c587f08e49bcacd81ccedb90bc2f795354623a",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "duplicate_commit_alias",
+      "same_commit_as": "ops/phase6-transfer-release-anchor"
+    },
+    {
+      "name": "ops/phase6-tunnel-import",
+      "sha": "455329be3dc1fa3cacb828ad55aa1b0489e0caa4",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "archived_temporary_workflow_only",
+      "changed_paths": [
+        ".github/workflows/phase6-tunnel-import.yml"
+      ]
+    },
+    {
+      "name": "ops/phase6-upload-schema-probe",
+      "sha": "ed4896536e7d31db4bed538be99e27778a64aaab",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-upload-schema-probe2",
+      "sha": "ed4896536e7d31db4bed538be99e27778a64aaab",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-upload-schema-probe3",
+      "sha": "ed4896536e7d31db4bed538be99e27778a64aaab",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-work",
+      "sha": "ee6eea67da3ab0c1e426053e97bd12e484990310",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-write-files-now",
+      "sha": "ee6eea67da3ab0c1e426053e97bd12e484990310",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase6-write-files-now-2",
+      "sha": "8dc612dcdcddb4e865f3d796af57131e59158169",
+      "protected": false,
+      "decision": "retain",
+      "reason": "unique_work_retained"
+    },
+    {
+      "name": "probe-not-needed",
+      "sha": "87db4c899187e23b0d08212e50a333d73f20e12a",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    },
+    {
+      "name": "tmp/phase4-tool-probe",
+      "sha": "13f084e2ed2f1a57b3b05718e3972fa37248f2c1",
+      "protected": false,
+      "decision": "delete_after_merge",
+      "reason": "ancestor_of_main"
+    }
+  ],
+  "cleanup_product_commit": "e3cf8595ca1dadd613d9cae08411a52444efb800",
+  "cleanup_product_tree": "0623038b934a7b2b388cbc43a7fdb3d2f2ef0592"
+}
