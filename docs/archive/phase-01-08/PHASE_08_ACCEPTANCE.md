@@ -29,7 +29,7 @@ The squash merge was independently revalidated on `main` by CI run `33746266244`
 | Acceptance squash merge | `8cc2759bd44d554b9c259531192fba120f38e5da` |
 | Acceptance merge-triggered `main` CI | `33747741718` — success |
 
-PR #31 changed only `docs/IMPLEMENTATION_STATUS.md` and this evidence file. Its exact Head passed Go, Frontend, Windows, and Docker, and the resulting `main` commit passed the same four-job workflow.
+PR #31 changed only `docs/archive/phase-01-08/IMPLEMENTATION_STATUS.md` and this evidence file. Its exact Head passed Go, Frontend, Windows, and Docker, and the resulting `main` commit passed the same four-job workflow.
 
 ## Final closure correction
 
@@ -110,4 +110,4 @@ At formal acceptance closure there were no open Pull Requests. The acceptance br
 
 ## Acceptance result
 
-Phase 8 is complete. Production PR #30, acceptance record PR #31 and final closure correction PR #32 each passed exact-head CI, were squash-merged, and passed merge-triggered `main` CI. `docs/IMPLEMENTATION_STATUS.md` marks Phase 8 complete and Phase 9 not started. `feature/phase-09-autopilot` was created only after final closure CI and contains no Phase 9 product implementation at handoff.
+Phase 8 is complete. Production PR #30, acceptance record PR #31 and final closure correction PR #32 each passed exact-head CI, were squash-merged, and passed merge-triggered `main` CI. `docs/archive/phase-01-08/IMPLEMENTATION_STATUS.md` marks Phase 8 complete and Phase 9 not started. `feature/phase-09-autopilot` was created only after final closure CI and contains no Phase 9 product implementation at handoff.

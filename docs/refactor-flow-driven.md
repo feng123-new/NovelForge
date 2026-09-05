@@ -1,10 +1,10 @@
 # 重构提案：Hybrid Coordinator — Host 路由 × LLM 裁定
 
-> **历史文档，已废弃。** Hybrid Coordinator 于 2026-07-12 被 Engine + Arbiter 架构取代；现行设计见 `docs/architecture.md`、`docs/engine-rfc.md`。本文仅保留决策演进记录，不得作为实现依据。
+> **历史文档，已废弃。** Hybrid Coordinator 于 2026-07-12 被 Engine + Arbiter 架构取代；现行设计见 `docs/upstream/ainovel-runtime-architecture.md`、`docs/engine-rfc.md`。本文仅保留决策演进记录，不得作为实现依据。
 >
 > 原状态：**已采纳并落地**（2026-04-20）
 > 调研时间：2026-04-20
-> 对应现行文档：`docs/architecture.md` §2 / §3 / §7 / §8 / §13 已同步更新
+> 对应现行文档：`docs/upstream/ainovel-runtime-architecture.md` §2 / §3 / §7 / §8 / §13 已同步更新
 >
 > **本文档是第二稿。**第一稿激进方案（完全删除 Coordinator）的问题详见附录 A，保留该节避免重走弯路。
 >
@@ -564,7 +564,7 @@ LLM 驱动创作与裁定，Host 驱动流程路由。
 
 ### 阶段 6：架构文档更新（约 0.5 天）
 
-- 按 §5 修改 `docs/architecture.md` §2 / §13 / §7
+- 按 §5 修改 `docs/upstream/ainovel-runtime-architecture.md` §2 / §13 / §7
 - 把本提案文档状态改为"已采纳"，归档到 `docs/history/`
 
 ### 阶段 7：观察期（2-4 周）
@@ -597,7 +597,7 @@ LLM 驱动创作与裁定，Host 驱动流程路由。
 
 1. **是否采纳本提案（Hybrid Coordinator）？** [ ] 采纳 · [ ] 修改后采纳 · [ ] 不采纳
 2. 阶段 3 是否作为独立 PR 先落地验证？ [ ]
-3. `docs/architecture.md` §2 / §13 调整是否一并在本次处理？ [ ]
+3. `docs/upstream/ainovel-runtime-architecture.md` §2 / §13 调整是否一并在本次处理？ [ ]
 4. 观察期长度：[ ] 2 周 · [ ] 4 周 · [ ] 更长
 
 ---

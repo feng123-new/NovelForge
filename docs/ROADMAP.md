@@ -4,7 +4,7 @@
 
 Active work is limited to fixing and consolidating Phase 1–8: trace existing logic chains, distinguish historical delivery from default-entry readiness, and record narrowly scoped follow-up fixes. Phase 9–13 feature development and phase-specific maintenance are paused. Their descriptions below are retained backlog, not current work or instructions to resume those branches.
 
-[PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md) records current fixes and limited verification. [PHASE_01_08_REVIEW.md](PHASE_01_08_REVIEW.md) preserves the original maintenance review. [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) preserves historical PR/CI acceptance evidence. Historical acceptance is not revoked, and it is not a new claim that every default user path works end to end.
+[PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md) records current fixes and limited verification. [PHASE_01_08_REVIEW.md](archive/phase-01-08/PHASE_01_08_REVIEW.md) preserves the original maintenance review. [IMPLEMENTATION_STATUS.md](archive/phase-01-08/IMPLEMENTATION_STATUS.md) preserves historical PR/CI acceptance evidence. Historical acceptance is not revoked, and it is not a new claim that every default user path works end to end.
 
 Verification during this consolidation is static logic-chain review, with a named targeted test or short flow only when needed. Do not run full Go/frontend/race suites, platform build matrices, long-book simulations or scale benchmarks for this work. Existing tests and CI configuration are retained. Skipped or unexecuted checks must not be reported as passed. Reopening a later phase or full validation requires an explicit scope change; it is not automatic after this checklist.
 

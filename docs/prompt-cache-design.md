@@ -459,4 +459,4 @@ agentcore.NewAgent(
 | 官方端点判定 + opt-in | litellm `provider/openai/capabilities.go` / `provider.go Config` |
 | 缓存身份（一书一基） | ainovel `internal/agents/build.go` `promptCacheBase` |
 | 断裂检测 | ainovel `internal/host/usage.go` `noteCacheBreak` |
-| 架构定位 | ainovel `docs/architecture.md` §6.6 |
+| 架构定位 | ainovel `docs/upstream/ainovel-runtime-architecture.md` §6.6 |

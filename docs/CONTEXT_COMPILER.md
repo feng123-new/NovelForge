@@ -1,6 +1,6 @@
 # Context Compiler and Hybrid Retrieval
 
-> Maintenance update (2026-09-05): `novel_context` now returns compiler-selected records, and Web Writer hashes include compiled project context. Compilation errors stop the call. Additive Migration 8 supports character search without changing Migration 5. Older diagnostic-only integration notes below describe historical Phase 7 delivery; see [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md).
+> Current integration: compiler-selected context is used by `novel_context` and the configured Web Writer. These are Phase 1–8 paths; later-phase workers remain deferred. Delivery evidence and limitations are in [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md).
 
 Phase 7 introduces `internal/contextcompiler`, a deterministic, read-only boundary between NovelForge's authoritative project state and model prompts. The compiler does not create facts and does not grant Writer, retrieval, FTS, or vector implementations a write capability.
 
@@ -66,6 +66,8 @@ Structured Query
 
 Migration 5 adds `context_documents`, its project/chapter index, an external-content FTS5 table, and synchronization triggers. Searches are project-scoped, bounded, stable, and include `source_chapter <= Chapter N`; future chapters and other projects cannot leak into the result.
 
+Additive Migration 8 maintains a separate character index for Chinese substring terms, including two-character names. The original text and English token index remain. Backfill and synchronization triggers use the deterministic Go-registered `novelforge_search_characters` function. External SQLite clients must not write `context_documents` without registering that function. Alias, simplified/traditional conversion and synonym recall are not guaranteed by this index.
+
 ## Diagnostics
 
 Every compile returns:
@@ -76,7 +78,9 @@ Every compile returns:
 - future and duplicate counts;
 - stable rendered context and SHA-256 hash.
 
-The existing `novel_context` path calls `CompileLegacyMap` and emits a compact `_context_compiler` diagnostic object. Existing fields and regression tests remain intact, allowing consumers to migrate incrementally rather than replacing the mature context path in one destructive change.
+`novel_context` calls `CompileLegacyMap` followed by `SelectLegacyMap`: only selected records are returned, preserving their legacy field shape. Compilation errors stop the request rather than returning the original unselected map. `_context_compiler` reports `version: 2` and `status: applied`; detailed layer diagnostics are optional and are compacted before content is trimmed again when the byte budget is tight. `_loading_summary` and `_trimmed` describe the actual returned selection.
+
+The configured Web Writer separately receives compiled project Truth, POV-filtered Ledger, recent documents and FTS evidence as `compiled_context`, before the idempotent model-request hash is calculated. The adapters retain estimated token budgets and bounded queries; this does not imply that every legacy Agent path or whole-book retrieval has been revalidated.
 
 ## Determinism and authority
 

@@ -29,7 +29,7 @@ Run targeted race tests when changing concurrent server, store, event or job cod
 Each roadmap phase is delivered through a focused feature branch and pull request:
 
 1. start from the latest `main`;
-2. update `docs/IMPLEMENTATION_STATUS.md`;
+2. update `docs/archive/phase-01-08/IMPLEMENTATION_STATUS.md`;
 3. implement the production path before UI controls;
 4. add unit and integration tests;
 5. update OpenAPI and documentation when applicable;
