@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -48,8 +49,29 @@ func (s *Server) qualityIdentity(r *http.Request) (string, int, *apiFailure) {
 	return projectID, chapter, nil
 }
 
+type projectQualityModel interface {
+	ForProject(context.Context, string) (qualitygate.ModelInvoker, error)
+}
+
 func (s *Server) qualityConfigured() bool {
-	return (s.cfg.QualityWriter != nil && s.cfg.QualityLibrarian != nil && s.cfg.QualityEditor != nil) || s.cfg.QualityModel != nil
+	if s.cfg.QualityWriter != nil && s.cfg.QualityLibrarian != nil && s.cfg.QualityEditor != nil {
+		return true
+	}
+	if availability, ok := s.cfg.QualityModel.(interface{ Configured() bool }); ok {
+		return availability.Configured()
+	}
+	return s.cfg.QualityModel != nil
+}
+
+func (s *Server) qualityConfiguredFor(ctx context.Context, projectID string) bool {
+	if s.cfg.QualityWriter != nil && s.cfg.QualityLibrarian != nil && s.cfg.QualityEditor != nil {
+		return true
+	}
+	if factory, ok := s.cfg.QualityModel.(projectQualityModel); ok {
+		model, err := factory.ForProject(ctx, projectID)
+		return err == nil && model != nil
+	}
+	return s.qualityConfigured()
 }
 
 func (s *Server) qualityCoordinator(r *http.Request, projectID string) (*qualitygate.Coordinator, func(), *apiFailure) {
@@ -74,15 +96,25 @@ func (s *Server) qualityCoordinator(r *http.Request, projectID string) (*quality
 		_ = store.Close()
 	}
 	writer, librarian, editor := s.cfg.QualityWriter, s.cfg.QualityLibrarian, s.cfg.QualityEditor
-	if s.cfg.QualityModel != nil {
-		invoker := qualitygate.ModelInvoker(s.cfg.QualityModel)
+	model := s.cfg.QualityModel
+	if factory, ok := model.(projectQualityModel); ok {
+		var modelErr error
+		model, modelErr = factory.ForProject(r.Context(), projectID)
+		if modelErr != nil {
+			// A persisted, evaluated Final may still be replayed without paid
+			// services. New semantic stages remain unavailable and fail closed.
+			model = nil
+		}
+	}
+	if model != nil {
+		invoker := model
 		if s.cfg.QualityMaxRetries > 0 {
 			invoker = qualitygate.RetryingModelInvoker{Invoker: invoker, MaxRetries: s.cfg.QualityMaxRetries}
 		}
 		caller := &qualitygate.IdempotentModelCaller{Repository: store, Invoker: invoker}
 		decoder := qualitygate.StrictDecoder{MaxRepairs: s.cfg.QualityMaxRepairs, Repairer: s.cfg.QualityRepairer}
 		if writer == nil {
-			writer = qualitygate.ModelWriterService{Caller: caller}
+			writer = qualitygate.ModelWriterService{Caller: caller, Context: s.projects}
 		}
 		if librarian == nil {
 			librarian = qualitygate.ModelLibrarianService{Caller: caller, Decoder: decoder}
@@ -105,18 +137,23 @@ func (s *Server) qualitySnapshot(r *http.Request, projectID string, chapter int)
 		return qualityView{}, projectFailure(err)
 	}
 	defer store.Close()
+
 	snapshot, err := store.Snapshot(r.Context(), projectID, chapter)
 	if errors.Is(err, qualitygate.ErrNotFound) {
-		return qualityView{Snapshot: qualitygate.Snapshot{}, Actions: qualityActions{Generate: s.qualityConfigured()}}, nil
+		return qualityView{Snapshot: qualitygate.Snapshot{}, Actions: qualityActions{Generate: s.qualityConfiguredFor(r.Context(), projectID)}}, nil
 	}
 	if err != nil {
 		return qualityView{}, qualityFailure(err)
 	}
-	return qualityView{Snapshot: snapshot, Actions: s.qualityActions(snapshot)}, nil
+	return qualityView{Snapshot: snapshot, Actions: s.qualityActionsFor(r.Context(), projectID, snapshot)}, nil
 }
 
 func (s *Server) qualityActions(snapshot qualitygate.Snapshot) qualityActions {
-	configured := s.qualityConfigured()
+	return s.qualityActionsFor(context.Background(), snapshot.Transaction.ProjectID, snapshot)
+}
+
+func (s *Server) qualityActionsFor(ctx context.Context, projectID string, snapshot qualitygate.Snapshot) qualityActions {
+	configured := s.qualityConfiguredFor(ctx, projectID)
 	tx := snapshot.Transaction
 	if tx.ID == "" {
 		return qualityActions{Generate: configured}
@@ -186,6 +223,7 @@ func (s *Server) handleQualityGenerate(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, r, *failure)
 		return
 	}
+
 	s.executeIdempotent(w, r, "chapter.quality.generate", projectID, func(body []byte) (int, any, *apiFailure) {
 		var plan qualitygate.ChapterPlan
 		if failure := decodeJSONBody(body, &plan, false); failure != nil {
@@ -197,7 +235,7 @@ func (s *Server) handleQualityGenerate(w http.ResponseWriter, r *http.Request) {
 		if err := plan.Validate(); err != nil {
 			return http.StatusBadRequest, nil, &apiFailure{Status: http.StatusBadRequest, Code: "QUALITY_PLAN_INVALID", Message: "chapter plan is invalid"}
 		}
-		if !s.qualityConfigured() {
+		if !s.qualityConfiguredFor(r.Context(), projectID) {
 			failure := qualityUnavailable()
 			return failure.Status, nil, &failure
 		}
@@ -211,7 +249,7 @@ func (s *Server) handleQualityGenerate(w http.ResponseWriter, r *http.Request) {
 			failure := qualityFailure(err)
 			return failure.Status, nil, failure
 		}
-		return http.StatusAccepted, qualityView{Snapshot: snapshot, Actions: s.qualityActions(snapshot)}, nil
+		return http.StatusAccepted, qualityView{Snapshot: snapshot, Actions: s.qualityActionsFor(r.Context(), projectID, snapshot)}, nil
 	})
 }
 
@@ -239,7 +277,7 @@ func (s *Server) handleQualityRewrite(w http.ResponseWriter, r *http.Request) {
 		if plan.Chapter != chapter || plan.Validate() != nil {
 			return http.StatusBadRequest, nil, &apiFailure{Status: http.StatusBadRequest, Code: "QUALITY_PLAN_INVALID", Message: "chapter plan is invalid for this route"}
 		}
-		if !s.qualityConfigured() {
+		if !s.qualityConfiguredFor(r.Context(), projectID) {
 			failure := qualityUnavailable()
 			return failure.Status, nil, &failure
 		}
@@ -253,7 +291,7 @@ func (s *Server) handleQualityRewrite(w http.ResponseWriter, r *http.Request) {
 			failure := qualityFailure(err)
 			return failure.Status, nil, failure
 		}
-		return http.StatusAccepted, qualityView{Snapshot: snapshot, Actions: s.qualityActions(snapshot)}, nil
+		return http.StatusAccepted, qualityView{Snapshot: snapshot, Actions: s.qualityActionsFor(r.Context(), projectID, snapshot)}, nil
 	})
 }
 
@@ -280,7 +318,7 @@ func (s *Server) handleQualityEmptyAction(w http.ResponseWriter, r *http.Request
 		if failure := decodeJSONBody(body, &empty, true); failure != nil {
 			return failure.Status, nil, failure
 		}
-		if requiresAgents && !s.qualityConfigured() {
+		if requiresAgents && !s.qualityConfiguredFor(r.Context(), projectID) {
 			failure := qualityUnavailable()
 			return failure.Status, nil, &failure
 		}
@@ -294,7 +332,7 @@ func (s *Server) handleQualityEmptyAction(w http.ResponseWriter, r *http.Request
 			failure := qualityFailure(err)
 			return failure.Status, nil, failure
 		}
-		return http.StatusAccepted, qualityView{Snapshot: snapshot, Actions: s.qualityActions(snapshot)}, nil
+		return http.StatusAccepted, qualityView{Snapshot: snapshot, Actions: s.qualityActionsFor(r.Context(), projectID, snapshot)}, nil
 	})
 }
 

@@ -128,18 +128,26 @@ func (s *FTSStore) Collect(ctx context.Context, request Request) ([]Item, error)
 	}
 	limit := 20
 	query := quoteFTSQuery(request.Query)
+	index := "context_documents_fts"
+	if containsHan(request.Query) {
+		index = "context_documents_cjk_fts"
+		query = cjkFTSQuery(request.Query)
+	}
 	if query == "" {
 		return nil, nil
 	}
-	rows, err := s.db.QueryContext(ctx, `
-SELECT d.id, d.kind, d.title, d.content, d.source_chapter, d.source_version, d.priority, bm25(context_documents_fts)
-FROM context_documents_fts
-JOIN context_documents d ON d.rowid=context_documents_fts.rowid
-WHERE context_documents_fts MATCH ?
+	// The identifier comes exclusively from the two constants above. User
+	// text, project ID and chapter remain bound parameters in both paths.
+	statement := fmt.Sprintf(`
+SELECT d.id, d.kind, d.title, d.content, d.source_chapter, d.source_version, d.priority, bm25(%[1]s)
+FROM %[1]s
+JOIN context_documents d ON d.rowid=%[1]s.rowid
+WHERE %[1]s MATCH ?
   AND d.project_id=?
   AND d.source_chapter<=?
-ORDER BY bm25(context_documents_fts), d.source_chapter DESC, d.id
-LIMIT ?`, query, request.ProjectID, request.Chapter, limit)
+ORDER BY bm25(%[1]s), d.source_chapter DESC, d.id
+LIMIT ?`, index)
+	rows, err := s.db.QueryContext(ctx, statement, query, request.ProjectID, request.Chapter, limit)
 	if err != nil {
 		return nil, fmt.Errorf("contextcompiler: FTS search: %w", err)
 	}

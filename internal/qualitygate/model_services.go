@@ -8,21 +8,40 @@ import (
 	"strings"
 )
 
+// WriterContextProvider returns bounded, read-only prompt context before the
+// idempotency hash is calculated. It cannot authorize a chapter or Truth write.
+type WriterContextProvider interface {
+	WriterContext(context.Context, WriterRequest) (json.RawMessage, error)
+}
+
 // ModelWriterService adapts the bounded/idempotent model-call boundary to WriterService.
 // It returns only prose; it has no Truth repository and cannot commit authoritative state.
 type ModelWriterService struct {
-	Caller *IdempotentModelCaller
+	Caller  *IdempotentModelCaller
+	Context WriterContextProvider
 }
 
 func (s ModelWriterService) Write(ctx context.Context, req WriterRequest) (WriterResult, error) {
 	if s.Caller == nil {
 		return WriterResult{}, errors.New("model writer caller is required")
 	}
+	var compiled json.RawMessage
+	if s.Context != nil {
+		var err error
+		compiled, err = s.Context.WriterContext(ctx, req)
+		if err != nil {
+			return WriterResult{}, fmt.Errorf("compile writer context: %w", err)
+		}
+		if len(compiled) == 0 || !json.Valid(compiled) {
+			return WriterResult{}, errors.New("writer context is empty or invalid")
+		}
+	}
 	payload, err := json.Marshal(struct {
-		Plan          ChapterPlan `json:"chapter_plan"`
-		PreviousDraft string      `json:"previous_draft,omitempty"`
-		Feedback      []string    `json:"feedback,omitempty"`
-	}{req.Plan, req.PreviousDraft, req.Feedback})
+		Plan          ChapterPlan     `json:"chapter_plan"`
+		PreviousDraft string          `json:"previous_draft,omitempty"`
+		Feedback      []string        `json:"feedback,omitempty"`
+		Context       json.RawMessage `json:"context,omitempty"`
+	}{req.Plan, req.PreviousDraft, req.Feedback, compiled})
 	if err != nil {
 		return WriterResult{}, err
 	}

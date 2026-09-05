@@ -10,7 +10,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/voocel/ainovel-cli/internal/compat"
 	"github.com/voocel/ainovel-cli/internal/server"
+	"github.com/voocel/ainovel-cli/internal/server/qualityruntime"
 )
 
 func runServerCommand(argv []string) int {
@@ -19,8 +21,9 @@ func runServerCommand(argv []string) int {
 	host := flags.String("host", "127.0.0.1", "listen host")
 	port := flags.Int("port", 48090, "listen port")
 	workspace := flags.String("workspace", ".", "directory containing NovelForge or ainovel projects")
+	configPath := flags.String("config", "", "explicit model configuration (otherwise NOVELFORGE_CONFIG/project/global layers)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: novelforge server [--host HOST] [--port PORT] [--workspace DIR]")
+		fmt.Fprintln(flags.Output(), "Usage: novelforge server [--host HOST] [--port PORT] [--workspace DIR] [--config FILE]")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(argv); err != nil {
@@ -32,11 +35,21 @@ func runServerCommand(argv []string) int {
 		return 2
 	}
 
+	explicit := strings.TrimSpace(*configPath)
+	if explicit == "" {
+		explicit = compat.ExplicitConfigPath()
+	}
+	models, err := qualityruntime.New(*workspace, explicit)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "server: model configuration could not be initialized; run novelforge doctor")
+		return 1
+	}
 	app, err := server.New(server.Config{
-		Host:      *host,
-		Port:      *port,
-		Workspace: *workspace,
-		Version:   versionInfo().Version,
+		Host:         *host,
+		Port:         *port,
+		Workspace:    *workspace,
+		Version:      versionInfo().Version,
+		QualityModel: models,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "server: %v\n", err)

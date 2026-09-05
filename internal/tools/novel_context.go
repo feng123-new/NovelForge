@@ -47,7 +47,8 @@ type ContextTool struct {
 type contextReads struct {
 	warnings []string
 	seen     map[string]struct{}
-	err      error
+
+	err error
 }
 
 func (r *contextReads) warn(scope string, err error) {
@@ -105,7 +106,7 @@ func (t *ContextTool) Schema() map[string]any {
 	)
 }
 
-func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
+func (t *ContextTool) Execute(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var a struct {
 		Chapter int `json:"chapter"`
 	}
@@ -162,81 +163,45 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 	if a.Chapter > 0 {
 		budget = 100 * 1024
 	}
-	return finalizeContextPayload(result, a.Chapter, budget)
+	return finalizeContextPayloadContext(ctx, result, a.Chapter, budget)
 }
 
+// finalizeContextPayload keeps the test/embedding entry compatible.
 func finalizeContextPayload(result map[string]any, chapter, budget int) (json.RawMessage, error) {
-	if err := trimByBudget(result, budget); err != nil {
-		return nil, err
-	}
-	result["_loading_summary"] = buildLoadingSummary(result, chapter)
-	if err := trimByBudget(result, budget); err != nil {
-		return nil, err
-	}
-	result["_loading_summary"] = buildLoadingSummary(result, chapter)
-	attachContextCompilerDiagnostics(result, chapter, budget)
-
-	data, err := json.Marshal(result)
-	if err != nil {
-		return nil, fmt.Errorf("marshal context payload: %w", err)
-	}
-	if len(data) > budget {
-		return nil, fmt.Errorf("context payload exceeds budget after summary rebuild: size=%d budget=%d", len(data), budget)
-	}
-	return data, nil
+	return finalizeContextPayloadContext(context.Background(), result, chapter, budget)
 }
 
-func attachContextCompilerDiagnostics(result map[string]any, chapter, byteBudget int) {
-	tokenBudget := byteBudget / 4
-	if tokenBudget < 256 {
-		tokenBudget = 256
+func finalizeContextPayloadContext(ctx context.Context, result map[string]any, chapter, budget int) (json.RawMessage, error) {
+	if budget <= 0 {
+		return nil, fmt.Errorf("context byte budget must be positive")
 	}
-	compiled, err := contextcompiler.CompileLegacyMap(context.Background(), result, contextcompiler.Request{
-		Chapter:            chapter,
-		TotalTokens:        tokenBudget,
-		RecentChapterCount: 3,
-		Budget:             contextcompiler.DefaultBudgetConfig(),
+	// Compile before legacy trimming can remove a mandatory record. The
+	// selected map, not a second uncompiled copy, is the actual tool response.
+	selected, compiled, err := contextcompiler.SelectLegacyMap(ctx, result, contextcompiler.Request{
+		Chapter: chapter, TotalTokens: max(1, budget/4), RecentChapterCount: 3,
+		Budget: contextcompiler.DefaultBudgetConfig(),
 	}, nil)
 	if err != nil {
-		result["_context_compiler"] = map[string]any{
-			"status": "unavailable",
-			"error":  "context compilation failed",
-		}
-		return
+		return nil, fmt.Errorf("compile context payload: %w", err)
 	}
-	layers := make(map[string]any, len(compiled.Diagnostics.Layers))
-	for _, layer := range []contextcompiler.Layer{
-		contextcompiler.LayerTruth,
-		contextcompiler.LayerNarrative,
-		contextcompiler.LayerRecent,
-		contextcompiler.LayerHistorical,
-		contextcompiler.LayerStyle,
-	} {
-		diagnostic := compiled.Diagnostics.Layers[layer]
-		layers[string(layer)] = map[string]any{
-			"allocated_tokens": diagnostic.AllocatedTokens,
-			"input_tokens":     diagnostic.InputTokens,
-			"used_tokens":      diagnostic.UsedTokens,
-			"selected_count":   diagnostic.SelectedCount,
-			"trimmed_count":    len(diagnostic.Trimmed),
-			"trimmed":          diagnostic.Trimmed,
-		}
-	}
-	result["_context_compiler"] = map[string]any{
-		"version":          1,
-		"context_sha":      compiled.ContextSHA,
+	selected["_loading_summary"] = buildLoadingSummary(selected, chapter)
+	selected["_context_compiler"] = map[string]any{
+		"version": 2, "status": "applied", "context_sha": compiled.ContextSHA,
 		"total_tokens":     compiled.Diagnostics.TotalTokens,
 		"system_tokens":    compiled.Diagnostics.SystemTokens,
 		"used_tokens":      compiled.Diagnostics.UsedTokens,
 		"remaining_tokens": compiled.Diagnostics.RemainingTokens,
-		"layers":           layers,
+		"layers":           compiled.Diagnostics.Layers,
 	}
-	// Diagnostics are observability metadata, not story context. Preserve the
-	// established hard payload boundary if a nearly-full legacy payload cannot
-	// carry the additional report.
-	if data, marshalErr := json.Marshal(result); marshalErr != nil || len(data) > byteBudget {
-		delete(result, "_context_compiler")
+	data, err := json.Marshal(selected)
+	if err != nil {
+		return nil, fmt.Errorf("marshal compiled context payload: %w", err)
 	}
+	if len(data) > budget {
+		// Never silently discard a pinned record to satisfy the byte envelope.
+		return nil, fmt.Errorf("compiled context payload exceeds byte budget: size=%d budget=%d", len(data), budget)
+	}
+	return data, nil
 }
 
 // buildLoadingSummary 从已组装的 result 中统计各项数据量，生成一行可读摘要。
