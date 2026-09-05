@@ -25,6 +25,7 @@ jobs:
         run: |
           git worktree add --detach "$RUNNER_TEMP/product" 39e67336d5615066cf5180309475aa79ff468af5
           python .phase9close/final_boundary.py "$RUNNER_TEMP/product"
+          python .phase9close/correct_test_entry.py "$RUNNER_TEMP/product"
       - name: Build and run only affected chapter-flow regressions
         working-directory: ${{ runner.temp }}/product
         run: |
