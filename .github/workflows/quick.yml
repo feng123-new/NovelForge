@@ -1,0 +1,32 @@
+name: Candidate quick checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quick-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  quick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Named checks and real no-model entry
+        run: python scripts/verify.py --mode quick --output verification-results/quick
+      - name: Preserve verification evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-${{ github.sha }}
+          path: verification-results/quick
+          if-no-files-found: warn
