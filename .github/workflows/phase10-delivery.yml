@@ -1,44 +1,18 @@
-name: Phase 10 final input review
+name: Phase 10 post-merge cleanup
 on:
   push:
     branches: [ops/phase10-delivery]
 permissions:
   contents: write
 jobs:
-  targeted:
+  cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      GOWORK: 'off'
-      GOFLAGS: '-mod=readonly'
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: Normalize rule inputs and check immutable boundary behavior
-        run: |
-          git worktree add --detach "$RUNNER_TEMP/product" 6b0d0d852dd0d48bbaab1c5fa823606c3f2850e6
-          python .phase10/final_review.py "$RUNNER_TEMP/product"
-      - name: Build and run only affected named checks
-        working-directory: ${{ runner.temp }}/product
-        run: |
-          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-authoring-reviewed" ./cmd/novelforge
-          go test -buildvcs=false -count=1 -timeout=120s -v ./internal/authoring -run '^TestAuthoring'
-          go test -buildvcs=false -count=1 -timeout=120s -v ./internal/server -run '^TestAuthoring(APIRevisionIsolationAndJobGuard|ActualModelRequestsAndReplay|MandatoryBudgetStopsBeforeModel)$'
-      - name: Publish checked follow-up without changing assets or old migrations
-        working-directory: ${{ runner.temp }}/product
-        run: |
-          git diff --exit-code 6b0d0d852dd0d48bbaab1c5fa823606c3f2850e6 -- .github web go.mod go.sum docs/archive internal/authoring/migration.go
-          test "$(git ls-remote --heads origin feat/phase10-authoring | cut -f1)" = 6b0d0d852dd0d48bbaab1c5fa823606c3f2850e6
-          git diff --cached --check
-          test -z "$(git diff --name-only)"
-          git config user.name feng123-new
-          git config user.email 203426027+feng123-new@users.noreply.github.com
-          git commit -m 'fix: normalize Phase 10 rule inputs and verify authority budgets [skip ci]'
-          git push origin HEAD:refs/heads/feat/phase10-authoring
-          echo "PRODUCT_COMMIT=$(git rev-parse HEAD)"
-          echo "PRODUCT_TREE=$(git rev-parse HEAD^{tree})"
-          git diff --stat c0c07201087b0e56526e58995586dee3f697c2bc
+      - name: Verify merge, archive, prune only two exact delivery refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .phase10/cleanup.py
