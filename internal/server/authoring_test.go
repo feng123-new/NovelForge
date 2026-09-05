@@ -191,3 +191,43 @@ func TestAuthoringActualModelRequestsAndReplay(t *testing.T) {
 		t.Fatal("unexpected operation")
 	}
 }
+
+type tinyCraftModel struct{ craftCapture }
+
+func (m *tinyCraftModel) WriterContextTokens() int { return 64 }
+func TestAuthoringMandatoryBudgetStopsBeforeModel(t *testing.T) {
+	model := &tinyCraftModel{craftCapture{payloads: map[string][]byte{}}}
+	s, err := New(Config{Workspace: t.TempDir(), QualityModel: model})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p, err := s.projects.Create(t.Context(), project.CreateInput{Title: "Bounded craft"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := s.projects.OpenAuthoring(t.Context(), p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	e := authoring.Entry{Kind: "skill", Role: "writing", Title: "Large instruction", Markdown: strings.Repeat("Write precise action. ", 500), Enabled: true}
+	if _, err = store.Mutate(t.Context(), "large-skill", authoring.Mutation{ExpectedRevision: 1, Entry: &e}); err != nil {
+		t.Fatal(err)
+	}
+	c, cleanup, failure := s.qualityCoordinator(httptest.NewRequest(http.MethodGet, "/", nil), p.ID)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	defer cleanup()
+	var plan qualitygate.ChapterPlan
+	if err = json.Unmarshal(apiPlan(1), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = c.Writer.Write(t.Context(), qualitygate.WriterRequest{ProjectID: p.ID, Chapter: 1, TransactionID: "budget-test", Plan: plan}); err == nil {
+		t.Fatal("mandatory overflow did not fail closed")
+	}
+	if model.count != 0 {
+		t.Fatal("oversized context reached model")
+	}
+}

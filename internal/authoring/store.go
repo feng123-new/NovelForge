@@ -200,7 +200,12 @@ func (s *Store) Mutate(ctx context.Context, key string, m Mutation) (Change, err
 		if err = m.Rules.Validate(); err != nil {
 			return out, err
 		}
-		raw, _ := json.Marshal(m.Rules)
+		rules := *m.Rules
+		rules.Phrases = append([]string{}, rules.Phrases...)
+		for i := range rules.Phrases {
+			rules.Phrases[i] = strings.TrimSpace(rules.Phrases[i])
+		}
+		raw, _ := json.Marshal(rules)
 		if _, err = tx.ExecContext(ctx, "UPDATE authoring_state SET rules_json=? WHERE id=1", string(raw)); err != nil {
 			return out, err
 		}

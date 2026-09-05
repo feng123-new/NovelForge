@@ -52,3 +52,12 @@ A mutation contains `expected_revision` and exactly one of `entry`, `delete_id`,
 ## Verification scope
 
 Only affected entry builds, named backend short flows, focused frontend tests, type checking and regenerated embedded assets are in scope. Final PR records exact commits and actual outcomes. No complete Go/Vitest/race suites, platform matrix, paid-model creativity run, long-book simulation or Phase 11–13 delivery is implied.
+
+
+### Delivery evidence and input normalization
+
+The initial product `6b0d0d852dd0d48bbaab1c5fa823606c3f2850e6` (tree `e05aa2363e70128cac0e56b86987d6e14ba6100c`) passed Actions `33967464713`, job `101309986739`: Go 1.25.5 no-CGO entry builds, eight named Go tests, five tests across three focused frontend files, Svelte/TypeScript with zero errors/warnings, and exact Vite asset generation. The new feature's request test captures the actual model-call payload; the retained Phase 9 two-chapter test also exercises a configured fake HTTP Provider. No paid model was called.
+
+Final review normalizes an omitted/null phrase list to `[]` and trims phrase whitespace before storage; this keeps the API response renderable and literal checks consistent. Additional named checks cover this behavior, absence of canonical writes and compiler rejection before a model call. Final checked commit/run/merge identifiers are recorded in the delivery PR rather than assumed here.
+
+Existing pinned requests and cached Foundation outputs are not automatically regenerated after edits. Newly created planning/writing scopes use the current library; regenerate a cached Foundation only through its explicit new-request workflow. A deleted library entry can remain in immutable historical request selections and operation records. These records are not a secure-erasure facility.

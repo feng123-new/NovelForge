@@ -171,3 +171,33 @@ func TestAuthoringRulesAreBoundedAdvisories(t *testing.T) {
 		t.Fatal("failed write mutated state", state, err)
 	}
 }
+
+func TestAuthoringEmptyPhraseRulesAndNoCanonicalWrites(t *testing.T) {
+	s, _, _ := setup(t)
+	rules := authoring.DefaultRules()
+	rules.Phrases = nil
+	result, err := s.Mutate(t.Context(), "empty-rules", authoring.Mutation{ExpectedRevision: 1, Rules: &rules})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := s.State(t.Context(), "", 10, 0)
+	if err != nil || state.Rules.Phrases == nil || len(state.Rules.Phrases) != 0 {
+		t.Fatal("rules must serialize an empty array, never break UI rendering", state.Rules, err)
+	}
+	rules.Phrases = []string{"  不由得  "}
+	if _, err = s.Mutate(t.Context(), "trim-rules", authoring.Mutation{ExpectedRevision: result.Revision, Rules: &rules}); err != nil {
+		t.Fatal(err)
+	}
+	state, err = s.State(t.Context(), "", 10, 0)
+	if err != nil || state.Rules.Phrases[0] != "不由得" {
+		t.Fatal("configured literal was not normalized", err)
+	}
+	e := entry("knowledge", "张三在青云宗获得玄铁剑")
+	if _, err = s.Mutate(t.Context(), "reference", authoring.Mutation{ExpectedRevision: state.Revision, Entry: &e}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err = s.DB.QueryRowContext(t.Context(), "SELECT (SELECT count(*) FROM truth_events)+(SELECT count(*) FROM foreshadow_events)+(SELECT count(*) FROM secret_events)+(SELECT count(*) FROM chapter_versions)").Scan(&count); err != nil || count != 0 {
+		t.Fatal("reference edits wrote story authority", count, err)
+	}
+}
