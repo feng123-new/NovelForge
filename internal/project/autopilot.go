@@ -45,7 +45,7 @@ func (r *Repository) AcquireExecution(ctx context.Context, id string) (io.Closer
 
 // PlanningContext is author planning data filtered for the selected POV. It
 // cannot write Truth; a generated plan is never an accepted chapter.
-func (r *Repository) PlanningContext(ctx context.Context, id string, chapter int, pov string) (json.RawMessage, error) {
+func (r *Repository) PlanningContext(ctx context.Context, id string, chapter int, pov string, scopes ...string) (json.RawMessage, error) {
 	entry, err := r.find(id)
 	if err != nil {
 		return nil, err
@@ -84,7 +84,16 @@ func (r *Repository) PlanningContext(ctx context.Context, id string, chapter int
 	for _, b := range snapshot.KnownSecrets {
 		items = append(items, contextcompiler.Item{ID: "plan:known:" + b.ID, Layer: contextcompiler.LayerTruth, Kind: "known_secret", Content: b.Summary, SourceChapter: b.SourceChapter, Priority: 900})
 	}
-	result, err := contextcompiler.New(contextcompiler.Providers{Truth: contextcompiler.ProviderFunc(func(context.Context, contextcompiler.Request) ([]contextcompiler.Item, error) { return items, nil }), Recent: recentContextReader{db: db}, FTS5: contextcompiler.NewFTSStore(db)}, nil).Compile(ctx, request)
+	scope := fmtID(chapter) + ":planning"
+	if len(scopes) > 0 {
+		scope = scopes[0] + ":planning"
+	}
+	sel, err := r.authoringSelection(ctx, id, scope, "planning", pov, chapter, pov)
+	if err != nil {
+		return nil, err
+	}
+	craft := authoringProviders(selectionItems(sel))
+	result, err := contextcompiler.New(contextcompiler.Providers{Style: craft.Style, Structured: craft.Structured, Truth: contextcompiler.ProviderFunc(func(context.Context, contextcompiler.Request) ([]contextcompiler.Item, error) { return items, nil }), Recent: recentContextReader{db: db}, FTS5: contextcompiler.NewFTSStore(db)}, nil).Compile(ctx, request)
 	if err != nil {
 		return nil, err
 	}

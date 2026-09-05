@@ -98,7 +98,7 @@ func (s *Server) qualityCoordinator(r *http.Request, projectID string) (*quality
 			librarian = qualitygate.ModelLibrarianService{Caller: caller, Decoder: decoder}
 		}
 		if editor == nil {
-			editor = qualitygate.ModelEditorService{Caller: caller, Decoder: decoder}
+			editor = qualitygate.ModelEditorService{Caller: caller, Decoder: decoder, Context: s.projects}
 		}
 	}
 	coordinator := &qualitygate.Coordinator{

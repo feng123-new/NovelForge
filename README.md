@@ -8,7 +8,7 @@ NovelForge 基于 Apache-2.0 上游 [`voocel/ainovel-cli`](https://github.com/vo
 
 [文档导航与当前维护记录](docs/README.md) · [历史交付档案](docs/archive/README.md)
 
-**Phase 9 已按本次明确请求接入；Phase 10–13 继续暂停。** 默认 Web 启用可恢复 Autopilot，复用前八阶段的质量门禁与版本定稿。新建向导仍只保存请求，用户在 Autopilot 页面单独启动有界任务，不会自动产生模型费用。当前只做定向验证，不发布新 Release。详见 [Autopilot](docs/AUTOPILOT.md)。
+**Phase 9 已按本次明确请求接入；Phase 11–13 继续暂停。** 默认 Web 启用可恢复 Autopilot，复用前八阶段的质量门禁与版本定稿。新建向导仍只保存请求，用户在 Autopilot 页面单独启动有界任务，不会自动产生模型费用。当前只做定向验证，不发布新 Release。详见 [Autopilot](docs/AUTOPILOT.md)。
 
 历史 PR、合并与 CI 证据保留在 [IMPLEMENTATION_STATUS.md](docs/archive/phase-01-08/IMPLEMENTATION_STATUS.md)。当前源码修复和有限验证边界见 [PHASE_01_08_FIXES.md](docs/PHASE_01_08_FIXES.md)。模块存在、配置满足、定向测试通过和全量验收是不同状态。本轮没有全量回归、付费模型验收或规模测试。
 
@@ -136,3 +136,8 @@ Apache License 2.0；保留 ainovel-cli 的原始版权与来源。详见 [LICEN
 - **Nigh/show-me-the-story** — MIT，体验与部署设计参考。
 - **Hurricane0698/novelwriter** — AGPL-3.0，clean-room 架构参考，不复制源码。
 - **EthanYoQ/AI-Novel-Writer** — GPL-3.0，clean-room 工作流参考，不复制源码。
+
+
+## Phase 10 authoring systems
+
+Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](docs/AUTHORING.md) for limits, storage and actual runtime behavior. Phase 11–13 remain paused; no full-suite or long-book acceptance is claimed.

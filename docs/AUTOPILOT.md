@@ -1,6 +1,6 @@
 # Phase 9 — Durable Autopilot
 
-Phase 9 is reopened by the user's explicit request. Phase 10–13 remain paused. This document describes the production implementation; verification evidence and exact merged revision belong in the delivery PR. No full-suite or 300-chapter result is implied by a short-flow check.
+Phase 9 is reopened by the user's explicit request. Phase 11–13 remain paused. This document describes the production implementation; verification evidence and exact merged revision belong in the delivery PR. No full-suite or 300-chapter result is implied by a short-flow check.
 
 ## Runtime and authority
 
@@ -78,7 +78,7 @@ Source whitespace checks and JavaScript syntax checks passed. Vite's exact gener
 
 ## Phase 9 closure — 2026-09-05
 
-PR #37 was merged at `1a96ab344a8d337af38da51bc080810a63d0a72d`. A conversation summary incorrectly said it was not delivered; repository history, not that summary, is the baseline. This follow-up closes specific orchestration gaps, without restarting Phase 10–13.
+PR #37 was merged at `1a96ab344a8d337af38da51bc080810a63d0a72d`. A conversation summary incorrectly said it was not delivered; repository history, not that summary, is the baseline. This follow-up closes specific orchestration gaps, without restarting Phase 11–13.
 
 - STOP cannot be downgraded by a later PAUSE. Replayed no-op commands do not append new events or invalidate a displayed review revision. Each worker claim has a persisted generation, so an old attempt cannot checkpoint a new attempt. A step that returns no progress fails rather than spinning.
 - REVIEW_REQUIRED resume needs `expected_revision` and `review_candidate_id` from the inspected detail response. Empty/stale approvals return 409. The UI requires inspecting the current revision before approval. Normal resume still accepts an empty object.

@@ -82,6 +82,22 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 		quality.Writer = writer
 	}
 	call := func(agent, operation string, payload any) ([]byte, error) {
+		if operation == "foundation" {
+			selected, selectErr := e.s.projects.CompilePlanningSkills(ctx, j.ProjectID, j.ID+":foundation", j.Input.Idea)
+			if selectErr != nil {
+				return nil, autopilot.Stop("AUTHORING_CONTEXT_FAILED")
+			}
+			raw, marshalErr := json.Marshal(payload)
+			if marshalErr != nil {
+				return nil, marshalErr
+			}
+			var fields map[string]json.RawMessage
+			if unmarshalErr := json.Unmarshal(raw, &fields); unmarshalErr != nil {
+				return nil, unmarshalErr
+			}
+			fields["authoring_context"] = selected
+			payload = fields
+		}
 		data, err := json.Marshal(payload)
 		if err != nil {
 			return nil, err
@@ -157,7 +173,7 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 		if err = e.checkBoundary(ctx, j, true); err != nil {
 			return j, err
 		}
-		data, err := e.s.projects.PlanningContext(ctx, j.ProjectID, j.Chapter, j.Foundation.POV)
+		data, err := e.s.projects.PlanningContext(ctx, j.ProjectID, j.Chapter, j.Foundation.POV, j.ID)
 		if err != nil {
 			return j, autopilot.Stop("PLANNING_CONTEXT_FAILED")
 		}

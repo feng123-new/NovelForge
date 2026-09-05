@@ -55,6 +55,15 @@ func (r *Repository) compileWriterContext(ctx context.Context, req qualitygate.W
 		Budget:               contextcompiler.DefaultBudgetConfig(),
 		RequiredRequirements: []contextcompiler.Requirement{contextcompiler.RequirementCurrentChapterPlan, contextcompiler.RequirementKnowledgeBoundary},
 	}
+	role := "writing"
+	if req.PreviousDraft != "" {
+		role = "polish"
+	}
+	selected, selectErr := r.authoringSelection(ctx, req.ProjectID, req.TransactionID+":writer", role, req.Plan.POV+" "+strings.Join(req.Plan.RequiredBeats, " "), req.Chapter, req.Plan.POV)
+	if selectErr != nil {
+		return nil, selectErr
+	}
+	extra = append(extra, selectionItems(selected)...)
 	planJSON, err := json.Marshal(req.Plan)
 	if err != nil {
 		return nil, err
@@ -135,6 +144,7 @@ func (r *Repository) compileWriterContext(ctx context.Context, req qualitygate.W
 			}
 			return out, nil
 		}),
+		Structured: all(contextcompiler.LayerHistorical, contextcompiler.StageStructured),
 		Foreshadow: all(contextcompiler.LayerHistorical, contextcompiler.StageForeshadow),
 		Recent:     recentContextReader{db: database},
 		FTS5:       contextcompiler.NewFTSStore(database),

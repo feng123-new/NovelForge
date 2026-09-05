@@ -105,17 +105,18 @@ func (r *Repository) AutopilotFingerprint(ctx context.Context, id string, chapte
 		return "", err
 	}
 	defer tx.Rollback()
-	var truth, foreshadows, secrets int64
+	var truth, foreshadows, secrets, authoringRevision int64
 	err = tx.QueryRowContext(ctx, `SELECT
  (SELECT coalesce(max(sequence),0) FROM truth_events),
  (SELECT coalesce(max(sequence),0) FROM foreshadow_events),
- (SELECT coalesce(max(sequence),0) FROM secret_events)`).Scan(&truth, &foreshadows, &secrets)
+ (SELECT coalesce(max(sequence),0) FROM secret_events),
+ (SELECT revision FROM authoring_state WHERE id=1)`).Scan(&truth, &foreshadows, &secrets, &authoringRevision)
 	if err != nil {
 		return "", err
 	}
 	h := sha256.New()
 	encoder := json.NewEncoder(h)
-	if err = encoder.Encode([]any{id, chapter, truth, foreshadows, secrets}); err != nil {
+	if err = encoder.Encode([]any{id, chapter, truth, foreshadows, secrets, authoringRevision}); err != nil {
 		return "", err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT chapter,version_id,authority FROM chapter_active_finals WHERE project_id=? AND chapter<? ORDER BY chapter LIMIT 1001`, id, chapter)

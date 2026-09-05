@@ -98,20 +98,31 @@ func (s ModelLibrarianService) Propose(ctx context.Context, req LibrarianRequest
 // ModelEditorService strictly decodes literary review output. It receives the
 // deterministic Continuity result but has no ability to override a blocking FAIL.
 type ModelEditorService struct {
+	Context EditorialContextProvider
 	Caller  *IdempotentModelCaller
 	Decoder StructuredOutputDecoder
 }
 
 func (s ModelEditorService) Review(ctx context.Context, req EditorRequest) (EditorReview, error) {
+	var selected json.RawMessage
+	var notes []string
+	if s.Context != nil {
+		var err error
+		selected, notes, err = s.Context.CompileEditorialContext(ctx, req)
+		if err != nil {
+			return EditorReview{}, err
+		}
+	}
 	if s.Caller == nil || s.Decoder == nil {
 		return EditorReview{}, errors.New("model editor is not configured")
 	}
 	payload, err := json.Marshal(struct {
-		Schema     string           `json:"schema"`
-		Candidate  Candidate        `json:"candidate"`
-		Draft      string           `json:"draft"`
-		Continuity ContinuityResult `json:"continuity"`
-	}{"EditorReview", req.Candidate, req.Candidate.Text, req.Continuity})
+		AuthoringContext json.RawMessage  `json:"authoring_context,omitempty"`
+		Schema           string           `json:"schema"`
+		Candidate        Candidate        `json:"candidate"`
+		Draft            string           `json:"draft"`
+		Continuity       ContinuityResult `json:"continuity"`
+	}{selected, "EditorReview", req.Candidate, req.Candidate.Text, req.Continuity})
 	if err != nil {
 		return EditorReview{}, err
 	}
@@ -127,5 +138,6 @@ func (s ModelEditorService) Review(ctx context.Context, req EditorRequest) (Edit
 	if _, err := s.Decoder.Decode(ctx, "EditorReview", response, &review); err != nil {
 		return EditorReview{}, err
 	}
+	review.Weaknesses = append(review.Weaknesses, notes...)
 	return review, nil
 }

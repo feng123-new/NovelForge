@@ -2,7 +2,7 @@
 
 ## Current scope — 2026-09-05
 
-Phase 1–8 delivery and the cleanup remain the baseline. Phase 9 has been explicitly reopened and implemented as a durable local Autopilot over the existing quality/version coordinators. Phase 10–13 remain paused; finishing this phase does not start them automatically.
+Phase 1–8 delivery and the cleanup remain the baseline. Phase 9 has been explicitly reopened and implemented as a durable local Autopilot over the existing quality/version coordinators. Phase 10 adds connected Markdown Skills, style/reference libraries and advisory rules. Phase 11–13 remain paused; finishing this phase does not start them automatically.
 
 [AUTOPILOT.md](AUTOPILOT.md) is the current Phase 9 behavior and verification boundary. [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md) records the earlier integration repair. Original reviews and acceptance evidence remain in [the archive](archive/README.md); they are not rewritten as new acceptance claims.
 
@@ -104,7 +104,7 @@ Current focus: distinguish save/restore from semantic Check/Accept and Finalize.
 - Chapter work reuses the actual quality/version coordinators; Web has real controls and review text.
 - The previously planned Fake-LLM 300-chapter simulation is not run under the current limited-check scope; do not infer large-scale acceptance.
 
-## Phase 10 — Skills, style and reference systems — Deferred; frozen
+## Phase 10 — Skills, style and reference systems — Implemented; targeted validation only
 
 - Markdown Writing/Review/Polish/Planning Skills.
 - Configurable anti-AI-flavor and phrase repetition rules.
@@ -133,4 +133,9 @@ Current focus: distinguish save/restore from semantic Check/Accept and Finalize.
 
 ### Phase 9 closure scope
 
-Phase 9 production implementation was merged in PR #37; orchestration follow-up and recovery limits are documented in [AUTOPILOT.md](AUTOPILOT.md). Phase 10–13 remain paused. Historical 300-chapter and full-suite acceptance are still deferred by the limited-check policy, not reported as passed.
+Phase 9 production implementation was merged in PR #37; orchestration follow-up and recovery limits are documented in [AUTOPILOT.md](AUTOPILOT.md). Phase 11–13 remain paused. Historical 300-chapter and full-suite acceptance are still deferred by the limited-check policy, not reported as passed.
+
+
+## Phase 10 authoring systems
+
+Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](AUTHORING.md) for limits, storage and actual runtime behavior. Phase 11–13 remain paused; no full-suite or long-book acceptance is claimed.
