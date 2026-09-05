@@ -43,17 +43,21 @@ jobs:
           name: phase13a-premerge-${{ github.run_id }}
           path: ${{ runner.temp }}/product/verification-results/premerge
           if-no-files-found: warn
-      - name: Publish product branch only
+      - name: Publish source only; workflow files require the authorized maintainer connection
         working-directory: ${{ runner.temp }}/product
         run: |
           git diff --exit-code 9fe83d2268dfa9a8f317e58cbabc8c682fc716fa -- go.mod go.sum web/package-lock.json web/dist docs/archive .goreleaser.yml
           git diff --cached --check
           test -z "$(git diff --name-only)"
+          echo "FULL_VERIFIED_TREE=$(git write-tree)"
+          git ls-files -s .github/workflows
+          git restore --source=9fe83d2268dfa9a8f317e58cbabc8c682fc716fa --staged --worktree .github
+          git diff --exit-code 9fe83d2268dfa9a8f317e58cbabc8c682fc716fa -- .github
           test -z "$(git ls-remote --heads origin feat/phase13a-candidate)"
           test "$(git ls-remote --heads origin main | cut -f1)" = 9fe83d2268dfa9a8f317e58cbabc8c682fc716fa
           git config user.name feng123-new
           git config user.email 203426027+feng123-new@users.noreply.github.com
-          git commit -m 'feat: deliver Phase 13A candidate packaging and local verification'
+          git commit -m 'feat: add Phase 13A candidate packaging and local verification'
           git push origin HEAD:refs/heads/feat/phase13a-candidate
           echo "PRODUCT_COMMIT=$(git rev-parse HEAD)"
           echo "PRODUCT_TREE=$(git rev-parse HEAD^{tree})"
