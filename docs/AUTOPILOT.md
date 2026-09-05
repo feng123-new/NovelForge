@@ -90,3 +90,7 @@ PR #37 was merged at `1a96ab344a8d337af38da51bc080810a63d0a72d`. A conversation 
 - Project writes recheck the task under the project OS lock; archive/delete uses the live-slot query instead of a history page. Worker lock symlinks are rejected. No old migration is edited.
 
 Verification remains named state/control, replay, short chapter flows, contract and UI checks plus entry and asset builds. Exact results and merge SHA are recorded in the closure PR. No full Go/Vitest/race suites, paid model calls, 300-chapter simulation or platform/scale matrix is claimed. Phase 9 is a bounded functional delivery; those explicitly deferred acceptance scopes remain unexecuted.
+
+A newly started task encountering an existing unfinished chapter transaction stops with `EXISTING_DRAFT_REQUIRES_REVIEW`: resume the original paused/failed task, or explicitly review/finalize the retained content. It does not bind a newly generated plan to another task's old draft. Completed Human Finals can take over at planning or generation stages; a pending rebuild cannot satisfy Final completion. These are conservative recovery boundaries, not automatic re-planning or implicit acceptance.
+
+Closure build and the initial 18 named Go / 3 frontend tests passed in Actions `33965208527` on product commit `39e67336d5615066cf5180309475aa79ff468af5`. Follow-up takeover checks are recorded with their exact final product in the delivery PR; this is not full-suite or scale acceptance.

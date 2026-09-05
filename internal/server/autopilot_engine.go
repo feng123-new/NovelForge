@@ -98,6 +98,23 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 		}
 		return out, nil
 	}
+	// Before planning, do not rebrand an older unfinished quality transaction
+	// with this job's new plan/fingerprint. Explicit completed human work can
+	// take over even when this cursor was paused before draft generation.
+	if j.Stage == "plan_context" || j.Stage == "plan" {
+		complete, proofErr := e.s.projects.AutopilotFinalComplete(ctx, j.ProjectID, j.Chapter)
+		if proofErr != nil {
+			return j, autopilot.Stop("FINAL_PROOF_UNAVAILABLE")
+		}
+		if complete {
+			return e.advance(ctx, j)
+		}
+		if _, snapshotErr := quality.Store.Snapshot(ctx, j.ProjectID, j.Chapter); snapshotErr == nil {
+			return j, autopilot.Stop("EXISTING_DRAFT_REQUIRES_REVIEW")
+		} else if !errors.Is(snapshotErr, qualitygate.ErrNotFound) {
+			return j, autopilot.Stop("QUALITY_STATE_UNAVAILABLE")
+		}
+	}
 	switch j.Stage {
 	case "foundation":
 		saved, loadErr := e.s.projects.LoadAutopilotFoundation(ctx, j.ProjectID, j.Input.FoundationID)
@@ -331,6 +348,9 @@ func (e chapterJobEngine) checkBoundary(ctx context.Context, j autopilot.Job, re
 	return nil
 }
 func (e chapterJobEngine) advance(ctx context.Context, j autopilot.Job) (autopilot.Job, error) {
+	if err := e.checkBoundary(ctx, j, false); err != nil {
+		return j, err
+	}
 	complete, proofErr := e.s.projects.AutopilotFinalComplete(ctx, j.ProjectID, j.Chapter)
 	if proofErr != nil || !complete {
 		return j, autopilot.Stop("FINAL_CHECKPOINT_MISSING")

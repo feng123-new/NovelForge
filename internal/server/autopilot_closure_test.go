@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"bytes"
 	"github.com/voocel/ainovel-cli/internal/autopilot"
+	"github.com/voocel/ainovel-cli/internal/chapterversion"
 	"github.com/voocel/ainovel-cli/internal/db/migrate"
 	"github.com/voocel/ainovel-cli/internal/project"
 	"github.com/voocel/ainovel-cli/internal/qualitygate"
@@ -284,5 +285,111 @@ func TestAutopilotClosureOpenAPIApprovalContract(t *testing.T) {
 	if !json.Valid(path) || len(path) == 0 {
 		t.Fatal("resume contract absent")
 	}
-	fmt.Sprint(path) // parsed contract is tested in addition to the real HTTP flow
+	if !bytes.Contains(path, []byte("#/components/schemas/AutopilotApproval")) {
+		t.Fatal("resume schema not referenced")
+	}
+}
+
+func TestAutopilotClosureForeignDraftNotReused(t *testing.T) {
+	model := &phase9Model{calls: map[string]int{}}
+	s, id, foundation, _ := closureFixture(t, model)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/internal", nil).WithContext(t.Context())
+	q, cleanup, failure := s.qualityCoordinator(req, id)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	var plan qualitygate.ChapterPlan
+	if err := json.Unmarshal(apiPlan(1), &plan); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := q.Generate(t.Context(), id, 1, plan)
+	cleanup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Candidates) != 1 {
+		t.Fatal("missing original draft")
+	}
+	closureEnqueue(t, s, id, foundation, "new-job-over-old-draft", 1, 1)
+	if _, err = closureStep(t, s); err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := closureStep(t, s)
+	var failureErr *autopilot.Failure
+	if !errors.As(err, &failureErr) || failureErr.Code != "EXISTING_DRAFT_REQUIRES_REVIEW" || stopped.State != autopilot.Failed {
+		t.Fatal("old draft was adopted under new plan", stopped, err)
+	}
+	if model.calls["writer:draft"] != 1 || model.calls["planner:chapter"] != 0 {
+		t.Fatal("old draft silently regenerated", model.calls)
+	}
+}
+func TestAutopilotClosureHumanFinalResumesPlanning(t *testing.T) {
+	for _, stage := range []string{"plan_context", "plan", "generate", "check"} {
+		t.Run(stage, func(t *testing.T) {
+			model := &phase9Model{calls: map[string]int{}}
+			s, id, foundation, _ := closureFixture(t, model)
+			job := closureEnqueue(t, s, id, foundation, "human-takeover", 1, 1)
+			for n := 0; n < 6 && job.Stage != stage; n++ {
+				var err error
+				job, err = closureStep(t, s)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if job.Stage != stage {
+				t.Fatal("fixture did not reach stage", job.Stage)
+			}
+			if _, err := s.jobs.Control(t.Context(), job.ID, "pause"); err != nil {
+				t.Fatal(err)
+			}
+			lease, err := s.projects.AcquireExecution(t.Context(), id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodGet, "http://localhost/internal", nil).WithContext(t.Context())
+			coordinator, cleanup, failure := s.chapterVersionCoordinator(request, id)
+			if failure != nil {
+				lease.Close()
+				t.Fatal(failure)
+			}
+			service := &chapterversion.Service{Store: coordinator.Store}
+			revision, err := service.SaveHuman(t.Context(), 1, "human-save", "Mira entered the gate. She found a hand-written note.")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = coordinator.Check(t.Context(), 1, "human-check", revision.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = coordinator.Accept(t.Context(), 1, "human-accept", revision.ID, "Author approved replacement"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = coordinator.Finalize(t.Context(), 1, "human-final", revision.ID); err != nil {
+				t.Fatal(err)
+			}
+			active, err := coordinator.Store.ActiveFinal(t.Context(), 1, true)
+			if err != nil || active == nil {
+				t.Fatal("human final missing", err)
+			}
+			finalID := active.ID
+			cleanup()
+			lease.Close()
+			callsBefore := model.calls["writer:draft"]
+			if _, err = s.jobs.Control(t.Context(), job.ID, "resume"); err != nil {
+				t.Fatal(err)
+			}
+			done, err := closureStep(t, s)
+			if err != nil || done.State != autopilot.Completed || done.CompletedThrough != 1 {
+				t.Fatal("human-final takeover stuck", done, err)
+			}
+			versions, err := s.projects.OpenChapterVersionStore(t.Context(), id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer versions.Close()
+			active, err = versions.ActiveFinal(t.Context(), 1, true)
+			if err != nil || active == nil || active.ID != finalID || model.calls["writer:draft"] != callsBefore {
+				t.Fatal("accepted human prose was replaced", err)
+			}
+		})
+	}
 }

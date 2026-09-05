@@ -23,7 +23,8 @@ const autopilotCompletedFinalSQL = `SELECT a.chapter,a.version_id,v.content_sha
  JOIN chapter_finalize_sagas s ON s.operation_id=c.operation_id
  WHERE c.project_id=a.project_id AND c.chapter=a.chapter AND c.version_id=a.version_id
  AND c.final_sha=v.content_sha AND s.project_id=a.project_id AND s.chapter=a.chapter
- AND s.final_version_id=a.version_id AND s.state='completed')`
+ AND s.final_version_id=a.version_id AND s.state='completed')
+ AND NOT EXISTS (SELECT 1 FROM derived_state_rebuilds r WHERE r.project_id=a.project_id AND r.boundary_chapter<=a.chapter AND r.state!='completed')`
 
 func (r *Repository) autopilotDatabase(ctx context.Context, id string) (*sql.DB, error) {
 	versions, err := r.OpenChapterVersionStore(ctx, id)
