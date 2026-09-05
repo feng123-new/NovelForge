@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "repository": "feng123-new/NovelForge",
+  "pr": 39,
+  "merge": "9816bb98f6f8cabfd00797a80ecf721e57c4c461",
+  "product_head": "8a11910f1f68a6baa6e38026e74fb8a41e14c2cd",
+  "product_tree": "e96fe19862d1186110e61c2ffb55031e6f4a8678",
+  "refs": {
+    "feat/phase10-authoring": "8a11910f1f68a6baa6e38026e74fb8a41e14c2cd",
+    "ops/phase10-delivery": "30d0d835c625349a92b75f5156f299a7b6942555"
+  },
+  "checks": [
+    33967464713,
+    33967637352
+  ],
+  "state": "archived_before_delete"
+}
