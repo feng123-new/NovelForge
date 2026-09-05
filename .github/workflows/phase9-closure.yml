@@ -1,4 +1,4 @@
-name: Phase 9 bounded closure
+name: Phase 9 final boundary review
 on:
   push:
     branches: [ops/phase9-closure]
@@ -10,7 +10,7 @@ concurrency:
 jobs:
   targeted:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     env:
       GOWORK: off
       GOFLAGS: -mod=readonly
@@ -21,43 +21,25 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: Apply fixed-base closure in isolated tree
+      - name: Review existing-draft and explicit-Final takeover boundaries
         run: |
-          git worktree add --detach "$RUNNER_TEMP/product" 1a96ab344a8d337af38da51bc080810a63d0a72d
-          python .phase9close/prepare.py "$RUNNER_TEMP/product"
-          python .phase9close/review.py "$RUNNER_TEMP/product"
-      - name: Build and run named orchestration regressions only
+          git worktree add --detach "$RUNNER_TEMP/product" 39e67336d5615066cf5180309475aa79ff468af5
+          python .phase9close/final_boundary.py "$RUNNER_TEMP/product"
+      - name: Build and run only affected chapter-flow regressions
         working-directory: ${{ runner.temp }}/product
         run: |
-          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-closure" ./cmd/novelforge
-          go test -buildvcs=false -count=1 -timeout=120s -v ./internal/autopilot -run '^TestAutopilot(StopCannotBeDowngraded|ReviewRequiresExactDisplayedCandidate|OldClaimCannotFinishNewAttempt|StopsNoProgressAndPreservesReplay|RejectsWorkerSymlink|FoundationHorizonAndBounds|ControlSurvivesRecovery|BoundedRetryEventuallyFails|DurabilityControlAndExclusion|WorkerLeaseAndShutdown)$'
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-final-closure" ./cmd/novelforge
           go test -buildvcs=false -count=1 -timeout=120s -v ./internal/server -run '^TestAutopilot(RealChapterFlowReviewAndRestart|TransportIsolationAndContracts|Closure.*)$'
-      - name: Verify changed UI, wizard compatibility and exact asset build
-        working-directory: ${{ runner.temp }}/product/web
-        run: |
-          npm ci --ignore-scripts
-          npm run check
-          npx vitest run src/pages/Autopilot.test.ts src/lib/wizard.test.ts
-          npm run build
-          node --check dist/assets/app.js
-      - name: Publish verified product branch, never main
+      - name: Publish exact checked follow-up without changing assets or migrations
         working-directory: ${{ runner.temp }}/product
         run: |
-          git add web/dist
-          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-closure-final" ./cmd/novelforge
-          git diff --exit-code 1a96ab344a8d337af38da51bc080810a63d0a72d -- .github go.mod go.sum web/package-lock.json docs/archive
-          git diff --cached --check -- . ':!web/dist/**'
-          test -z "$(git diff --name-only)"
-          test -z "$(git ls-remote --heads origin fix/phase9-closure)"
+          git diff --exit-code 39e67336d5615066cf5180309475aa79ff468af5 -- .github web go.mod go.sum docs/archive
+          git diff --cached --check
+          test "$(git ls-remote --heads origin fix/phase9-closure | cut -f1)" = 39e67336d5615066cf5180309475aa79ff468af5
           git config user.name feng123-new
           git config user.email 203426027+feng123-new@users.noreply.github.com
-          git commit -m 'fix: close Phase 9 control, approval and replay gaps [skip ci]'
+          git commit -m 'fix: close Phase 9 planning-stage takeover and stale draft boundaries [skip ci]'
           git push origin HEAD:refs/heads/fix/phase9-closure
           echo "PRODUCT_COMMIT=$(git rev-parse HEAD)"
           echo "PRODUCT_TREE=$(git rev-parse HEAD^{tree})"
-          git diff --stat HEAD^
+          git diff --stat 1a96ab344a8d337af38da51bc080810a63d0a72d
