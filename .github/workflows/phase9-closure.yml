@@ -1,0 +1,63 @@
+name: Phase 9 bounded closure
+on:
+  push:
+    branches: [ops/phase9-closure]
+permissions:
+  contents: write
+concurrency:
+  group: phase9-bounded-closure
+  cancel-in-progress: false
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOWORK: off
+      GOFLAGS: -mod=readonly
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Apply fixed-base closure in isolated tree
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/product" 1a96ab344a8d337af38da51bc080810a63d0a72d
+          python .phase9close/apply.py "$RUNNER_TEMP/product"
+          python .phase9close/review.py "$RUNNER_TEMP/product"
+      - name: Build and run named orchestration regressions only
+        working-directory: ${{ runner.temp }}/product
+        run: |
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-closure" ./cmd/novelforge
+          go test -buildvcs=false -count=1 -timeout=120s -v ./internal/autopilot -run '^TestAutopilot(StopCannotBeDowngraded|ReviewRequiresExactDisplayedCandidate|OldClaimCannotFinishNewAttempt|StopsNoProgressAndPreservesReplay|RejectsWorkerSymlink|FoundationHorizonAndBounds|ControlSurvivesRecovery|BoundedRetryEventuallyFails|DurabilityControlAndExclusion|WorkerLeaseAndShutdown)$'
+          go test -buildvcs=false -count=1 -timeout=120s -v ./internal/server -run '^TestAutopilot(RealChapterFlowReviewAndRestart|TransportIsolationAndContracts|Closure.*)$'
+      - name: Verify changed UI, wizard compatibility and exact asset build
+        working-directory: ${{ runner.temp }}/product/web
+        run: |
+          npm ci --ignore-scripts
+          npm run check
+          npx vitest run src/pages/Autopilot.test.ts src/lib/wizard.test.ts
+          npm run build
+          node --check dist/assets/app.js
+      - name: Publish verified product branch, never main
+        working-directory: ${{ runner.temp }}/product
+        run: |
+          git add web/dist
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-closure-final" ./cmd/novelforge
+          git diff --exit-code 1a96ab344a8d337af38da51bc080810a63d0a72d -- .github go.mod go.sum web/package-lock.json docs/archive
+          git diff --cached --check -- . ':!web/dist/**'
+          test -z "$(git diff --name-only)"
+          test -z "$(git ls-remote --heads origin fix/phase9-closure)"
+          git config user.name feng123-new
+          git config user.email 203426027+feng123-new@users.noreply.github.com
+          git commit -m 'fix: close Phase 9 control, approval and replay gaps [skip ci]'
+          git push origin HEAD:refs/heads/fix/phase9-closure
+          echo "PRODUCT_COMMIT=$(git rev-parse HEAD)"
+          echo "PRODUCT_TREE=$(git rev-parse HEAD^{tree})"
+          git diff --stat HEAD^
