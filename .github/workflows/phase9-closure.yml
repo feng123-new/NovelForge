@@ -1,4 +1,4 @@
-name: Phase 9 final boundary review
+name: Phase 9 closure post-merge cleanup
 on:
   push:
     branches: [ops/phase9-closure]
@@ -8,39 +8,14 @@ concurrency:
   group: phase9-bounded-closure
   cancel-in-progress: false
 jobs:
-  targeted:
+  cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      GOWORK: off
-      GOFLAGS: -mod=readonly
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: Review existing-draft and explicit-Final takeover boundaries
-        run: |
-          git worktree add --detach "$RUNNER_TEMP/product" 39e67336d5615066cf5180309475aa79ff468af5
-          python .phase9close/final_boundary.py "$RUNNER_TEMP/product"
-          python .phase9close/correct_test_entry.py "$RUNNER_TEMP/product"
-      - name: Build and run only affected chapter-flow regressions
-        working-directory: ${{ runner.temp }}/product
-        run: |
-          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-final-closure" ./cmd/novelforge
-          go test -buildvcs=false -count=1 -timeout=120s -v ./internal/server -run '^TestAutopilot(RealChapterFlowReviewAndRestart|TransportIsolationAndContracts|Closure.*)$'
-      - name: Publish exact checked follow-up without changing assets or migrations
-        working-directory: ${{ runner.temp }}/product
-        run: |
-          git diff --exit-code 39e67336d5615066cf5180309475aa79ff468af5 -- .github web go.mod go.sum docs/archive
-          git diff --cached --check
-          test "$(git ls-remote --heads origin fix/phase9-closure | cut -f1)" = 39e67336d5615066cf5180309475aa79ff468af5
-          git config user.name feng123-new
-          git config user.email 203426027+feng123-new@users.noreply.github.com
-          git commit -m 'fix: close Phase 9 planning-stage takeover and stale draft boundaries [skip ci]'
-          git push origin HEAD:refs/heads/fix/phase9-closure
-          echo "PRODUCT_COMMIT=$(git rev-parse HEAD)"
-          echo "PRODUCT_TREE=$(git rev-parse HEAD^{tree})"
-          git diff --stat 1a96ab344a8d337af38da51bc080810a63d0a72d
+      - name: Verify exact merge, archive and remove only two maintenance refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .phase9close/cleanup.py
