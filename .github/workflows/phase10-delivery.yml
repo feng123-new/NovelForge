@@ -1,0 +1,63 @@
+name: Phase 10 targeted delivery
+on:
+  push:
+    branches: [ops/phase10-delivery]
+permissions:
+  contents: write
+concurrency:
+  group: phase10-targeted-delivery
+  cancel-in-progress: false
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOWORK: 'off'
+      GOFLAGS: '-mod=readonly'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Apply Phase 10 to verified Phase 9 baseline
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/product" c0c07201087b0e56526e58995586dee3f697c2bc
+          python .phase10/prepare.py "$RUNNER_TEMP/product"
+          python .phase10/review.py "$RUNNER_TEMP/product"
+      - name: Build actual entry and run named authoring and orchestration checks
+        working-directory: ${{ runner.temp }}/product
+        run: |
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-phase10" ./cmd/novelforge
+          go test -buildvcs=false -count=1 -timeout=120s -v ./internal/authoring -run '^TestAuthoring'
+          go test -buildvcs=false -count=1 -timeout=120s -v ./internal/server -run '^(TestAuthoringAPIRevisionIsolationAndJobGuard|TestAuthoringActualModelRequestsAndReplay|TestAutopilotRealChapterFlowReviewAndRestart|TestAutopilotClosureAuthorityEditInvalidatesPlan|TestAutopilotClosureInterruptedRewriteReplaysRequest)$'
+      - name: Check changed UI and focused component tests, regenerate embedded assets
+        working-directory: ${{ runner.temp }}/product/web
+        run: |
+          npm ci --ignore-scripts
+          npm run check
+          npx vitest run src/pages/Authoring.test.ts src/pages/Autopilot.test.ts src/lib/wizard.test.ts
+          npm run build
+          node --check dist/assets/app.js
+      - name: Publish only verified product branch, never main
+        working-directory: ${{ runner.temp }}/product
+        run: |
+          git add web/dist
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-phase10-final" ./cmd/novelforge
+          git diff --exit-code c0c07201087b0e56526e58995586dee3f697c2bc -- .github go.mod go.sum web/package-lock.json docs/archive
+          git diff --cached --check -- . ':!web/dist/**'
+          test -z "$(git diff --name-only)"
+          test -z "$(git ls-remote --heads origin feat/phase10-authoring)"
+          git config user.name feng123-new
+          git config user.email 203426027+feng123-new@users.noreply.github.com
+          git commit -m 'feat: deliver Phase 10 skills, style and reference libraries [skip ci]' -m 'Project-scoped Markdown authoring, FTS, revision-aware edits, immutable request selections, budgeted Writer/Planner/Editor integration, advisory expression checks, Web controls and contracts. Targeted checks only; no full suites, paid model runs or Phase 11-13.'
+          git push origin HEAD:refs/heads/feat/phase10-authoring
+          echo "PRODUCT_COMMIT=$(git rev-parse HEAD)"
+          echo "PRODUCT_TREE=$(git rev-parse HEAD^{tree})"
+          git diff --stat HEAD^
