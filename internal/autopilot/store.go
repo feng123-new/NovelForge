@@ -119,6 +119,13 @@ func (s Store) change(ctx context.Context, id string, fn func(Job, error) (Job, 
 	if err != nil {
 		return Job{}, err
 	}
+	if loadErr == nil {
+		a, _ := json.Marshal(old)
+		b, _ := json.Marshal(j)
+		if string(a) == string(b) {
+			return old, nil
+		} // no-op replay must not invalidate approvals or append events
+	}
 	now := time.Now().UTC()
 	j.UpdatedAt = now
 	j.Revision = old.Revision + 1
@@ -187,6 +194,9 @@ func (s Store) Enqueue(ctx context.Context, project, key string, in Input) (Job,
 	})
 }
 func (s Store) Control(ctx context.Context, id, action string) (Job, error) {
+	return s.ControlApproved(ctx, id, action, Approval{})
+}
+func (s Store) ControlApproved(ctx context.Context, id, action string, approval Approval) (Job, error) {
 	return s.change(ctx, id, func(j Job, err error) (Job, error) {
 		if err != nil {
 			return j, err
@@ -204,6 +214,9 @@ func (s Store) Control(ctx context.Context, id, action string) (Job, error) {
 				return j, ErrConflict
 			}
 			if j.State == Running {
+				if j.Control == "stop" && action == "pause" {
+					return j, ErrConflict
+				}
 				j.Control = action
 			} else {
 				j.State = target
@@ -217,6 +230,9 @@ func (s Store) Control(ctx context.Context, id, action string) (Job, error) {
 				return j, ErrConflict
 			}
 			if j.ErrorCode == "REVIEW_REQUIRED" {
+				if approval.Revision != j.Revision || approval.CandidateID == "" || approval.CandidateID != j.ReviewCandidateID {
+					return j, ErrConflict
+				}
 				j.ReviewApproved = true
 			}
 			j.State = Pending
@@ -304,7 +320,11 @@ func (s Store) Next(ctx context.Context) (Job, error) {
 		if j.State != Pending && j.State != Retrying {
 			return j, ErrConflict
 		}
+		if j.NextRun.After(time.Now().UTC()) {
+			return j, ErrConflict
+		}
 		j.State = Running
+		j.ClaimRevision = j.Revision + 1
 		return j, nil
 	})
 }
@@ -313,12 +333,16 @@ func (s Store) Finish(ctx context.Context, before, after Job, stepErr error) (Jo
 		if err != nil {
 			return current, err
 		}
-		if current.State != Running || current.Stage != before.Stage || current.Chapter != before.Chapter {
+		if current.State != Running || before.State != Running || current.ClaimRevision != before.ClaimRevision || current.Stage != before.Stage || current.Chapter != before.Chapter {
 			return current, ErrConflict
+		}
+		if stepErr == nil && after.State == Running && after.Stage == before.Stage && after.Chapter == before.Chapter && current.Control == "" {
+			stepErr = Stop("AUTOPILOT_NO_PROGRESS")
 		}
 		if stepErr == nil {
 			after.ID = current.ID
 			after.ProjectID = current.ProjectID
+			after.ClaimRevision = current.ClaimRevision
 			after.Input = current.Input
 			after.CreatedAt = current.CreatedAt
 			after.Control = current.Control
@@ -356,4 +380,16 @@ func (s Store) Finish(ctx context.Context, before, after Job, stepErr error) (Jo
 		}
 		return current, nil
 	})
+}
+
+// Unfinished queries the unique live slot directly, not a truncated history page.
+func (s Store) Unfinished(ctx context.Context, project string) (bool, error) {
+	db, err := migrate.Open(s.Path, 5*time.Second)
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+	var n int
+	err = db.QueryRowContext(ctx, `SELECT count(*) FROM autopilot_jobs WHERE project_id=? AND state NOT IN ('completed','cancelled')`, project).Scan(&n)
+	return n > 0, err
 }

@@ -45,8 +45,9 @@ func TestAutopilotDurabilityControlAndExclusion(t *testing.T) {
 	if err != nil || paused.State != autopilot.Running || paused.Control != "pause" {
 		t.Fatal("pause acknowledged before writer quiescence", paused, err)
 	}
+	before := running
 	running.Stage = "plan"
-	after, err := s.Finish(ctx, j, running, nil)
+	after, err := s.Finish(ctx, before, running, nil)
 	if err != nil || after.State != autopilot.Paused || after.Stage != "plan" {
 		t.Fatal("pause checkpoint", after, err)
 	}

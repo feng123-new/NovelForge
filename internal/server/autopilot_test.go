@@ -202,12 +202,16 @@ func TestAutopilotRealChapterFlowReviewAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	resumed := postJob(t, s, base+"/"+id+"/resume", "approve1", `{}`)
+	missing := postJob(t, s, base+"/"+id+"/resume", "missing-approval", `{}`)
+	if missing.Code != 409 {
+		t.Fatal("empty review approval accepted", missing.Code, missing.Body.String())
+	}
+	resumed := postJob(t, s, base+"/"+id+"/resume", "approve1", approvalBody(j))
 	if resumed.Code != 202 {
 		t.Fatal(resumed.Body.String())
 	}
-	awaitJob(t, s, id, autopilot.Paused, 2)
-	resumed = postJob(t, s, base+"/"+id+"/resume", "approve2", `{}`)
+	j = awaitJob(t, s, id, autopilot.Paused, 2)
+	resumed = postJob(t, s, base+"/"+id+"/resume", "approve2", approvalBody(j))
 	if resumed.Code != 202 {
 		t.Fatal(resumed.Body.String())
 	}
@@ -273,4 +277,9 @@ func TestAutopilotTransportIsolationAndContracts(t *testing.T) {
 			t.Fatal("missing OpenAPI", path)
 		}
 	}
+}
+
+func approvalBody(j autopilot.Job) string {
+	raw, _ := json.Marshal(autopilot.Approval{Revision: j.Revision, CandidateID: j.ReviewCandidateID})
+	return string(raw)
 }

@@ -709,12 +709,11 @@
           }
         },
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "additionalProperties": false
+                "$ref": "#/components/schemas/AutopilotApproval"
               }
             }
           }
@@ -809,6 +808,9 @@
               }
             },
             "additionalProperties": false
+          },
+          "review_candidate_id": {
+            "type": "string"
           }
         },
         "required": [
@@ -833,6 +835,21 @@
           "actions"
         ],
         "additionalProperties": false
+      },
+      "AutopilotApproval": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "review_candidate_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "description": "For REVIEW_REQUIRED both fields are mandatory and must match the inspected task revision and selected candidate. Stale approvals return 409."
       }
     }
   }
