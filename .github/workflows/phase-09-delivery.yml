@@ -1,4 +1,4 @@
-name: Phase 9 targeted delivery
+name: Phase 9 documentation review
 on:
   push:
     branches: [ops/phase-09-delivery]
@@ -8,60 +8,12 @@ concurrency:
   group: phase-09-delivery
   cancel-in-progress: true
 jobs:
-  targeted:
+  documentation:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      GOWORK: 'off'
-      GOFLAGS: '-mod=readonly'
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: Apply Phase 9 to the fixed clean baseline
-        run: |
-          git worktree add --detach "$RUNNER_TEMP/product" f16f753530c71ad7ca2221c82a93efd1a0455c2e
-          python .phase9/apply.py "$RUNNER_TEMP/product"
-          python .phase9/review.py "$RUNNER_TEMP/product"
-      - name: Build actual entry and run only named Phase 9 checks
-        working-directory: ${{ runner.temp }}/product
-        run: |
-          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-phase9" ./cmd/novelforge
-          go test -buildvcs=false -count=1 -v ./internal/autopilot -run '^TestAutopilot'
-          go test -buildvcs=false -count=1 -v ./internal/server -run '^(TestAutopilotRealChapterFlowReviewAndRestart|TestAutopilotTransportIsolationAndContracts|TestQualityAPIRequiresProviderAndSafeEnvelope|TestQualityAPIGenerateCheckFinalizeAndReplay)$'
-      - name: Check and build changed Web UI with one focused test file
-        working-directory: ${{ runner.temp }}/product/web
-        run: |
-          npm ci --ignore-scripts
-          npm run check
-          npx vitest run src/pages/Autopilot.test.ts
-          npm run build
-      - name: Publish only the checked product tree
-        working-directory: ${{ runner.temp }}/product
-        run: |
-          git add web/dist
-          rm .phase9-paths.json
-          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-phase9-final" ./cmd/novelforge
-          git diff --exit-code f16f753530c71ad7ca2221c82a93efd1a0455c2e -- .github go.mod go.sum web/package-lock.json docs/archive
-          test -z "$(git ls-remote --heads origin feat/phase-09-durable-autopilot)"
-          # Generated JS contains semantic whitespace inside string literals.
-          # Keep Vite's exact output; check source whitespace, not literal data.
-          git diff --cached --check -- . ':!web/dist/**'
-          node --check web/dist/assets/app.js
-          test -z "$(git diff --name-only)"
-          git config user.name feng123-new
-          git config user.email 203426027+feng123-new@users.noreply.github.com
-          git commit -m 'feat: deliver durable Phase 9 Autopilot [skip ci]' -m 'Configured Foundation/ChapterPlan generation, durable local task controls, existing quality and immutable Final workflow, safe review/stop/restart, Web controls and current contracts. Targeted checks only; no full suites, scale simulation or paid model calls.'
-          git push origin HEAD:refs/heads/feat/phase-09-durable-autopilot
-          echo "PRODUCT_COMMIT=$(git rev-parse HEAD)"
-          echo "PRODUCT_TREE=$(git rev-parse HEAD^{tree})"
-          git diff --stat HEAD^
+      - name: Align only current docs and verify unchanged tested code
+        run: python .phase9/finalize_docs.py
