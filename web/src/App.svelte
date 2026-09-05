@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Dashboard from './pages/Dashboard.svelte';
+ import Observability from './pages/Observability.svelte';
   import Lifecycle from './pages/Lifecycle.svelte';
   import Autopilot from './pages/Autopilot.svelte';
   import Authoring from './pages/Authoring.svelte';
@@ -19,6 +20,7 @@
 
   const pages = {
     dashboard: Dashboard,
+ observability: Observability,
     lifecycle: Lifecycle,
     autopilot: Autopilot,
     authoring: Authoring,
@@ -33,6 +35,7 @@
     settings: Settings
   };
   const navigation: { name: RouteName; label: string; icon: string; href: string }[] = [
+    { name: 'observability', label: 'Diagnostics & Cost', icon: '◎', href: '#/observability' },
     { name: 'dashboard', label: 'Dashboard', icon: '◫', href: '#/dashboard' },
     { name: 'projects', label: 'Projects', icon: '◇', href: '#/projects' },
     { name: 'lifecycle', label: 'Import & Backup', icon: '⇄', href: '#/lifecycle' },

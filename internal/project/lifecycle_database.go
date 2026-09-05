@@ -75,7 +75,7 @@ func lifecycleMigrationRows(ctx context.Context, db *sql.DB) ([]string, error) {
 // trigger and view with a pristine database built from our own migration code
 // before querying application tables or publishing the restored project.
 func verifyLifecycleDB(ctx context.Context, filename string, m lifecycle.Manifest) error {
-	if m.Schema < 1 || m.Schema > 10 {
+	if m.Schema < 1 || m.Schema > CurrentDatabaseSchema() {
 		return lifecycle.ErrInvalid
 	}
 	dir, err := os.MkdirTemp("", "novelforge-schema-")

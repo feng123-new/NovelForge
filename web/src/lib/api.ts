@@ -45,7 +45,13 @@ import type { AutopilotPage, AutopilotStart, AutopilotDetail, AutopilotJob, Auto
 
 import type { AuthoringState, AuthoringMutation, AuthoringChange, AuthoringSearch, AuthoringLint } from './authoring';
 
+import type { ObservationPage, ObservationMutation, ObservationChange, ObservationDiagnostics } from './observability';
 export class APIClient {
+ observations(id:string,task='',chapter=0,offset=0):Promise<ObservationPage>{const q=new URLSearchParams({task,offset:String(offset),limit:'50'});if(chapter>0)q.set('chapter',String(chapter));return this.request(`/projects/${encodeURIComponent(id)}/observability?${q}`);}
+ saveObservations(id:string,input:ObservationMutation):Promise<ObservationChange>{return this.write(`/projects/${encodeURIComponent(id)}/observability`,'POST',input);}
+ observationDiagnostics(id:string):Promise<ObservationDiagnostics>{return this.request(`/projects/${encodeURIComponent(id)}/observability/diagnostics`);}
+ observationReport(id:string):Promise<Record<string,unknown>>{return this.request(`/projects/${encodeURIComponent(id)}/observability/report`);}
+
 
   manuscriptImports(id: string, offset=0): Promise<ImportCollection> { return this.request(`/projects/${encodeURIComponent(id)}/lifecycle/imports?limit=50&offset=${offset}`); }
   manuscriptImport(id: string, batch: string, offset=0): Promise<ImportDetail> { return this.request(`/projects/${encodeURIComponent(id)}/lifecycle/imports/${encodeURIComponent(batch)}?limit=50&offset=${offset}`); }

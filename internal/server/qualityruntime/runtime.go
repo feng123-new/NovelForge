@@ -15,6 +15,7 @@ import (
 	"github.com/voocel/agentcore"
 	"github.com/voocel/ainovel-cli/internal/autopilot"
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
+	"github.com/voocel/ainovel-cli/internal/observability"
 	"github.com/voocel/ainovel-cli/internal/qualitygate"
 )
 
@@ -76,7 +77,7 @@ func (r *Runtime) Invoke(ctx context.Context, operation string, payload []byte) 
 	}
 	provider, modelName, _ := r.models.CurrentSelection(role)
 	usage := qualitygate.ModelUsage{Provider: provider, Model: modelName}
-	model := r.models.ForRoleWithFailover(role, nil)
+	model := r.models.ForRoleTracked(role, func(e bootstrap.FailoverEvent) { usage.Provider = e.ToProvider; usage.Model = e.ToModel })
 	if model == nil {
 		return nil, usage, errors.New("quality role model is unavailable")
 	}
@@ -93,6 +94,9 @@ func (r *Runtime) Invoke(ctx context.Context, operation string, payload []byte) 
 		{Role: agentcore.RoleUser, Content: []agentcore.ContentBlock{agentcore.TextBlock(string(payload))}},
 	}, nil, opts...)
 	if err != nil {
+		if observability.ControlCode(err) != "" {
+			return nil, usage, err
+		}
 		retryable := errors.Is(err, context.DeadlineExceeded)
 		var netErr net.Error
 		if errors.As(err, &netErr) {
@@ -102,7 +106,7 @@ func (r *Runtime) Invoke(ctx context.Context, operation string, payload []byte) 
 			retryable = false
 		}
 		// Do not persist or expose a provider body, URL, header, or credential.
-		return nil, usage, &qualitygate.ModelCallError{Code: "QUALITY_PROVIDER_FAILED", Retryable: retryable, Err: errors.New("quality provider request failed")}
+		return nil, usage, &qualitygate.ModelCallError{Code: bootstrap.ObservedErrorCode(err), Retryable: retryable, Err: errors.New("quality provider request failed")}
 	}
 	if response == nil {
 		return nil, usage, errors.New("quality provider returned no response")

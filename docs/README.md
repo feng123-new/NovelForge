@@ -34,3 +34,8 @@ Markdown Writing/Review/Polish/Planning Skills, separate style and reference lib
 ## Phase 11 lifecycle
 
 [Manuscript import, export, backup and restore](LIFECYCLE.md) now connect to immutable versions and the existing semantic review path. Upload and restore do not start paid work. Phase 12–13 remain paused. Verification is bounded to named short flows and affected builds; no whole-book or full-suite acceptance is implied.
+
+
+## Phase 12 — diagnostics and costs
+
+Project-scoped SDK-attempt accounting, conservative pre-call quotas, immutable price snapshots, explicit unknown-cost reconciliation, provider observations and the Diagnostics & Cost page are implemented. See [diagnostics](DIAGNOSTICS.md). Phase 13A delivery preparation and Phase 13B local full acceptance remain separate; no full-suite or long-book result is implied.
