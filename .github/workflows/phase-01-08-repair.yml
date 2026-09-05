@@ -1,0 +1,65 @@
+name: Phase 1-8 isolated repair check
+on:
+  push:
+    branches: [ops/phase-01-08-five-fixes]
+permissions:
+  contents: write
+concurrency:
+  group: phase-01-08-repair
+  cancel-in-progress: false
+jobs:
+  targeted:
+    if: github.repository == 'feng123-new/NovelForge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOWORK: 'off'
+      GOFLAGS: '-mod=readonly'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Apply reviewed changes in a clean worktree
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/candidate" d8309f2de31b1ccee4f514c99f764837f3e9e270
+          python .maintenance/apply_phase_01_08.py "$RUNNER_TEMP/candidate"
+      - name: Compile the actual NovelForge entry
+        working-directory: ${{ runner.temp }}/candidate
+        env:
+          CGO_ENABLED: '0'
+        run: go build -trimpath -o "$RUNNER_TEMP/novelforge" ./cmd/novelforge
+      - name: Targeted compiler and Chinese retrieval checks
+        working-directory: ${{ runner.temp }}/candidate
+        run: go test -buildvcs=false -count=1 -v ./internal/contextcompiler -run '^(TestCharacterSearchNamesBoundaryAndRefresh|TestLegacySelectionReturnsOnlyCompiledRecords|TestLegacyMandatoryOverflowStillFails)$'
+      - name: Targeted Writer input and replay check
+        working-directory: ${{ runner.temp }}/candidate
+        run: go test -buildvcs=false -count=1 -v ./internal/qualitygate -run '^TestWriterContextPrecedesModelCallAndReplay$'
+      - name: Targeted runtime adapter check
+        working-directory: ${{ runner.temp }}/candidate
+        run: go test -buildvcs=false -count=1 -v ./internal/server/qualityruntime -run '^TestRuntimeOperationAndIncompleteResponse$'
+      - name: Configured HTTP and human revision short flow
+        working-directory: ${{ runner.temp }}/candidate
+        run: go test -buildvcs=false -count=1 -v ./internal/server -run '^(TestConfiguredQualityHTTPAndHumanRevision|TestQualityAPIRequiresProviderAndSafeEnvelope|TestQualityAPIGenerateCheckFinalizeAndReplay)$'
+      - name: Entry flag and affected legacy context checks
+        working-directory: ${{ runner.temp }}/candidate
+        run: |
+          go test -buildvcs=false -count=1 -v ./cmd/novelforge -run '^TestServerConfigFlagParsesBeforeUnexpectedArguments$'
+          go test -buildvcs=false -count=1 -v ./internal/tools -run '^TestFinalizeContextPayload'
+      - name: Publish only clean product changes to the repair branch
+        working-directory: ${{ runner.temp }}/candidate
+        run: |
+          test -z "$(git diff --name-only)"
+          git diff --exit-code d8309f2de31b1ccee4f514c99f764837f3e9e270 -- .github go.mod go.sum web
+          test -z "$(git ls-remote --heads origin fix/phase-01-08-five-issues)"
+          git config user.name 'feng123-new'
+          git config user.email '203426027+feng123-new@users.noreply.github.com'
+          git commit -m 'fix: connect Phase 1-8 quality and context paths [skip ci]' -m 'Repair configured Web models, selected context input, Chinese character FTS, loopback Docker defaults and current documentation. Limited named checks only; no full-suite, paid-model or later-phase work.'
+          git push origin HEAD:refs/heads/fix/phase-01-08-five-issues
+          echo "REPAIR_COMMIT=$(git rev-parse HEAD)"
+          echo "REPAIR_TREE=$(git rev-parse HEAD^{tree})"
+          git diff --stat HEAD^
+          { echo '## Limited Phase 1-8 checks'; echo "Source commit: $(git rev-parse HEAD)"; echo "Source tree: $(git rev-parse HEAD^{tree})"; echo 'No full suite, frontend, race, platform matrix, scale or paid-model test was run. Temporary helper files are excluded from this product tree.'; } >> "$GITHUB_STEP_SUMMARY"
