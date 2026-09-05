@@ -169,6 +169,7 @@ func New(cfg Config) (*Server, error) {
 	mux.HandleFunc("/api/truth", s.handleTruth)
 	mux.HandleFunc("/api/truth/", s.handleTruth)
 	s.registerWorkspaceRoutes(mux)
+	s.registerLifecycleRoutes(mux)
 	s.registerAuthoringRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusNotFound, "API_ROUTE_NOT_FOUND", "API route not found")

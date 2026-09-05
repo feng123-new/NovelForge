@@ -1,3 +1,4 @@
+import type { ManuscriptImport, ImportCollection, ImportDetail, ImportedChapter, RestoreResult, MigrationResult } from './lifecycle';
 import type {
   APIErrorPayload,
   ChapterList,
@@ -45,6 +46,26 @@ import type { AutopilotPage, AutopilotStart, AutopilotDetail, AutopilotJob, Auto
 import type { AuthoringState, AuthoringMutation, AuthoringChange, AuthoringSearch, AuthoringLint } from './authoring';
 
 export class APIClient {
+
+  manuscriptImports(id: string, offset=0): Promise<ImportCollection> { return this.request(`/projects/${encodeURIComponent(id)}/lifecycle/imports?limit=50&offset=${offset}`); }
+  manuscriptImport(id: string, batch: string, offset=0): Promise<ImportDetail> { return this.request(`/projects/${encodeURIComponent(id)}/lifecycle/imports/${encodeURIComponent(batch)}?limit=50&offset=${offset}`); }
+  importManuscript(id: string, file: File, start: number): Promise<{import: ManuscriptImport}> { return this.uploadLifecycle(`/projects/${encodeURIComponent(id)}/lifecycle/imports`,file,start); }
+  stepManuscript(id: string, batch: string, chapter: number, analyze: boolean): Promise<{chapter: ImportedChapter}> { return this.write(`/projects/${encodeURIComponent(id)}/lifecycle/imports/${encodeURIComponent(batch)}/step`,'POST',{chapter,analyze}); }
+  restoreLifecycle(file: File): Promise<RestoreResult> { return this.uploadLifecycle('/lifecycle/restore',file); }
+  migrateLifecycle(id: string, expected: number): Promise<MigrationResult> { return this.write(`/projects/${encodeURIComponent(id)}/lifecycle/migrate`,'POST',{expected_format:expected,confirm:id}); }
+  private uploadLifecycle<T>(path: string,file: File,start?: number): Promise<T> { const body=new FormData();body.set('file',file);if(start!==undefined)body.set('start_chapter',String(start));return this.request<T>(path,{method:'POST',headers:{'Idempotency-Key':createIdempotencyKey()},body}); }
+  async downloadLifecycle(id: string,kind: string,from=1,to=0): Promise<Blob> {
+    const prefix=`/projects/${encodeURIComponent(id)}/lifecycle`;
+    let path: string;
+    if(kind==='backup')path=`${prefix}/backup`;
+    else if(kind.startsWith('lifecycle-migrate-'))path=`${prefix}/backups/${encodeURIComponent(kind)}`;
+    else {const q=new URLSearchParams({format:kind,from:String(from)});if(to>0)q.set('to',String(to));path=`${prefix}/export?${q}`;}
+    const fetcher=this.fetcher??globalThis.fetch.bind(globalThis);
+    const response=await fetcher(`${this.baseURL}${path}`,{credentials:'same-origin'});
+    if(!response.ok){const data=await response.json().catch(()=>undefined) as {error?: APIErrorPayload}|undefined;throw new APIClientError(data?.error?.message??'Download failed',response.status,data?.error);}
+    return response.blob();
+  }
+
   authoring(id: string, kind = '', offset = 0): Promise<AuthoringState> { return this.request(`/projects/${encodeURIComponent(id)}/authoring?limit=50&offset=${offset}&kind=${encodeURIComponent(kind)}`); }
   saveAuthoring(id: string, input: AuthoringMutation): Promise<AuthoringChange> { return this.write(`/projects/${encodeURIComponent(id)}/authoring`, 'POST', input); }
   searchAuthoring(id: string, kind: string, q: string, chapter: number, pov: string): Promise<AuthoringSearch> { const params=new URLSearchParams({kind,q,chapter:String(chapter),pov}); return this.request(`/projects/${encodeURIComponent(id)}/authoring/search?${params}`); }

@@ -2,7 +2,7 @@
 
 ## Current maintenance scope
 
-Use the [current documentation index](README.md) and [Roadmap](ROADMAP.md) for Phase 1–9 maintenance. Phase 9 was explicitly reopened; Phase 11–13 remain paused. This maintenance round uses static logic-chain checks, an affected entry build and named tests only; it does not run the full validation commands below. Record the actual commit and verification scope in the PR and current maintenance record. Historical documents under `docs/archive/` preserve prior evidence and are not the place to record new completion claims.
+Use the [current documentation index](README.md) and [Roadmap](ROADMAP.md) for Phase 1–9 maintenance. Phase 9 was explicitly reopened; Phase 11 is now connected; Phase 12–13 remain paused. This maintenance round uses static logic-chain checks, an affected entry build and named tests only; it does not run the full validation commands below. Record the actual commit and verification scope in the PR and current maintenance record. Historical documents under `docs/archive/` preserve prior evidence and are not the place to record new completion claims.
 
 ## Required toolchain
 
@@ -110,3 +110,7 @@ Phase 1 adds no third-party dependency.
 ## Phase 10 authoring systems
 
 Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](AUTHORING.md) for limits, storage and actual runtime behavior. Phase 11–13 remain paused; no full-suite or long-book acceptance is claimed.
+
+## Phase 11 lifecycle
+
+[Manuscript import, export, backup and restore](LIFECYCLE.md) now connect to immutable versions and the existing semantic review path. Upload and restore do not start paid work. Phase 12–13 remain paused. Verification is bounded to named short flows and affected builds; no whole-book or full-suite acceptance is implied.

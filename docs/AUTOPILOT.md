@@ -1,6 +1,6 @@
 # Phase 9 — Durable Autopilot
 
-Phase 9 is reopened by the user's explicit request. Phase 11–13 remain paused. This document describes the production implementation; verification evidence and exact merged revision belong in the delivery PR. No full-suite or 300-chapter result is implied by a short-flow check.
+Phase 9 is reopened by the user's explicit request. Phase 12–13 remain paused. This document describes the production implementation; verification evidence and exact merged revision belong in the delivery PR. No full-suite or 300-chapter result is implied by a short-flow check.
 
 ## Runtime and authority
 

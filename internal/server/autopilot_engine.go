@@ -317,6 +317,15 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 }
 
 func (e chapterJobEngine) checkBoundary(ctx context.Context, j autopilot.Job, rejectCurrent bool) error {
+	if rejectCurrent {
+		pending, err := e.s.projects.ImportedChapterPending(ctx, j.ProjectID, j.Chapter)
+		if err != nil {
+			return autopilot.Stop("IMPORT_STATE_UNAVAILABLE")
+		}
+		if pending {
+			return autopilot.Stop("IMPORTED_CHAPTER_REQUIRES_REVIEW")
+		}
+	}
 	versions, err := e.s.projects.OpenChapterVersionStore(ctx, j.ProjectID)
 	if err != nil {
 		return autopilot.Stop("VERSION_STORE_UNAVAILABLE")

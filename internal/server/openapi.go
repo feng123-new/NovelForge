@@ -24,6 +24,9 @@ var phase9OpenAPI []byte
 //go:embed openapi_phase10.json
 var phase10OpenAPI []byte
 
+//go:embed openapi_phase11.json
+var phase11OpenAPI []byte
+
 var openAPISpec []byte
 
 func init() {
@@ -32,6 +35,7 @@ func init() {
 	openAPISpec = mergeOpenAPIDocuments(openAPISpec, phase8OpenAPI)
 	openAPISpec = mergeOpenAPIDocuments(openAPISpec, phase9OpenAPI)
 	openAPISpec = mergeOpenAPIDocuments(openAPISpec, phase10OpenAPI)
+	openAPISpec = mergeOpenAPIDocuments(openAPISpec, phase11OpenAPI)
 }
 
 func mergeOpenAPIDocuments(baseBytes, extensionBytes []byte) []byte {
