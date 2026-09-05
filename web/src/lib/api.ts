@@ -40,11 +40,18 @@ export class APIClientError extends Error {
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
+import type { AutopilotPage, AutopilotStart, AutopilotDetail, AutopilotJob } from './autopilot';
+
 export class APIClient {
   constructor(
     private readonly baseURL = '/api',
     private readonly fetcher?: FetchLike
   ) {}
+
+  listAutopilot(id: string): Promise<AutopilotPage> { return this.request(`/projects/${encodeURIComponent(id)}/autopilot?limit=100`); }
+  startAutopilot(id: string, input: AutopilotStart): Promise<{ job: AutopilotJob }> { return this.write(`/projects/${encodeURIComponent(id)}/autopilot`, 'POST', input); }
+  autopilotDetail(id: string, job: string): Promise<AutopilotDetail> { return this.request(`/projects/${encodeURIComponent(id)}/autopilot/${encodeURIComponent(job)}`); }
+  controlAutopilot(id: string, job: string, action: 'pause' | 'stop' | 'resume'): Promise<{ job: AutopilotJob }> { return this.write(`/projects/${encodeURIComponent(id)}/autopilot/${encodeURIComponent(job)}/${action}`, 'POST', {}); }
 
   health(): Promise<Health> {
     return this.request('/health');

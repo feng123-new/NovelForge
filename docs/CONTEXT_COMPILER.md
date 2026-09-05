@@ -1,6 +1,6 @@
 # Context Compiler and Hybrid Retrieval
 
-> Current integration: compiler-selected context is used by `novel_context` and the configured Web Writer. These are Phase 1–8 paths; later-phase workers remain deferred. Delivery evidence and limitations are in [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md).
+> Current integration: compiler-selected context is used by `novel_context` and the configured Web Writer. These are Phase 1–8 paths, now reused by the Phase 9 worker; Phase 10–13 remain deferred. Delivery evidence and limitations are in [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md).
 
 Phase 7 introduces `internal/contextcompiler`, a deterministic, read-only boundary between NovelForge's authoritative project state and model prompts. The compiler does not create facts and does not grant Writer, retrieval, FTS, or vector implementations a write capability.
 

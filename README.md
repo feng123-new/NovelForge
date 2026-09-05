@@ -8,7 +8,7 @@ NovelForge 基于 Apache-2.0 上游 [`voocel/ainovel-cli`](https://github.com/vo
 
 [文档导航与当前维护记录](docs/README.md) · [历史交付档案](docs/archive/README.md)
 
-**只维护 Phase 1–8；Phase 9–13 暂停开发和专项维护。** 不开发 Durable Autopilot、不建立新任务队列、不发布新 Release。Foundation 请求仍只保存，`worker_available=false`。
+**Phase 9 已按本次明确请求接入；Phase 10–13 继续暂停。** 默认 Web 启用可恢复 Autopilot，复用前八阶段的质量门禁与版本定稿。新建向导仍只保存请求，用户在 Autopilot 页面单独启动有界任务，不会自动产生模型费用。当前只做定向验证，不发布新 Release。详见 [Autopilot](docs/AUTOPILOT.md)。
 
 历史 PR、合并与 CI 证据保留在 [IMPLEMENTATION_STATUS.md](docs/archive/phase-01-08/IMPLEMENTATION_STATUS.md)。当前源码修复和有限验证边界见 [PHASE_01_08_FIXES.md](docs/PHASE_01_08_FIXES.md)。模块存在、配置满足、定向测试通过和全量验收是不同状态。本轮没有全量回归、付费模型验收或规模测试。
 
@@ -24,6 +24,7 @@ NovelForge 基于 Apache-2.0 上游 [`voocel/ainovel-cli`](https://github.com/vo
 | Narrative Ledger | 伏笔生命周期、计算 OVERDUE、角色秘密持有范围及管理页面 |
 | Context Compiler | 分层预算、必需项、确定性选择、历史 FTS 与中文字符检索 |
 | ChapterVersion | 版本历史、Diff、人工修订、同步、接受、定稿、重建与恢复 |
+| Autopilot | 持久化任务、Foundation/章节规划、连续生成、审阅暂停、停止、重启恢复；只复用已接受的定稿路径 |
 
 ## 安装与启动
 
@@ -74,7 +75,7 @@ NOVELFORGE_CONFIG
 built-in defaults
 ```
 
-显式配置独立使用；同层新旧目录不合并，项目覆盖选中的全局层。旧 `cmd/ainovel-cli` 保持原兼容行为。Web `quality_model_available` 表示工作区默认配置条件；具体项目以其质量状态接口为准，不代表 Worker 可用或 Provider 已联网验证。
+显式配置独立使用；同层新旧目录不合并，项目覆盖选中的全局层。旧 `cmd/ainovel-cli` 保持原兼容行为。Web `quality_model_available` 表示工作区默认配置条件；具体项目以其质量状态接口为准，不代表 Provider 已联网验证；Worker 就绪状态由独立能力字段报告。
 
 ```json
 {

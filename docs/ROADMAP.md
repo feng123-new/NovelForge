@@ -2,6 +2,8 @@
 
 ## Current scope — 2026-09-05
 
+Phase 9 has been explicitly reopened for durable Autopilot delivery. Its implementation and limited verification boundary are documented in [AUTOPILOT.md](AUTOPILOT.md). Phase 10–13 stay paused. The earlier Phase 1–8 consolidation policy below is historical context, not an instruction to disable this newly requested worker.
+
 Active work is limited to fixing and consolidating Phase 1–8: trace existing logic chains, distinguish historical delivery from default-entry readiness, and record narrowly scoped follow-up fixes. Phase 9–13 feature development and phase-specific maintenance are paused. Their descriptions below are retained backlog, not current work or instructions to resume those branches.
 
 [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md) records current fixes and limited verification. [PHASE_01_08_REVIEW.md](archive/phase-01-08/PHASE_01_08_REVIEW.md) preserves the original maintenance review. [IMPLEMENTATION_STATUS.md](archive/phase-01-08/IMPLEMENTATION_STATUS.md) preserves historical PR/CI acceptance evidence. Historical acceptance is not revoked, and it is not a new claim that every default user path works end to end.
@@ -95,12 +97,14 @@ Current focus: legacy output now contains only selected records, and Web Writer 
 
 Current focus: distinguish save/restore from semantic Check/Accept and Finalize. Trace the existing coordinator's model dependency, accepted evaluation, Truth/Ledger commits, file and Active Final switches, derived state and checkpoint. Saving a human revision alone is not successful end-to-end acceptance.
 
-## Phase 9 — Durable Autopilot — Deferred; frozen
+## Phase 9 — Durable Autopilot — Implemented; targeted validation only
 
 - Local durable job queue: pending/running/paused/retrying/failed/completed/cancelled.
 - START / PAUSE / STOP / CONTINUE calling the real Engine.
 - Bounded rewrite policy and resumable checkpoints.
-- Fake-LLM 300-chapter simulation.
+- Foundation and ChapterPlan generation use the configured model and persisted selected context.
+- Chapter work reuses the actual quality/version coordinators; Web has real controls and review text.
+- The previously planned Fake-LLM 300-chapter simulation is not run under the current limited-check scope; do not infer large-scale acceptance.
 
 ## Phase 10 — Skills, style and reference systems — Deferred; frozen
 

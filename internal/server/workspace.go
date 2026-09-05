@@ -39,6 +39,7 @@ func (s *Server) registerWorkspaceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/projects/{id}/chapters", s.handleChapterCollection)
 	mux.HandleFunc("/api/projects/{id}/foundation", s.handleFoundationRequest)
+	s.registerAutopilotRoutes(mux)
 	s.registerChapterVersionRoutes(mux)
 	s.registerQualityRoutes(mux)
 	s.registerLedgerRoutes(mux)
@@ -98,8 +99,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"durable_events":                true,
 			"formal_web_workspace":          true,
 			"foundation_request_storage":    true,
-			"foundation_worker_available":   false,
-			"autopilot_worker_available":    false,
+			"foundation_worker_available":   s.autopilotReady(),
+			"autopilot_worker_available":    s.autopilotReady(),
 			"chapter_quality_gate":          true,
 			"chapter_versions":              true,
 			"chapter_inline_diff":           true,
@@ -144,6 +145,7 @@ func (s *Server) handleFoundationRequest(w http.ResponseWriter, r *http.Request)
 			writeFailure(w, r, *projectFailure(err))
 			return
 		}
+		request.Automation.WorkerAvailable = s.autopilotReady()
 		writeJSON(w, http.StatusOK, request)
 	case http.MethodPost:
 		s.executeIdempotent(
@@ -174,6 +176,7 @@ func (s *Server) handleFoundationRequest(w http.ResponseWriter, r *http.Request)
 					failure := ptrFailure(internalFailure())
 					return failure.Status, nil, failure
 				}
+				request.Automation.WorkerAvailable = s.autopilotReady()
 				return http.StatusAccepted, request, nil
 			},
 		)

@@ -17,6 +17,7 @@ const eventTypes = [
   'project.duplicated',
   'audit.project.deleted',
   'foundation.requested',
+  'autopilot.changed',
   'replay.truncated',
   'stream.error'
 ];

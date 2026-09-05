@@ -18,6 +18,9 @@ import (
 // CompileWriterContext supplies the actual Web Writer input. It never starts
 // jobs, generates plans, or changes Truth/Ledger authority.
 func (r *Repository) CompileWriterContext(ctx context.Context, req qualitygate.WriterRequest, totalTokens int) (json.RawMessage, error) {
+	return r.compileWriterContext(ctx, req, totalTokens, nil)
+}
+func (r *Repository) compileWriterContext(ctx context.Context, req qualitygate.WriterRequest, totalTokens int, extra []contextcompiler.Item) (json.RawMessage, error) {
 	if req.ProjectID == "" || req.Chapter < 1 || req.Plan.Chapter != req.Chapter {
 		return nil, fmt.Errorf("writer context identity is invalid")
 	}
@@ -57,6 +60,11 @@ func (r *Repository) CompileWriterContext(ctx context.Context, req qualitygate.W
 		return nil, err
 	}
 	narrative := []contextcompiler.Item{{ID: "current-plan", Layer: contextcompiler.LayerNarrative, Kind: "chapter_plan", Content: string(planJSON), SourceChapter: req.Chapter, Priority: 1000, Mandatory: true, Requirement: contextcompiler.RequirementCurrentChapterPlan}}
+	for _, item := range extra {
+		if item.Layer == contextcompiler.LayerNarrative {
+			narrative = append(narrative, item)
+		}
+	}
 	boundaryJSON, err := json.Marshal(req.Plan.KnowledgeBoundary)
 	if err != nil {
 		return nil, err
@@ -100,6 +108,11 @@ func (r *Repository) CompileWriterContext(ctx context.Context, req qualitygate.W
 		return nil, fmt.Errorf("%w: accepted POV state was not found", contextcompiler.ErrMissingRequirement)
 	}
 	items := append(truthItems, pinned...)
+	for _, item := range extra {
+		if item.Layer != contextcompiler.LayerNarrative {
+			items = append(items, item)
+		}
+	}
 	all := func(layer contextcompiler.Layer, stage contextcompiler.RetrievalStage) contextcompiler.ItemProvider {
 		return contextcompiler.ProviderFunc(func(context.Context, contextcompiler.Request) ([]contextcompiler.Item, error) {
 			var out []contextcompiler.Item
@@ -125,6 +138,7 @@ func (r *Repository) CompileWriterContext(ctx context.Context, req qualitygate.W
 		Foreshadow: all(contextcompiler.LayerHistorical, contextcompiler.StageForeshadow),
 		Recent:     recentContextReader{db: database},
 		FTS5:       contextcompiler.NewFTSStore(database),
+		Style:      all(contextcompiler.LayerStyle, contextcompiler.StageNone),
 	}
 	compiled, err := contextcompiler.New(providers, nil).Compile(ctx, request)
 	if err != nil {

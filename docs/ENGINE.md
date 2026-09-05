@@ -1,5 +1,7 @@
 # Engine
 
+Phase 9 wraps the existing deterministic chapter-quality engine and immutable Final bridge in a durable worker; it does not replace these with the legacy Host writer loop. See [AUTOPILOT.md](AUTOPILOT.md) for state, locking and recovery boundaries.
+
 NovelForge preserves the existing ainovel-cli TUI, headless flow and legacy engine adapter. Phase 5 adds a separate chapter-quality transaction rather than replacing those entry points.
 
 ## Deterministic chapter transaction

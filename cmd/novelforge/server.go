@@ -46,6 +46,7 @@ func runServerCommand(argv []string) int {
 		Workspace:            *workspace,
 		Version:              versionInfo().Version,
 		QualityConfigEnabled: true,
+		AutopilotEnabled:     true,
 		QualityConfigPath:    compat.ExplicitConfigPath(),
 	})
 	if err != nil {

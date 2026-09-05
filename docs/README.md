@@ -1,6 +1,6 @@
 # NovelForge 文档导航
 
-当前只维护 Phase 1–8，Phase 9–13 继续暂停。源码功能交付、局部验证与正式发布是不同状态。
+当前维护 Phase 1–9，Phase 9 已由用户明确恢复实施；Phase 10–13 继续暂停。源码功能交付、局部验证与正式发布是不同状态。
 
 ## 当前使用与设计
 
@@ -11,6 +11,7 @@
 | 事实与叙事 | [Truth Store](TRUTH_STORE.md)、[Narrative Ledger](NARRATIVE_LEDGER.md) |
 | 创作与版本 | [Quality Gate](QUALITY_GATE.md)、[ChapterVersion](CHAPTER_VERSIONS.md)、[Agent 边界](AGENTS.md) |
 | 上下文 | [Context Compiler](CONTEXT_COMPILER.md) |
+| 持续创作 | [Phase 9 Autopilot](AUTOPILOT.md) |
 | 架构与演进 | [NovelForge 架构](ARCHITECTURE.md)、[保留的上游运行时](upstream/ainovel-runtime-architecture.md)、[上游同步](UPSTREAM_SYNC.md) |
 | 当前范围与修复 | [路线图](ROADMAP.md)、[五项源码修复](PHASE_01_08_FIXES.md) |
 | 历史证据 | [归档导航](archive/README.md)；不以历史 CI 冒充当前运行结果 |

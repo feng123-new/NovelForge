@@ -16,11 +16,7 @@
   onMount(async () => {
     try {
       models = (await api.listModels()).models;
-      const first = models[0];
-      if (first) {
-        state.architectModel = `${first.provider}/${first.id}`;
-        state.writerModel = `${first.provider}/${first.id}`;
-      }
+
     } catch (cause) {
       errors = [cause instanceof APIClientError ? cause.message : '模型列表加载失败'];
     }
@@ -46,7 +42,7 @@
       const project = await api.createProject(requests.project);
       createdID = project.id;
       const foundation = await api.requestFoundation(project.id, requests.foundation);
-      result = `项目“${project.title}”已创建；Foundation 请求 ${foundation.id} 已安全保存。当前未启动 Autopilot worker。`;
+      result = `项目“${project.title}”已创建；Foundation 请求 ${foundation.id} 已安全保存。尚未开始模型调用；请到 Autopilot 页面明确启动任务。`;
       step = 6;
     } catch (cause) {
       const message = cause instanceof APIClientError ? cause.message : '向导提交失败';
@@ -75,7 +71,7 @@
     <div class="alert alert-error" role="alert"><div>{#each errors as error}<p>{error}</p>{/each}</div></div>
   {/if}
   {#if result}
-    <div class="alert alert-success" role="status"><div><p>{result}</p><a class="link mt-2 inline-block" href={`#/chapters?project=${createdID}`}>打开章节页</a></div></div>
+    <div class="alert alert-success" role="status"><div><p>{result}</p><a class="link mt-2 inline-block" href={`#/chapters?project=${createdID}`}>打开章节页</a><a class="link ml-4" href={`#/autopilot?project=${createdID}`}>打开 Autopilot</a></div></div>
   {/if}
 
   <form class="workspace-card p-6" on:submit|preventDefault={submit}>
@@ -94,20 +90,20 @@
       <label class="form-control"><span class="label-text mb-2">风格要求</span><textarea class="textarea textarea-bordered min-h-56" bind:value={state.style} maxlength="4000" placeholder="视角、节奏、语言密度、对白比例、禁用模式"></textarea></label>
     {:else if step === 4}
       <div class="grid gap-4 md:grid-cols-2">
-        <label class="form-control"><span class="label-text mb-2">Architect</span><select class="select select-bordered" bind:value={state.architectModel}>{#each models as model}<option value={`${model.provider}/${model.id}`}>{model.name} · {model.provider}</option>{/each}</select></label>
-        <label class="form-control"><span class="label-text mb-2">Writer</span><select class="select select-bordered" bind:value={state.writerModel}>{#each models as model}<option value={`${model.provider}/${model.id}`}>{model.name} · {model.provider}</option>{/each}</select></label>
+        <label class="form-control"><span class="label-text mb-2">Architect</span><select class="select select-bordered" bind:value={state.architectModel}><option value="">使用项目配置</option>{#each models as model}<option value={`${model.provider}/${model.id}`}>{model.name} · {model.provider}</option>{/each}</select></label>
+        <label class="form-control"><span class="label-text mb-2">Writer</span><select class="select select-bordered" bind:value={state.writerModel}><option value="">使用项目配置</option>{#each models as model}<option value={`${model.provider}/${model.id}`}>{model.name} · {model.provider}</option>{/each}</select></label>
       </div>
       {#if models.length === 0}<p class="muted mt-4">没有可用模型元数据。请先检查 Models 页面和本地配置。</p>{/if}
     {:else if step === 5}
       <div class="grid gap-5 md:grid-cols-2">
-        <fieldset class="space-y-3"><legend class="font-medium">协作模式</legend><label class="label cursor-pointer justify-start gap-3"><input class="radio radio-primary" type="radio" value="copilot" bind:group={state.automationMode} /><span>Copilot</span></label><label class="label cursor-pointer justify-start gap-3"><input class="radio radio-primary" type="radio" value="autopilot" bind:group={state.automationMode} /><span>Autopilot 请求（worker 尚未启用）</span></label></fieldset>
+        <fieldset class="space-y-3"><legend class="font-medium">协作模式</legend><label class="label cursor-pointer justify-start gap-3"><input class="radio radio-primary" type="radio" value="copilot" bind:group={state.automationMode} /><span>Copilot</span></label><label class="label cursor-pointer justify-start gap-3"><input class="radio radio-primary" type="radio" value="autopilot" bind:group={state.automationMode} /><span>Autopilot（创建后单独启动）</span></label></fieldset>
         <fieldset class="space-y-3"><legend class="font-medium">审阅策略</legend><label class="label cursor-pointer justify-start gap-3"><input class="radio radio-secondary" type="radio" value="every_chapter" bind:group={state.reviewPolicy} /><span>每章审阅</span></label><label class="label cursor-pointer justify-start gap-3"><input class="radio radio-secondary" type="radio" value="every_n" bind:group={state.reviewPolicy} /><span>每 N 章审阅</span></label><label class="label cursor-pointer justify-start gap-3"><input class="radio radio-secondary" type="radio" value="full_automatic" bind:group={state.reviewPolicy} /><span>全自动请求</span></label>{#if state.reviewPolicy === 'every_n'}<input class="input input-bordered w-36" type="number" min="1" max="100" bind:value={state.reviewEveryN} aria-label="审阅间隔" />{/if}</fieldset>
       </div>
     {:else}
       <div class="space-y-4">
         <h2 class="text-xl font-semibold">确认 Foundation 请求</h2>
         <div class="grid gap-3 text-sm md:grid-cols-2"><div><span class="muted">标题</span><p>{state.title || '—'}</p></div><div><span class="muted">规模</span><p>{state.targetChapters} 章 / {state.targetWords.toLocaleString()} 字</p></div><div><span class="muted">模式</span><p>{state.automationMode}</p></div><div><span class="muted">审阅</span><p>{state.reviewPolicy}</p></div></div>
-        <div class="alert alert-info"><span>提交会创建真实项目并保存 Foundation 请求；生成 worker 与 START/PAUSE/RESUME 控制属于 Phase 9。</span></div>
+        <div class="alert alert-info"><span>提交会创建真实项目并保存 Foundation 请求；随后在 Autopilot 页面启动、暂停、停止或继续；不会在提交向导时自动产生模型费用。</span></div>
       </div>
     {/if}
 

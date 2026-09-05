@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Dashboard from './pages/Dashboard.svelte';
+  import Autopilot from './pages/Autopilot.svelte';
   import Projects from './pages/Projects.svelte';
   import NewNovelWizard from './pages/NewNovelWizard.svelte';
   import Chapters from './pages/Chapters.svelte';
@@ -16,6 +17,7 @@
 
   const pages = {
     dashboard: Dashboard,
+    autopilot: Autopilot,
     projects: Projects,
     new: NewNovelWizard,
     chapters: Chapters,
@@ -29,6 +31,7 @@
   const navigation: { name: RouteName; label: string; icon: string; href: string }[] = [
     { name: 'dashboard', label: 'Dashboard', icon: '◫', href: '#/dashboard' },
     { name: 'projects', label: 'Projects', icon: '◇', href: '#/projects' },
+    { name: 'autopilot', label: 'Autopilot', icon: '▷', href: '#/autopilot' },
     { name: 'new', label: 'New Novel', icon: '＋', href: '#/new' },
     { name: 'chapters', label: 'Chapters', icon: '≡', href: '#/chapters' },
     { name: 'versions', label: 'Versions', icon: '↺', href: '#/versions' },
