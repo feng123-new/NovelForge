@@ -196,7 +196,7 @@ func (r *Repository) MigrateLifecycle(ctx context.Context, id, key string, expec
 	if err != nil {
 		return result, err
 	}
-	if schema == CurrentDatabaseSchema() && expected == CurrentFormatVersion {
+	if schema == 10 && expected == CurrentFormatVersion {
 		return result, nil
 	}
 	archive, err := r.BackupLifecycle(ctx, id)

@@ -117,7 +117,7 @@ Current focus: distinguish save/restore from semantic Check/Accept and Finalize.
 - ZIP backup/restore excluding global API credentials.
 - Project-format migration with automatic pre-migration backup.
 
-## Phase 12 — Diagnostics, cost and observability — Implemented; targeted verification only
+## Phase 12 — Diagnostics, cost and observability — Deferred; frozen
 
 - Role/provider/model call, token and cost statistics.
 - Provider health/fallback/pause policy.
@@ -141,8 +141,3 @@ Phase 9 production implementation was merged in PR #37; orchestration follow-up 
 Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](AUTHORING.md) for limits, storage and actual runtime behavior. Phase 12–13 remain paused; no full-suite or long-book acceptance is claimed.
 
 Phase 11 current behavior and explicit recovery limits: [Lifecycle](LIFECYCLE.md). Historical test evidence is not rewritten.
-
-
-## Phase 12 — diagnostics and costs
-
-Project-scoped SDK-attempt accounting, conservative pre-call quotas, immutable price snapshots, explicit unknown-cost reconciliation, provider observations and the Diagnostics & Cost page are implemented. See [diagnostics](DIAGNOSTICS.md). Phase 13A delivery preparation and Phase 13B local full acceptance remain separate; no full-suite or long-book result is implied.

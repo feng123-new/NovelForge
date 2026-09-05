@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/voocel/ainovel-cli/internal/observability"
 	"strings"
 	"time"
 )
@@ -143,7 +142,6 @@ func (e *ModelCallError) Error() string {
 func (e *ModelCallError) Unwrap() error { return e.Err }
 
 type IdempotentModelCaller struct {
-	Observer   *observability.Store
 	Repository ModelCallRepository
 	Invoker    ModelInvoker
 	Now        func() time.Time
@@ -176,9 +174,6 @@ func (c IdempotentModelCaller) Call(ctx context.Context, request CallRequest) ([
 			return nil, existing, false, ErrIdempotencyConflict
 		}
 		if existing.Status == "completed" {
-			if c.Observer != nil {
-				c.Observer.Replay(ctx, request.IdempotencyKey)
-			}
 			return []byte(response), existing, true, nil
 		}
 	} else if !errors.Is(err, ErrNotFound) {
@@ -192,15 +187,9 @@ func (c IdempotentModelCaller) Call(ctx context.Context, request CallRequest) ([
 	if newID == nil {
 		newID = func() string { return "call_" + requestHash[:24] }
 	}
-	if c.Observer != nil {
-		ctx = observability.WithCall(ctx, c.Observer, observability.Identity{LogicalKey: request.IdempotencyKey, RequestHash: requestHash, TransactionID: request.TransactionID, Chapter: request.Chapter, Agent: request.Agent, Operation: request.Operation})
-	}
 	started := now().UTC()
 	response, usage, invokeErr := c.Invoker.Invoke(ctx, request.Agent+":"+request.Operation, request.Payload)
 	ended := now().UTC()
-	if observability.ControlCode(invokeErr) != "" {
-		return response, ModelCall{}, false, invokeErr
-	}
 	responseHash := ""
 	if len(response) > 0 {
 		sum := sha256.Sum256(response)

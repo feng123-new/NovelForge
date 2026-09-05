@@ -232,6 +232,3 @@ func (s *Store) Transition(ctx context.Context, transactionID string, to Transac
 	}
 	return s.Transaction(ctx, transactionID)
 }
-
-// Database is borrowed by project-scoped observation recording; Store owns Close.
-func (s *Store) Database() *sql.DB { return s.db }

@@ -169,7 +169,6 @@ func New(cfg Config) (*Server, error) {
 	mux.HandleFunc("/api/truth", s.handleTruth)
 	mux.HandleFunc("/api/truth/", s.handleTruth)
 	s.registerWorkspaceRoutes(mux)
-	s.registerObservationRoutes(mux)
 	s.registerLifecycleRoutes(mux)
 	s.registerAuthoringRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {

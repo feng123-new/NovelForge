@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/voocel/ainovel-cli/internal/observability"
 	"github.com/voocel/ainovel-cli/internal/project"
 	"github.com/voocel/ainovel-cli/internal/qualitygate"
 )
@@ -86,7 +85,7 @@ func (s *Server) qualityCoordinator(r *http.Request, projectID string) (*quality
 		if s.cfg.QualityMaxRetries > 0 {
 			invoker = qualitygate.RetryingModelInvoker{Invoker: invoker, MaxRetries: s.cfg.QualityMaxRetries}
 		}
-		caller := &qualitygate.IdempotentModelCaller{Repository: store, Invoker: invoker, Observer: s.observationStore(store, projectID)}
+		caller := &qualitygate.IdempotentModelCaller{Repository: store, Invoker: invoker}
 		decoder := qualitygate.StrictDecoder{MaxRepairs: s.cfg.QualityMaxRepairs, Repairer: s.cfg.QualityRepairer}
 		if writer == nil {
 			contextTokens := 25000
@@ -314,9 +313,6 @@ func qualityUnavailable() apiFailure {
 }
 
 func qualityFailure(err error) *apiFailure {
-	if observability.ControlCode(err) != "" {
-		return observationFailure(err)
-	}
 	var projectErr *project.Error
 	if errors.As(err, &projectErr) {
 		return projectFailure(err)

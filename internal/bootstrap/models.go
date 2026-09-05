@@ -12,7 +12,6 @@ import (
 	"github.com/voocel/agentcore/llm"
 	"github.com/voocel/ainovel-cli/internal/errs"
 	"github.com/voocel/ainovel-cli/internal/llmcontract"
-	"github.com/voocel/ainovel-cli/internal/observability"
 )
 
 // FailoverEvent 表示一次显式 provider 切换。
@@ -404,7 +403,7 @@ type failoverModel struct {
 
 func (m *failoverModel) Generate(ctx context.Context, messages []agentcore.Message, tools []agentcore.ToolSpec, opts ...agentcore.CallOption) (*agentcore.LLMResponse, error) {
 	current := m.currentTarget()
-	resp, err := observedGenerate(ctx, current, messages, tools, opts...)
+	resp, err := current.model.Generate(ctx, messages, tools, opts...)
 	if err == nil {
 		return resp, nil
 	}
@@ -414,7 +413,7 @@ func (m *failoverModel) Generate(ctx context.Context, messages []agentcore.Messa
 		return nil, err
 	}
 	m.reportFailover(current, next, reason, err)
-	return observedGenerate(ctx, next, messages, tools, opts...)
+	return next.model.Generate(ctx, messages, tools, opts...)
 }
 
 func (m *failoverModel) GenerateStream(ctx context.Context, messages []agentcore.Message, tools []agentcore.ToolSpec, opts ...agentcore.CallOption) (<-chan agentcore.StreamEvent, error) {
@@ -530,10 +529,7 @@ func (m *failoverModel) pickFallback(current modelTarget, err error, requireJSON
 		return modelTarget{}, "", false
 	}
 
-	if code := observability.ControlCode(err); code != "" && code != "PROVIDER_PAUSED" && code != "PROVIDER_COOLDOWN" {
-		return modelTarget{}, "", false
-	}
-	if !agentcore.IsFailoverEligible(err) && observability.ControlCode(err) == "" {
+	if !agentcore.IsFailoverEligible(err) {
 		return modelTarget{}, agentcore.FailoverReason(err), false
 	}
 	reason := agentcore.FailoverReason(err)
