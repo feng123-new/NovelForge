@@ -1,34 +1,19 @@
 {
   "schema": 1,
+  "state": "archived_before_delete",
   "repository": "feng123-new/NovelForge",
-  "base": "48fb03aa1d9d91ee994edc935317d6bbfe6d8b06",
-  "archive_tag": "archive/phase-01-08-cleanup-20260905",
-  "rules": [
-    "Never delete main, frozen later-phase, protected or open-PR refs.",
-    "Only merged ancestry, exact delivered PR heads, duplicate temporary aliases, or workflow-only temporary changes qualify.",
-    "Archive every original head as a parent before deleting; recheck exact remote SHA immediately before deletion."
-  ],
-  "branches": [
+  "pr": 36,
+  "main": "f16f753530c71ad7ca2221c82a93efd1a0455c2e",
+  "reviewed_head": "0e06a07328a355e1c507c983444c1f5e78089f1e",
+  "original_archive": "84dcc9177ca9d67719e901a224941aa4c8ffba9b",
+  "controller": "4bd1ed133f69ed3823b4ca0d5f0f2762004be13b",
+  "deletions": [
     {
       "name": "__probe-release-tool-loading",
       "sha": "13f084e2ed2f1a57b3b05718e3972fa37248f2c1",
       "protected": false,
       "decision": "delete_after_merge",
       "reason": "ancestor_of_main"
-    },
-    {
-      "name": "audit/phase-04-completion-20260902",
-      "sha": "c73c03406c60e72cc3a4756e5a170756f132aa7c",
-      "protected": false,
-      "decision": "retain",
-      "reason": "unique_work_retained"
-    },
-    {
-      "name": "delivery/phase-04-final-controller",
-      "sha": "56886a14eedbb1ec149f33e50f2f8405538213e5",
-      "protected": false,
-      "decision": "retain",
-      "reason": "unique_work_retained"
     },
     {
       "name": "delivery/phase-06-clean",
@@ -68,13 +53,6 @@
       "protected": false,
       "decision": "delete_after_merge",
       "reason": "ancestor_of_main"
-    },
-    {
-      "name": "docs/phase-04-final-acceptance",
-      "sha": "c4ab20c3663e3a9cc7c0f36ba613134bcc128337",
-      "protected": false,
-      "decision": "retain",
-      "reason": "unique_work_retained"
     },
     {
       "name": "docs/phase-06-acceptance",
@@ -140,20 +118,6 @@
       "pr": 8
     },
     {
-      "name": "feature/phase-04-truth-store",
-      "sha": "9e0d054e6fff6cb8c2f97725fea07e26389df7d9",
-      "protected": false,
-      "decision": "retain",
-      "reason": "unique_work_retained"
-    },
-    {
-      "name": "feature/phase-06-narrative-ledger",
-      "sha": "2a4c3803a8aecf11859b85eb2fe45caef6282609",
-      "protected": false,
-      "decision": "retain",
-      "reason": "unique_work_retained"
-    },
-    {
       "name": "feature/phase-06-narrative-ledger-delivery",
       "sha": "77bff5dbbde74bf928129d614b168ac704ad3969",
       "protected": false,
@@ -167,13 +131,6 @@
       "decision": "delete_after_merge",
       "reason": "exact_delivered_pr_head",
       "pr": 30
-    },
-    {
-      "name": "feature/phase-09-autopilot",
-      "sha": "dac5cd4499285a04be880c828d6859339c0fdcec",
-      "protected": false,
-      "decision": "retain",
-      "reason": "protected_active_or_frozen"
     },
     {
       "name": "feature/phase-1-compatibility-completion",
@@ -205,13 +162,6 @@
       "pr": 35
     },
     {
-      "name": "fix/phase-01-08-integration",
-      "sha": "6e9162425b00394beb06bc9f9644feb63082f16d",
-      "protected": false,
-      "decision": "retain",
-      "reason": "unique_work_retained"
-    },
-    {
       "name": "fix/phase-04-truth-store-landing",
       "sha": "078c18aa69929469d219dfd00f5e47aa2c348d86",
       "protected": false,
@@ -226,27 +176,6 @@
       "decision": "delete_after_merge",
       "reason": "exact_delivered_pr_head",
       "pr": 26
-    },
-    {
-      "name": "main",
-      "sha": "48fb03aa1d9d91ee994edc935317d6bbfe6d8b06",
-      "protected": false,
-      "decision": "retain",
-      "reason": "protected_active_or_frozen"
-    },
-    {
-      "name": "ops/phase-01-08-cleanup-20260905",
-      "sha": "5c4d6f6ad356eb9c31aceb840d04b4f5ec82be51",
-      "protected": false,
-      "decision": "retain",
-      "reason": "protected_active_or_frozen"
-    },
-    {
-      "name": "ops/phase-01-08-five-fixes",
-      "sha": "6493a298842416283f7c46cbf9aede86415e8127",
-      "protected": false,
-      "decision": "retain",
-      "reason": "unique_work_retained"
     },
     {
       "name": "ops/phase4-ready",
@@ -535,13 +464,6 @@
       ]
     },
     {
-      "name": "ops/phase6-release-transfer",
-      "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
-      "protected": false,
-      "decision": "retain",
-      "reason": "unique_work_retained"
-    },
-    {
       "name": "ops/phase6-release-transfer-attempt",
       "sha": "5eccaa304db739e146f6d5bd63647326e06fc61c",
       "protected": false,
@@ -657,13 +579,6 @@
       ]
     },
     {
-      "name": "ops/phase6-transfer-release-anchor",
-      "sha": "28c587f08e49bcacd81ccedb90bc2f795354623a",
-      "protected": false,
-      "decision": "retain",
-      "reason": "unique_work_retained"
-    },
-    {
       "name": "ops/phase6-transfer-release-anchor-2",
       "sha": "28c587f08e49bcacd81ccedb90bc2f795354623a",
       "protected": false,
@@ -717,13 +632,6 @@
       "reason": "ancestor_of_main"
     },
     {
-      "name": "ops/phase6-write-files-now-2",
-      "sha": "8dc612dcdcddb4e865f3d796af57131e59158169",
-      "protected": false,
-      "decision": "retain",
-      "reason": "unique_work_retained"
-    },
-    {
       "name": "probe-not-needed",
       "sha": "87db4c899187e23b0d08212e50a333d73f20e12a",
       "protected": false,
@@ -736,8 +644,17 @@
       "protected": false,
       "decision": "delete_after_merge",
       "reason": "ancestor_of_main"
+    },
+    {
+      "name": "ops/phase-01-08-cleanup-20260905",
+      "sha": "4bd1ed133f69ed3823b4ca0d5f0f2762004be13b",
+      "reason": "completed_cleanup_controller"
+    },
+    {
+      "name": "chore/phase-01-08-cleanup-20260905",
+      "sha": "0e06a07328a355e1c507c983444c1f5e78089f1e",
+      "reason": "merged_cleanup_pr"
     }
   ],
-  "cleanup_product_commit": "e3cf8595ca1dadd613d9cae08411a52444efb800",
-  "cleanup_product_tree": "0623038b934a7b2b388cbc43a7fdb3d2f2ef0592"
+  "skipped_changed_or_active": []
 }
