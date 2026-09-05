@@ -13,7 +13,7 @@ import (
 func openFTSTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "context.db")
-	runner := migrate.Runner{Path: path, Migrations: []migrate.Migration{Migration()}, BusyTimeout: time.Second}
+	runner := migrate.Runner{Path: path, Migrations: []migrate.Migration{Migration(), CharacterSearchMigration()}, BusyTimeout: time.Second}
 	if err := runner.Run(context.Background()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

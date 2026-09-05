@@ -11,18 +11,29 @@ import (
 // ModelWriterService adapts the bounded/idempotent model-call boundary to WriterService.
 // It returns only prose; it has no Truth repository and cannot commit authoritative state.
 type ModelWriterService struct {
-	Caller *IdempotentModelCaller
+	Caller        *IdempotentModelCaller
+	Context       WriterContextCompiler
+	ContextTokens int
 }
 
 func (s ModelWriterService) Write(ctx context.Context, req WriterRequest) (WriterResult, error) {
 	if s.Caller == nil {
 		return WriterResult{}, errors.New("model writer caller is required")
 	}
+	var compiled json.RawMessage
+	if s.Context != nil {
+		var err error
+		compiled, err = s.Context.CompileWriterContext(ctx, req, s.ContextTokens)
+		if err != nil {
+			return WriterResult{}, fmt.Errorf("compile writer context: %w", err)
+		}
+	}
 	payload, err := json.Marshal(struct {
-		Plan          ChapterPlan `json:"chapter_plan"`
-		PreviousDraft string      `json:"previous_draft,omitempty"`
-		Feedback      []string    `json:"feedback,omitempty"`
-	}{req.Plan, req.PreviousDraft, req.Feedback})
+		Plan            ChapterPlan     `json:"chapter_plan"`
+		PreviousDraft   string          `json:"previous_draft,omitempty"`
+		Feedback        []string        `json:"feedback,omitempty"`
+		CompiledContext json.RawMessage `json:"compiled_context,omitempty"`
+	}{req.Plan, req.PreviousDraft, req.Feedback, compiled})
 	if err != nil {
 		return WriterResult{}, err
 	}

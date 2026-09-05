@@ -126,6 +126,9 @@ func (s *FTSStore) Collect(ctx context.Context, request Request) ([]Item, error)
 	if s == nil || s.db == nil || strings.TrimSpace(request.Query) == "" {
 		return nil, nil
 	}
+	if containsHan(request.Query) {
+		return s.collectCharacters(ctx, request)
+	}
 	limit := 20
 	query := quoteFTSQuery(request.Query)
 	if query == "" {

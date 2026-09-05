@@ -105,7 +105,7 @@ func (t *ContextTool) Schema() map[string]any {
 	)
 }
 
-func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
+func (t *ContextTool) Execute(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var a struct {
 		Chapter int `json:"chapter"`
 	}
@@ -162,28 +162,89 @@ func (t *ContextTool) Execute(_ context.Context, args json.RawMessage) (json.Raw
 	if a.Chapter > 0 {
 		budget = 100 * 1024
 	}
-	return finalizeContextPayload(result, a.Chapter, budget)
+	return finalizeCompiledContextPayload(ctx, result, a.Chapter, budget)
 }
 
 func finalizeContextPayload(result map[string]any, chapter, budget int) (json.RawMessage, error) {
-	if err := trimByBudget(result, budget); err != nil {
-		return nil, err
-	}
-	result["_loading_summary"] = buildLoadingSummary(result, chapter)
-	if err := trimByBudget(result, budget); err != nil {
-		return nil, err
-	}
-	result["_loading_summary"] = buildLoadingSummary(result, chapter)
-	attachContextCompilerDiagnostics(result, chapter, budget)
+	return finalizeCompiledContextPayload(context.Background(), result, chapter, budget)
+}
 
-	data, err := json.Marshal(result)
-	if err != nil {
-		return nil, fmt.Errorf("marshal context payload: %w", err)
+func finalizeCompiledContextPayload(ctx context.Context, result map[string]any, chapter, budget int) (json.RawMessage, error) {
+	if budget <= 0 {
+		return nil, fmt.Errorf("context byte budget must be positive")
 	}
-	if len(data) > budget {
-		return nil, fmt.Errorf("context payload exceeds budget after summary rebuild: size=%d budget=%d", len(data), budget)
+	tokenBudget := budget / 4
+	if tokenBudget < 1 {
+		tokenBudget = 1
 	}
-	return data, nil
+	// Selection remains compiler-owned. Mandatory errors never fall back.
+	for attempt := 0; attempt < 4; attempt++ {
+		compiled, err := contextcompiler.CompileLegacyMap(ctx, result, contextcompiler.Request{
+			Chapter: chapter, TotalTokens: tokenBudget, RecentChapterCount: 3,
+			Budget: contextcompiler.DefaultBudgetConfig(),
+		}, nil)
+		if err != nil {
+			return nil, fmt.Errorf("compile context: %w", err)
+		}
+		selected, err := contextcompiler.SelectLegacyMap(result, compiled)
+		if err != nil {
+			return nil, err
+		}
+		trimmedSet := map[string]bool{}
+		if prior, ok := result["_trimmed"].([]string); ok {
+			for _, name := range prior {
+				trimmedSet[name] = true
+			}
+		}
+		for _, layer := range compiled.Diagnostics.Layers {
+			for _, item := range layer.Trimmed {
+				trimmedSet[item.Kind] = true
+			}
+		}
+		if len(trimmedSet) > 0 {
+			trimmed := make([]string, 0, len(trimmedSet))
+			for name := range trimmedSet {
+				trimmed = append(trimmed, name)
+			}
+			sort.Strings(trimmed)
+			selected["_trimmed"] = trimmed
+		}
+		selected["_loading_summary"] = buildLoadingSummary(selected, chapter)
+		diagnostic := map[string]any{
+			"version": 2, "status": "applied", "context_sha": compiled.ContextSHA,
+			"total_tokens":  compiled.Diagnostics.TotalTokens,
+			"used_tokens":   compiled.Diagnostics.UsedTokens,
+			"system_tokens": compiled.Diagnostics.SystemTokens,
+			"layers":        compiled.Diagnostics.Layers,
+		}
+		selected["_context_compiler"] = diagnostic
+		data, err := json.Marshal(selected)
+		if err != nil {
+			return nil, fmt.Errorf("marshal context payload: %w", err)
+		}
+		if len(data) <= budget {
+			return data, nil
+		}
+		// Diagnostic detail is optional; compact it before trimming content.
+		delete(diagnostic, "layers")
+		diagnostic["compact"] = true
+		data, err = json.Marshal(selected)
+		if err != nil {
+			return nil, fmt.Errorf("marshal context payload: %w", err)
+		}
+		if len(data) <= budget {
+			return data, nil
+		}
+		reduction := (len(data) - budget + 3) / 4
+		if reduction < 1 {
+			reduction = 1
+		}
+		tokenBudget -= reduction
+		if tokenBudget < 1 {
+			break
+		}
+	}
+	return nil, fmt.Errorf("compiled context and diagnostics exceed byte budget %d", budget)
 }
 
 func attachContextCompilerDiagnostics(result map[string]any, chapter, byteBudget int) {

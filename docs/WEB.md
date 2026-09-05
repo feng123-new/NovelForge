@@ -1,5 +1,7 @@
 # NovelForge Web Workspace
 
+> Maintenance update (2026-09-05): the CLI server now loads project/global quality model configuration and accepts `server --config`. Writer requests include compiled project context. Provider availability is a configuration condition, not a health probe. Workers remain unavailable. See [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md) for current scope and verification limits.
+
 ## Status
 
 Phase 3 replaces the transitional handwritten asset with reproducible Svelte, TypeScript, Vite, Tailwind and DaisyUI source. The production build remains embedded with `go:embed`, so `novelforge server` still ships as one executable.

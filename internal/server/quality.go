@@ -48,10 +48,6 @@ func (s *Server) qualityIdentity(r *http.Request) (string, int, *apiFailure) {
 	return projectID, chapter, nil
 }
 
-func (s *Server) qualityConfigured() bool {
-	return (s.cfg.QualityWriter != nil && s.cfg.QualityLibrarian != nil && s.cfg.QualityEditor != nil) || s.cfg.QualityModel != nil
-}
-
 func (s *Server) qualityCoordinator(r *http.Request, projectID string) (*qualitygate.Coordinator, func(), *apiFailure) {
 	store, err := s.projects.OpenQualityStore(r.Context(), projectID)
 	if err != nil {
@@ -74,15 +70,29 @@ func (s *Server) qualityCoordinator(r *http.Request, projectID string) (*quality
 		_ = store.Close()
 	}
 	writer, librarian, editor := s.cfg.QualityWriter, s.cfg.QualityLibrarian, s.cfg.QualityEditor
-	if s.cfg.QualityModel != nil {
-		invoker := qualitygate.ModelInvoker(s.cfg.QualityModel)
+	model := s.cfg.QualityModel
+	if model == nil && (writer == nil || librarian == nil || editor == nil) {
+		var modelErr error
+		model, modelErr = s.configuredQualityModel(r.Context(), projectID)
+		if modelErr != nil {
+			cleanup()
+			failure := qualityUnavailable()
+			return nil, func() {}, &failure
+		}
+	}
+	if model != nil {
+		invoker := qualitygate.ModelInvoker(model)
 		if s.cfg.QualityMaxRetries > 0 {
 			invoker = qualitygate.RetryingModelInvoker{Invoker: invoker, MaxRetries: s.cfg.QualityMaxRetries}
 		}
 		caller := &qualitygate.IdempotentModelCaller{Repository: store, Invoker: invoker}
 		decoder := qualitygate.StrictDecoder{MaxRepairs: s.cfg.QualityMaxRepairs, Repairer: s.cfg.QualityRepairer}
 		if writer == nil {
-			writer = qualitygate.ModelWriterService{Caller: caller}
+			contextTokens := 25000
+			if budgeted, ok := model.(interface{ WriterContextTokens() int }); ok {
+				contextTokens = budgeted.WriterContextTokens()
+			}
+			writer = qualitygate.ModelWriterService{Caller: caller, Context: s.projects, ContextTokens: contextTokens}
 		}
 		if librarian == nil {
 			librarian = qualitygate.ModelLibrarianService{Caller: caller, Decoder: decoder}
@@ -107,7 +117,7 @@ func (s *Server) qualitySnapshot(r *http.Request, projectID string, chapter int)
 	defer store.Close()
 	snapshot, err := store.Snapshot(r.Context(), projectID, chapter)
 	if errors.Is(err, qualitygate.ErrNotFound) {
-		return qualityView{Snapshot: qualitygate.Snapshot{}, Actions: qualityActions{Generate: s.qualityConfigured()}}, nil
+		return qualityView{Snapshot: qualitygate.Snapshot{}, Actions: qualityActions{Generate: s.qualityConfigured(projectID)}}, nil
 	}
 	if err != nil {
 		return qualityView{}, qualityFailure(err)
@@ -116,7 +126,7 @@ func (s *Server) qualitySnapshot(r *http.Request, projectID string, chapter int)
 }
 
 func (s *Server) qualityActions(snapshot qualitygate.Snapshot) qualityActions {
-	configured := s.qualityConfigured()
+	configured := s.qualityConfigured(snapshot.Transaction.ProjectID)
 	tx := snapshot.Transaction
 	if tx.ID == "" {
 		return qualityActions{Generate: configured}
@@ -197,7 +207,7 @@ func (s *Server) handleQualityGenerate(w http.ResponseWriter, r *http.Request) {
 		if err := plan.Validate(); err != nil {
 			return http.StatusBadRequest, nil, &apiFailure{Status: http.StatusBadRequest, Code: "QUALITY_PLAN_INVALID", Message: "chapter plan is invalid"}
 		}
-		if !s.qualityConfigured() {
+		if !s.qualityConfigured(projectID) {
 			failure := qualityUnavailable()
 			return failure.Status, nil, &failure
 		}
@@ -239,7 +249,7 @@ func (s *Server) handleQualityRewrite(w http.ResponseWriter, r *http.Request) {
 		if plan.Chapter != chapter || plan.Validate() != nil {
 			return http.StatusBadRequest, nil, &apiFailure{Status: http.StatusBadRequest, Code: "QUALITY_PLAN_INVALID", Message: "chapter plan is invalid for this route"}
 		}
-		if !s.qualityConfigured() {
+		if !s.qualityConfigured(projectID) {
 			failure := qualityUnavailable()
 			return failure.Status, nil, &failure
 		}
@@ -280,7 +290,7 @@ func (s *Server) handleQualityEmptyAction(w http.ResponseWriter, r *http.Request
 		if failure := decodeJSONBody(body, &empty, true); failure != nil {
 			return failure.Status, nil, failure
 		}
-		if requiresAgents && !s.qualityConfigured() {
+		if requiresAgents && !s.qualityConfigured(projectID) {
 			failure := qualityUnavailable()
 			return failure.Status, nil, &failure
 		}

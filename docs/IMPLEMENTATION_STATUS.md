@@ -1,5 +1,7 @@
 # NovelForge Implementation Status
 
+> Historical acceptance archive: prior PR/SHA/CI records are unchanged. Current Phase 1–8 maintenance changes and limited validation are recorded in [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md). Phase 9–13 remain frozen.
+
 Last updated: 2026-09-03
 
 ## Verified repository state

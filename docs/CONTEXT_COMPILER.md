@@ -1,5 +1,7 @@
 # Context Compiler and Hybrid Retrieval
 
+> Maintenance update (2026-09-05): `novel_context` now returns compiler-selected records, and Web Writer hashes include compiled project context. Compilation errors stop the call. Additive Migration 8 supports character search without changing Migration 5. Older diagnostic-only integration notes below describe historical Phase 7 delivery; see [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md).
+
 Phase 7 introduces `internal/contextcompiler`, a deterministic, read-only boundary between NovelForge's authoritative project state and model prompts. The compiler does not create facts and does not grant Writer, retrieval, FTS, or vector implementations a write capability.
 
 ## Five layers

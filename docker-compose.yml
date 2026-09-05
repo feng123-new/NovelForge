@@ -12,7 +12,7 @@ services:
       - --workspace
       - /workspace
     ports:
-      - "48090:48090"
+      - "127.0.0.1:48090:48090"
     volumes:
       - ./config:/root/.novelforge
       - ./workspace:/workspace
