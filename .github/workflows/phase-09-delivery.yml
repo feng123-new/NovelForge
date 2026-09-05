@@ -1,4 +1,4 @@
-name: Phase 9 documentation review
+name: Phase 9 post-merge cleanup
 on:
   push:
     branches: [ops/phase-09-delivery]
@@ -6,14 +6,16 @@ permissions:
   contents: write
 concurrency:
   group: phase-09-delivery
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
-  documentation:
+  cleanup:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Align only current docs and verify unchanged tested code
-        run: python .phase9/finalize_docs.py
+      - name: Verify merge, archive and prune only this delivery's two refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .phase9/cleanup.py
