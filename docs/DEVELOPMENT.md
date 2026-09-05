@@ -1,8 +1,15 @@
 # NovelForge development
 
+## Current delivery: Phase 12 + Phase 13A
+
+Phase 1–12 functionality is delivered; Phase 13A supplies default-entry smoke, local verification tools and an explicit release-candidate pipeline. Phase 13B full/platform/scale/real-provider acceptance is pending local execution.
+
+Start with [local deployment](DEPLOYMENT.md), follow [local acceptance](LOCAL_ACCEPTANCE.md), and use the [candidate process](RELEASING.md). A prerelease is not stable/latest, and cross-compilation is not target-platform runtime validation.
+
+
 ## Current maintenance scope
 
-Use the [current documentation index](README.md) and [Roadmap](ROADMAP.md) for Phase 1–9 maintenance. Phase 9 was explicitly reopened; Phase 11 is now connected; Phase 12–13 remain paused. This maintenance round uses static logic-chain checks, an affected entry build and named tests only; it does not run the full validation commands below. Record the actual commit and verification scope in the PR and current maintenance record. Historical documents under `docs/archive/` preserve prior evidence and are not the place to record new completion claims.
+Use the [current documentation index](README.md) and [Roadmap](ROADMAP.md) for Phase 1–9 maintenance. Phase 9 was explicitly reopened; Phase 11 is now connected; Phase 12 is delivered. Phase 13A supplies candidate delivery; Phase 13B full acceptance remains local. This maintenance round uses static logic-chain checks, an affected entry build and named tests only; it does not run the full validation commands below. Record the actual commit and verification scope in the PR and current maintenance record. Historical documents under `docs/archive/` preserve prior evidence and are not the place to record new completion claims.
 
 ## Required toolchain
 
@@ -113,7 +120,7 @@ Markdown Writing/Review/Polish/Planning Skills, separate style and reference lib
 
 ## Phase 11 lifecycle
 
-[Manuscript import, export, backup and restore](LIFECYCLE.md) now connect to immutable versions and the existing semantic review path. Upload and restore do not start paid work. Phase 12–13 remain paused. Verification is bounded to named short flows and affected builds; no whole-book or full-suite acceptance is implied.
+[Manuscript import, export, backup and restore](LIFECYCLE.md) now connect to immutable versions and the existing semantic review path. Upload and restore do not start paid work. Phase 12 is delivered. Phase 13A supplies candidate delivery; Phase 13B full acceptance remains local. Verification is bounded to named short flows and affected builds; no whole-book or full-suite acceptance is implied.
 
 
 ## Phase 12 — diagnostics and costs

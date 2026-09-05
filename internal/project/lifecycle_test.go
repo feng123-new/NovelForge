@@ -56,7 +56,7 @@ func TestLifecycleMigrationKeepsPreimage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Changed || got.From != 1 || got.To != 2 || got.Schema != 10 || got.BackupID == "" {
+	if !got.Changed || got.From != 1 || got.To != 2 || got.Schema != CurrentDatabaseSchema() || got.BackupID == "" {
 		t.Fatalf("migration result: %+v", got)
 	}
 	backup, err := r.ReadLifecycleBackup(ctx, meta.ID, got.BackupID)
@@ -88,7 +88,7 @@ func TestLifecycleMigrationKeepsPreimage(t *testing.T) {
 	var schema int
 	err = store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&schema)
 	store.DB.Close()
-	if err != nil || schema != 10 {
+	if err != nil || schema != CurrentDatabaseSchema() {
 		t.Fatal("schema upgrade missing", err)
 	}
 	second, err := r.MigrateLifecycle(ctx, meta.ID, "migrate-noop", 2)

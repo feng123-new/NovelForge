@@ -21,8 +21,9 @@ func runServerCommand(argv []string) int {
 	port := flags.Int("port", 48090, "listen port")
 	workspace := flags.String("workspace", ".", "directory containing NovelForge or ainovel projects")
 	configPath := flags.String("config", "", "explicit server model configuration file")
+	noAutopilot := flags.Bool("no-autopilot", false, "disable the durable task worker for inspection; explicit manual model actions remain available")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: novelforge server [--host HOST] [--port PORT] [--workspace DIR] [--config FILE]")
+		fmt.Fprintln(flags.Output(), "Usage: novelforge server [--host HOST] [--port PORT] [--workspace DIR] [--config FILE] [--no-autopilot]")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(argv); err != nil {
@@ -46,7 +47,7 @@ func runServerCommand(argv []string) int {
 		Workspace:            *workspace,
 		Version:              versionInfo().Version,
 		QualityConfigEnabled: true,
-		AutopilotEnabled:     true,
+		AutopilotEnabled:     !*noAutopilot,
 		QualityConfigPath:    compat.ExplicitConfigPath(),
 	})
 	if err != nil {

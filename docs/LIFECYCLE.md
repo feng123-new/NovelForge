@@ -1,6 +1,6 @@
 # Phase 11 — Manuscript lifecycle
 
-Phase 11 connects manuscript interchange, resumable import analysis, portable project backup/restore and explicit project-format migration to the existing Web/ChapterVersion workflow. Phase 12–13 remain paused. Exact tested source, named checks, merge and temporary-branch cleanup belong in the delivery PR. This document does not imply full-suite, platform-matrix or long-book acceptance.
+Phase 11 connects manuscript interchange, resumable import analysis, portable project backup/restore and explicit project-format migration to the existing Web/ChapterVersion workflow. Phase 12 is delivered. Phase 13A supplies candidate delivery; Phase 13B full acceptance remains local. Exact tested source, named checks, merge and temporary-branch cleanup belong in the delivery PR. This document does not imply full-suite, platform-matrix or long-book acceptance.
 
 ## Import without implicit acceptance
 
@@ -40,7 +40,7 @@ Limits: ZIP at most 64 MiB, expanded payload at most 256 MiB, at most 4096 archi
 
 ## Restore safely into another workspace
 
-Restore verifies the manifest, hashes and metadata, then writes into a private staging directory. It compares **all** SQLite schema objects and migration checksums with a pristine schema built from bundled migrations before querying application tables or applying pending migrations. Uploaded SQL, triggers or views are never adopted merely because a file hash is valid. It also checks SQLite integrity, foreign keys, project identities, version content hashes and active Final/file/checkpoint consistency. Known project schemas 1–10 are supported; unfamiliar/modified schemas are refused rather than guessed.
+Restore verifies the manifest, hashes and metadata, then writes into a private staging directory. It compares **all** SQLite schema objects and migration checksums with a pristine schema built from bundled migrations before querying application tables or applying pending migrations. Uploaded SQL, triggers or views are never adopted merely because a file hash is valid. It also checks SQLite integrity, foreign keys, project identities, version content hashes and active Final/file/checkpoint consistency. Known project schemas 1–11 are supported; unfamiliar/modified schemas are refused rather than guessed.
 
 The restored project preserves its ID and all version/event references and is published to a new `restored-<id>` directory only after checks succeed. An existing project ID or destination is never overwritten; use another workspace to restore an older copy. Retrying the same archive after an interrupted response returns the already published restore without replacing its current contents. Unfinished orphaned workspace tasks for that project ID block restore so they cannot adopt restored data unexpectedly.
 

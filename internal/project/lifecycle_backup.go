@@ -182,7 +182,7 @@ func (r *Repository) MigrateLifecycle(ctx context.Context, id, key string, expec
 	if err != nil {
 		return LifecycleMigrationResult{}, err
 	}
-	result := LifecycleMigrationResult{From: e.Metadata.FormatVersion, To: CurrentFormatVersion, Schema: 10}
+	result := LifecycleMigrationResult{From: e.Metadata.FormatVersion, To: CurrentFormatVersion, Schema: CurrentDatabaseSchema()}
 	if expected != e.Metadata.FormatVersion {
 		return result, lifecycle.ErrConflict
 	}

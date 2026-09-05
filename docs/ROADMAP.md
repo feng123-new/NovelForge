@@ -2,7 +2,7 @@
 
 ## Current scope — 2026-09-05
 
-Phase 1–8 delivery and the cleanup remain the baseline. Phase 9 has been explicitly reopened and implemented as a durable local Autopilot over the existing quality/version coordinators. Phase 10 adds connected Markdown Skills, style/reference libraries and advisory rules. Phase 12–13 remain paused; finishing this phase does not start them automatically.
+Phase 1–8 delivery and the cleanup remain the baseline. Phase 9 has been explicitly reopened and implemented as a durable local Autopilot over the existing quality/version coordinators. Phase 10 adds connected Markdown Skills, style/reference libraries and advisory rules. Phase 12 is delivered; Phase 13B remains local; finishing this phase does not start them automatically.
 
 [AUTOPILOT.md](AUTOPILOT.md) is the current Phase 9 behavior and verification boundary. [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md) records the earlier integration repair. Original reviews and acceptance evidence remain in [the archive](archive/README.md); they are not rewritten as new acceptance claims.
 
@@ -124,7 +124,7 @@ Current focus: distinguish save/restore from semantic Check/Accept and Finalize.
 - Stuck jobs, rewrite loops, stale summaries, contradictions, overdue foreshadows, context overflow and token explosion diagnostics.
 - Structured logs and live SSE projection.
 
-## Phase 13 — v0.1.0 hardening — Deferred; frozen
+## Phase 13B — v0.1.0 full acceptance — Deferred to local environment
 
 - Complete unit, integration, migration, state-machine, context, Truth, API and regression suites.
 - 100/500/1000 chapter benchmarks.
@@ -133,12 +133,12 @@ Current focus: distinguish save/restore from semantic Check/Accept and Finalize.
 
 ### Phase 9 closure scope
 
-Phase 9 production implementation was merged in PR #37; orchestration follow-up and recovery limits are documented in [AUTOPILOT.md](AUTOPILOT.md). Phase 12–13 remain paused. Historical 300-chapter and full-suite acceptance are still deferred by the limited-check policy, not reported as passed.
+Phase 9 production implementation was merged in PR #37; orchestration follow-up and recovery limits are documented in [AUTOPILOT.md](AUTOPILOT.md). Phase 12 is delivered. Phase 13A supplies candidate delivery; Phase 13B full acceptance remains local. Historical 300-chapter and full-suite acceptance are still deferred by the limited-check policy, not reported as passed.
 
 
 ## Phase 10 authoring systems
 
-Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](AUTHORING.md) for limits, storage and actual runtime behavior. Phase 12–13 remain paused; no full-suite or long-book acceptance is claimed.
+Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](AUTHORING.md) for limits, storage and actual runtime behavior. Phase 12 is delivered; Phase 13B remains local; no full-suite or long-book acceptance is claimed.
 
 Phase 11 current behavior and explicit recovery limits: [Lifecycle](LIFECYCLE.md). Historical test evidence is not rewritten.
 
@@ -146,3 +146,8 @@ Phase 11 current behavior and explicit recovery limits: [Lifecycle](LIFECYCLE.md
 ## Phase 12 — diagnostics and costs
 
 Project-scoped SDK-attempt accounting, conservative pre-call quotas, immutable price snapshots, explicit unknown-cost reconciliation, provider observations and the Diagnostics & Cost page are implemented. See [diagnostics](DIAGNOSTICS.md). Phase 13A delivery preparation and Phase 13B local full acceptance remain separate; no full-suite or long-book result is implied.
+
+
+## Phase 13A — Default entry, verification and candidate delivery
+
+Normal server startup retains its worker; --no-autopilot provides explicit inspection mode. Quick PR checks, manually triggered original full CI, local verification modes, native executable smoke, six-target candidate packaging and prerelease publication are separate. See [deployment](DEPLOYMENT.md), [local acceptance](LOCAL_ACCEPTANCE.md) and [release process](RELEASING.md). Candidate publication is confirmed by the actual GitHub Release and exact manifest, not by this status heading. No Phase 13B full or scale success is implied.
