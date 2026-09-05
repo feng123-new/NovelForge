@@ -2,7 +2,7 @@
 
 ## Current maintenance scope
 
-Use the [current documentation index](README.md) and [Roadmap](ROADMAP.md) for Phase 1–8 maintenance. Phase 9–13 remain paused. This maintenance round uses static logic-chain checks, an affected entry build and named tests only; it does not run the full validation commands below. Record the actual commit and verification scope in the PR and current maintenance record. Historical documents under `docs/archive/` preserve prior evidence and are not the place to record new completion claims.
+Use the [current documentation index](README.md) and [Roadmap](ROADMAP.md) for Phase 1–9 maintenance. Phase 9 was explicitly reopened; Phase 10–13 remain paused. This maintenance round uses static logic-chain checks, an affected entry build and named tests only; it does not run the full validation commands below. Record the actual commit and verification scope in the PR and current maintenance record. Historical documents under `docs/archive/` preserve prior evidence and are not the place to record new completion claims.
 
 ## Required toolchain
 

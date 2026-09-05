@@ -41,9 +41,7 @@ export function validateWizardStep(step: number, state: WizardState): string[] {
     if (state.wordsPerChapter < 100) errors.push('每章字数至少为 100');
   }
   if (step === 2 && !state.idea.trim()) errors.push('请填写核心创意');
-  if (step === 4 && (!state.architectModel.trim() || !state.writerModel.trim())) {
-    errors.push('请选择 Architect 和 Writer 模型');
-  }
+  // Empty role selections inherit the configured project providers.
   if (step === 5 && state.reviewPolicy === 'every_n' && (state.reviewEveryN < 1 || state.reviewEveryN > 100)) {
     errors.push('审阅间隔必须为 1 到 100 章');
   }
@@ -66,10 +64,7 @@ export function buildWizardRequests(state: WizardState): {
     foundation: {
       idea: state.idea.trim(),
       style: state.style.trim(),
-      model_profile: {
-        architect: state.architectModel.trim(),
-        writer: state.writerModel.trim()
-      },
+      model_profile: Object.fromEntries(Object.entries({ architect: state.architectModel.trim(), writer: state.writerModel.trim() }).filter(([, value]) => value !== '')),
       automation: {
         mode: state.automationMode,
         review_policy: state.reviewPolicy,

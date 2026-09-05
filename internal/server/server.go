@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/voocel/ainovel-cli/internal/autopilot"
 	"github.com/voocel/ainovel-cli/internal/project"
 	"github.com/voocel/ainovel-cli/internal/qualitygate"
 	"github.com/voocel/ainovel-cli/internal/server/engineadapter"
@@ -31,12 +32,13 @@ const (
 // Secrets remain in the provider configuration and are never exposed through
 // the server settings/API surface.
 type Config struct {
-	Host            string
-	Port            int
-	Workspace       string
-	Version         string
-	Engine          engineadapter.EngineService
-	EventRepository eventstore.Repository
+	AutopilotEnabled bool
+	Host             string
+	Port             int
+	Workspace        string
+	Version          string
+	Engine           engineadapter.EngineService
+	EventRepository  eventstore.Repository
 
 	// Explicit injection is retained for embedders; CLI enables per-project config.
 	QualityConfigEnabled bool
@@ -54,6 +56,8 @@ type Config struct {
 // Server owns REST/SSE transport and delegates deterministic work to
 // repositories and engine adapters.
 type Server struct {
+	jobs           *autopilot.Store
+	runner         *autopilot.Runner
 	cfg            Config
 	startedAt      time.Time
 	workspaceLabel string
@@ -149,6 +153,13 @@ func New(cfg Config) (*Server, error) {
 		},
 		engine: engine,
 	}
+	s.jobs = &autopilot.Store{Path: paths.Database, Emit: s.publishJobEvent}
+	if cfg.AutopilotEnabled {
+		s.runner, err = autopilot.Start(s.jobs, chapterJobEngine{s: s}, s.projects.AcquireExecution)
+		if err != nil {
+			return nil, fmt.Errorf("start autopilot worker: %w", err)
+		}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/projects", s.handleProjects)
@@ -162,7 +173,7 @@ func New(cfg Config) (*Server, error) {
 		writeAPIError(w, r, http.StatusNotFound, "API_ROUTE_NOT_FOUND", "API route not found")
 	})
 	mux.Handle("/", http.FileServer(http.FS(staticRoot)))
-	s.handler = securityHeaders(traceMiddleware(recoveryMiddleware(mux)))
+	s.handler = securityHeaders(traceMiddleware(recoveryMiddleware(s.autopilotWriteGuard(mux))))
 	return s, nil
 }
 
@@ -194,9 +205,15 @@ func (s *Server) Engine() engineadapter.EngineService { return s.engine }
 
 // Close exists for lifecycle symmetry. Repositories open SQLite handles per
 // operation, so no file lock remains held after a request.
-func (s *Server) Close() error { return nil }
+func (s *Server) Close() error {
+	if s.runner != nil {
+		return s.runner.Close()
+	}
+	return nil
+}
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
+	defer s.Close()
 	httpServer := &http.Server{
 		Addr:              s.Address(),
 		Handler:           s.handler,
