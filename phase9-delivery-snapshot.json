@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "state": "archived_before_delete",
+  "repository": "feng123-new/NovelForge",
+  "pr": 37,
+  "main": "1a96ab344a8d337af38da51bc080810a63d0a72d",
+  "product_tree": "4583e0f5e995af938bd0d3474281d407026dfd14",
+  "tested_source": "3cf18bb1ed8393f794e0b6753baaaee6f9fbac6e",
+  "deletion_refs": {
+    "ops/phase-09-delivery": "7629232ce8418b01e96a378270bbc8aa46eb78d3",
+    "feat/phase-09-durable-autopilot": "489ee1be6a5c4858dcff045a5a263a48e7eb67bc"
+  },
+  "branches_before": {
+    "audit/phase-04-completion-20260902": "c73c03406c60e72cc3a4756e5a170756f132aa7c",
+    "delivery/phase-04-final-controller": "56886a14eedbb1ec149f33e50f2f8405538213e5",
+    "docs/phase-04-final-acceptance": "c4ab20c3663e3a9cc7c0f36ba613134bcc128337",
+    "feat/phase-09-durable-autopilot": "489ee1be6a5c4858dcff045a5a263a48e7eb67bc",
+    "feature/phase-04-truth-store": "9e0d054e6fff6cb8c2f97725fea07e26389df7d9",
+    "feature/phase-06-narrative-ledger": "2a4c3803a8aecf11859b85eb2fe45caef6282609",
+    "feature/phase-09-autopilot": "dac5cd4499285a04be880c828d6859339c0fdcec",
+    "fix/phase-01-08-integration": "6e9162425b00394beb06bc9f9644feb63082f16d",
+    "main": "1a96ab344a8d337af38da51bc080810a63d0a72d",
+    "ops/phase6-release-transfer": "5eccaa304db739e146f6d5bd63647326e06fc61c",
+    "ops/phase6-transfer-release-anchor": "28c587f08e49bcacd81ccedb90bc2f795354623a",
+    "ops/phase6-write-files-now-2": "8dc612dcdcddb4e865f3d796af57131e59158169",
+    "ops/phase-01-08-five-fixes": "6493a298842416283f7c46cbf9aede86415e8127",
+    "ops/phase-09-delivery": "7629232ce8418b01e96a378270bbc8aa46eb78d3"
+  },
+  "reason": "completed merged product and completed isolated delivery controller; all other branches retained"
+}
