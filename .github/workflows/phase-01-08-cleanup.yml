@@ -1,0 +1,48 @@
+name: Phase 1-8 bounded cleanup
+on:
+  push:
+    branches: [ops/phase-01-08-cleanup-20260905]
+permissions:
+  contents: write
+concurrency:
+  group: phase-01-08-cleanup-20260905
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      GOWORK: 'off'
+      GOFLAGS: '-mod=readonly'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select prepare or post-merge cleanup
+        id: mode
+        run: python .cleanup/cleanup.py mode
+      - uses: actions/setup-go@v5
+        if: steps.mode.outputs.mode == 'prepare'
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare isolated product tree and safe branch plan
+        if: steps.mode.outputs.mode == 'prepare'
+        run: python .cleanup/cleanup.py prepare
+      - name: Build actual entry without CGO
+        if: steps.mode.outputs.mode == 'prepare'
+        working-directory: ${{ runner.temp }}/nf-cleanup/product
+        env:
+          CGO_ENABLED: '0'
+        run: go build -trimpath -o "$RUNNER_TEMP/novelforge-cleanup" ./cmd/novelforge
+      - name: Two named context regressions only
+        if: steps.mode.outputs.mode == 'prepare'
+        working-directory: ${{ runner.temp }}/nf-cleanup/product
+        run: go test -buildvcs=false -count=1 -v ./internal/tools -run '^(TestFinalizeContextPayloadReportsAppliedTrimming|TestFinalizeContextPayloadIncludesLayerDiagnostics)$'
+      - name: Publish checked product branch and immutable archive
+        if: steps.mode.outputs.mode == 'prepare'
+        run: python .cleanup/cleanup.py publish
+      - name: Prune exact archived refs only after verified PR merge
+        if: steps.mode.outputs.mode == 'prune'
+        run: python .cleanup/cleanup.py prune
