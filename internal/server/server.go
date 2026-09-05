@@ -38,14 +38,17 @@ type Config struct {
 	Engine          engineadapter.EngineService
 	EventRepository eventstore.Repository
 
-	QualityModel      qualitygate.ModelInvoker
-	QualityRepairer   qualitygate.JSONRepairer
-	QualityWriter     qualitygate.WriterService
-	QualityLibrarian  qualitygate.LibrarianService
-	QualityEditor     qualitygate.EditorService
-	QualityPolicy     qualitygate.Policy
-	QualityMaxRetries int
-	QualityMaxRepairs int
+	// Explicit injection is retained for embedders; CLI enables per-project config.
+	QualityConfigEnabled bool
+	QualityConfigPath    string
+	QualityModel         qualitygate.ModelInvoker
+	QualityRepairer      qualitygate.JSONRepairer
+	QualityWriter        qualitygate.WriterService
+	QualityLibrarian     qualitygate.LibrarianService
+	QualityEditor        qualitygate.EditorService
+	QualityPolicy        qualitygate.Policy
+	QualityMaxRetries    int
+	QualityMaxRepairs    int
 }
 
 // Server owns REST/SSE transport and delegates deterministic work to

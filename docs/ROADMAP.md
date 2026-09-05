@@ -2,9 +2,9 @@
 
 ## Current scope — 2026-09-05
 
-Active work is limited to consolidating Phase 1–8: trace existing logic chains, distinguish historical delivery from default-entry readiness, and record narrowly scoped follow-up fixes. Phase 9–13 feature development and phase-specific maintenance are paused. Their descriptions below are retained backlog, not current work or instructions to resume those branches.
+Active work is limited to fixing and consolidating Phase 1–8: trace existing logic chains, distinguish historical delivery from default-entry readiness, and record narrowly scoped follow-up fixes. Phase 9–13 feature development and phase-specific maintenance are paused. Their descriptions below are retained backlog, not current work or instructions to resume those branches.
 
-[PHASE_01_08_REVIEW.md](PHASE_01_08_REVIEW.md) is the current maintenance checklist. [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) preserves historical PR/CI acceptance evidence. Historical acceptance is not revoked, and it is not a new claim that every default user path works end to end.
+[PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md) records current fixes and limited verification. [PHASE_01_08_REVIEW.md](PHASE_01_08_REVIEW.md) preserves the original maintenance review. [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) preserves historical PR/CI acceptance evidence. Historical acceptance is not revoked, and it is not a new claim that every default user path works end to end.
 
 Verification during this consolidation is static logic-chain review, with a named targeted test or short flow only when needed. Do not run full Go/frontend/race suites, platform build matrices, long-book simulations or scale benchmarks for this work. Existing tests and CI configuration are retained. Skipped or unexecuted checks must not be reported as passed. Reopening a later phase or full validation requires an explicit scope change; it is not automatic after this checklist.
 
@@ -31,7 +31,7 @@ Verification during this consolidation is static logic-chain review, with a name
 - Linux and Windows regression gates cover the dual-path behavior.
 - License notices, migration, development, architecture, roadmap and upstream sync documentation are present.
 
-Current focus: distinguish existing CLI configuration support from the missing default Web quality-model injection. Do not rewrite the legacy entry or perform implicit data migration.
+Current focus: default Web quality services now use project/global configuration and server --config; preserve configuration isolation. Do not rewrite the legacy entry or perform implicit data migration.
 
 ## Phase 2 — Embedded server and API foundation — Delivered; trace service wiring
 
@@ -61,14 +61,14 @@ Current focus: distinguish module availability from model-service readiness and 
 
 Current focus: trace accepted writes, temporal query boundaries and the relationship between immutable events and derived state. Do not mark new runtime or scale acceptance from a static review.
 
-## Phase 5 — Librarian and Continuity gate — Delivered module; default Web connection incomplete
+## Phase 5 — Librarian and Continuity gate — Delivered module; default Web configuration connected
 
 - JSON Schema fact proposals and deterministic validation.
 - Draft persistence, bounded revision selection and recoverable Final commit.
 - Character state, timeline, inventory, relation and knowledge-boundary checks.
 - Severe FAIL versus advisory WARN semantics.
 
-Current focus: supply the model services through the normal startup/configuration path without weakening validation or allowing a blocking FAIL to finalize. This is a Phase 1–8 integration follow-up, not an Autopilot implementation.
+Current focus: model services are connected through normal startup/configuration without weakening validation or allowing a blocking FAIL to finalize; verify affected paths only. This is a Phase 1–8 integration follow-up, not an Autopilot implementation.
 
 ## Phase 6 — Narrative ledger — Delivered; trace accepted-Final consumption
 
@@ -78,14 +78,14 @@ Current focus: supply the model services through the normal startup/configuratio
 
 Current focus: preserve accepted-Final-only model-originated writes, distinguish explicit management actions from model proposals, and trace Chapter-N/POV boundaries into consuming context paths. Do not infer complete runtime integration merely from provider existence.
 
-## Phase 7 — Context Compiler and hybrid retrieval — Delivered module; input integration incomplete
+## Phase 7 — Context Compiler and hybrid retrieval — Delivered module; selected-input integration repaired
 
 - Five context layers and configurable token allocation.
 - Structured/timeline/foreshadow/relation/recent/FTS5 pipeline.
 - Vector retrieval interface without mandatory external service.
 - Context latency and overflow tests retained.
 
-Current focus: the existing `novel_context` still returns the legacy payload with compiler diagnostics. Trace how actual Writer input will consume the compiler result and real project-scoped providers. Chinese FTS recall is a targeted follow-up, not a completed acceptance result.
+Current focus: legacy output now contains only selected records, and Web Writer receives compiled project context. Additive character FTS supports Chinese substring terms. Verify selected inputs and small retrieval samples, not full-book scale.
 
 ## Phase 8 — Chapter version workflow — Delivered module; review complete action chain
 

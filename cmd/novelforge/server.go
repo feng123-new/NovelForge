@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/voocel/ainovel-cli/internal/compat"
 	"github.com/voocel/ainovel-cli/internal/server"
 )
 
@@ -19,8 +20,9 @@ func runServerCommand(argv []string) int {
 	host := flags.String("host", "127.0.0.1", "listen host")
 	port := flags.Int("port", 48090, "listen port")
 	workspace := flags.String("workspace", ".", "directory containing NovelForge or ainovel projects")
+	configPath := flags.String("config", "", "explicit server model configuration file")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: novelforge server [--host HOST] [--port PORT] [--workspace DIR]")
+		fmt.Fprintln(flags.Output(), "Usage: novelforge server [--host HOST] [--port PORT] [--workspace DIR] [--config FILE]")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(argv); err != nil {
@@ -32,11 +34,19 @@ func runServerCommand(argv []string) int {
 		return 2
 	}
 
+	if *configPath != "" {
+		if err := compat.SetExplicitConfigPath(*configPath); err != nil {
+			fmt.Fprintln(os.Stderr, "server: invalid explicit configuration path")
+			return 2
+		}
+	}
 	app, err := server.New(server.Config{
-		Host:      *host,
-		Port:      *port,
-		Workspace: *workspace,
-		Version:   versionInfo().Version,
+		Host:                 *host,
+		Port:                 *port,
+		Workspace:            *workspace,
+		Version:              versionInfo().Version,
+		QualityConfigEnabled: true,
+		QualityConfigPath:    compat.ExplicitConfigPath(),
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "server: %v\n", err)
