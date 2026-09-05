@@ -1,0 +1,63 @@
+name: Phase 12 targeted delivery
+on:
+  push:
+    branches: [ops/phase12-20260906]
+permissions:
+  contents: write
+concurrency:
+  group: phase12-delivery
+  cancel-in-progress: false
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOWORK: 'off'
+      GOFLAGS: '-mod=readonly'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Prepare project-scoped observation implementation
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/product" 4484a7397ef0494ce5113163c845d131f685ed7d
+          python .delivery/prepare_all.py "$RUNNER_TEMP/product"
+      - name: Build entry and run only named accounting and flow checks
+        working-directory: ${{ runner.temp }}/product
+        run: |
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-phase12" ./cmd/novelforge
+          go test -buildvcs=false -count=1 -timeout=150s -v ./internal/observability -run '^TestObservation'
+          go test -buildvcs=false -count=1 -timeout=150s -v ./internal/server -run '^(TestObservationConfiguredAttemptsFallbackReplayAndPause|TestObservationAPIRevisionContractAndUnknownUsage|TestAutopilotRealChapterFlowReviewAndRestart|TestAutopilotClosureInterruptedRewriteReplaysRequest|TestAuthoringActualModelRequestsAndReplay|TestLifecycleImportAnalysisExportRestoreFlow)$'
+      - name: Check new page and rebuild exact embedded assets
+        working-directory: ${{ runner.temp }}/product/web
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          npx vitest run src/pages/Observability.test.ts src/pages/Autopilot.test.ts src/pages/Lifecycle.test.ts
+          npm run build
+          node --check dist/assets/app.js
+      - name: Publish checked feature branch without maintenance helpers
+        working-directory: ${{ runner.temp }}/product
+        run: |
+          git add web/dist
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-phase12-final" ./cmd/novelforge
+          git diff --exit-code 4484a7397ef0494ce5113163c845d131f685ed7d -- .github go.mod go.sum web/package-lock.json docs/archive
+          git diff --cached --check -- . ':!web/dist/**'
+          test -z "$(git diff --name-only)"
+          test -z "$(git ls-remote --heads origin feat/phase12-observability)"
+          test "$(git ls-remote --heads origin main | cut -f1)" = 4484a7397ef0494ce5113163c845d131f685ed7d
+          git config user.name feng123-new
+          git config user.email 203426027+feng123-new@users.noreply.github.com
+          git commit -m 'feat: deliver Phase 12 diagnostics, costs and request protection [skip ci]'
+          git push origin HEAD:refs/heads/feat/phase12-observability
+          echo "PRODUCT_COMMIT=$(git rev-parse HEAD)"
+          echo "PRODUCT_TREE=$(git rev-parse HEAD^{tree})"
+          git diff --stat HEAD^
