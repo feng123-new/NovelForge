@@ -1,4 +1,4 @@
-name: Phase 11 targeted delivery
+name: Phase 11 post-merge cleanup
 
 on:
   push:
@@ -12,57 +12,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  targeted:
+  cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
-    env:
-      GOWORK: "off"
-      GOFLAGS: "-mod=readonly"
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: Apply bounded lifecycle implementation to fixed product baseline
-        run: |
-          git worktree add --detach "$RUNNER_TEMP/product" 9816bb98f6f8cabfd00797a80ecf721e57c4c461
-          python .phase11/prepare.py "$RUNNER_TEMP/product"
-          python .phase11/review.py "$RUNNER_TEMP/product"
-      - name: Build actual entry and run named lifecycle and integration checks
-        working-directory: ${{ runner.temp }}/product
-        run: |
-          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-phase11" ./cmd/novelforge
-          go test -buildvcs=false -count=1 -timeout=120s -v ./internal/lifecycle -run '^TestLifecycle(TextAndEPUBRoundTrip|EPUBSpineAndInactiveMarkup|ArchivePathsAndManifest)$'
-          go test -buildvcs=false -count=1 -timeout=120s -v ./internal/project -run '^TestLifecycle(MigrationKeepsPreimage|RejectsChangedSchemaAndSymlinks)$'
-          go test -buildvcs=false -count=1 -timeout=120s -v ./internal/server -run '^(TestLifecycleImportAnalysisExportRestoreFlow|TestLifecycleTransportIsolationAndGuards|TestAutopilotRealChapterFlowReviewAndRestart|TestAutopilotClosureInterruptedRewriteReplaysRequest|TestAuthoringActualModelRequestsAndReplay)$'
-      - name: Check consent and resume UI and regenerate embedded assets
-        working-directory: ${{ runner.temp }}/product/web
-        run: |
-          npm ci --ignore-scripts
-          npm run check
-          npx vitest run src/pages/Lifecycle.test.ts src/pages/Autopilot.test.ts src/lib/wizard.test.ts
-          npm run build
-          node --check dist/assets/app.js
-      - name: Publish exact verified product branch, never main
-        working-directory: ${{ runner.temp }}/product
-        run: |
-          git add web/dist
-          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/novelforge-phase11-embedded" ./cmd/novelforge
-          git diff --exit-code 9816bb98f6f8cabfd00797a80ecf721e57c4c461 -- .github go.mod go.sum web/package-lock.json docs/archive
-          git diff --cached --check -- . ':!web/dist/**'
-          test -z "$(git diff --name-only)"
-          test -z "$(git ls-remote --heads origin feat/phase11-lifecycle)"
-          git config user.name feng123-new
-          git config user.email 203426027+feng123-new@users.noreply.github.com
-          git commit -m 'feat: deliver Phase 11 manuscript lifecycle and portable recovery [skip ci]' -m 'Bounded text and EPUB interchange, staged resumable semantic analysis, proved-Final export, validated SQLite snapshots, non-overwriting restore and backed-up format migration. Explicit UI consent, typed routes, actual integration checks. No full suites or paid-model/scale acceptance.'
-          git push origin HEAD:refs/heads/feat/phase11-lifecycle
-          echo "PRODUCT_COMMIT=$(git rev-parse HEAD)"
-          echo "PRODUCT_TREE=$(git rev-parse HEAD^{tree})"
-          git diff --stat HEAD^
+      - name: Verify exact merge and archive before pruning two refs
+        run: python .phase11/cleanup.py
