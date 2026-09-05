@@ -1,6 +1,6 @@
 # NovelForge Web Workspace
 
-> Maintenance update (2026-09-05): the CLI server now loads project/global quality model configuration and accepts `server --config`. Writer requests include compiled project context. Provider availability is a configuration condition, not a health probe. Workers remain unavailable. See [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md) for current scope and verification limits.
+> Maintenance update (2026-09-05): the CLI server now loads project/global quality model configuration and accepts `server --config`. Writer requests include compiled project context. Provider availability is a configuration condition, not a health probe. The normal CLI entry now enables the Phase 9 worker. Worker readiness and model configuration are distinct conditions. See [AUTOPILOT.md](AUTOPILOT.md) for current controls and verification limits.
 
 ## Status
 
@@ -29,7 +29,7 @@ The shell has four persistent regions:
 - an AI Inspector that displays only connected capabilities;
 - a Task / Log strip driven by the durable SSE stream.
 
-The shell is responsive, keyboard reachable and supports light and dark themes. Theme preference is the only value stored in browser storage. Projects, requests, events and all future job state remain authoritative on the local server.
+The shell is responsive, keyboard reachable and supports light and dark themes. Theme preference is the only value stored in browser storage. Projects, requests, events and durable job state remain authoritative on the local server.
 
 ## Pages available in Phase 3
 
@@ -64,7 +64,7 @@ GET  /api/projects/{id}/foundation
 POST /api/projects/{id}/foundation
 ```
 
-The Foundation write stores a validated request and emits `foundation.requested`. It explicitly returns `worker_available=false`; it does not claim that the Phase 9 worker has started.
+The Foundation write stores a validated request and emits `foundation.requested`. Its transport availability field reflects worker readiness, not whether a job has been started. The user explicitly opens Autopilot and starts a finite task; saving the wizard alone never initiates a paid model call.
 
 ## SSE behavior
 
@@ -109,3 +109,11 @@ External modification is intentionally noisy. If the chapter file SHA differs fr
 The Phase 8 client uses `web/src/lib/chapterVersions.ts`. It normalizes the Go transport names (`parent_version`, rebuild `status`) only for compatibility with the current component view model and assembles a display evaluation from the persisted sync response; the canonical public contract remains the OpenAPI schema.
 
 No new frontend dependency is introduced by Phase 8. The same `npm ci`, Svelte/TypeScript check, Vitest suite, production build, vulnerability audit, dependency-license inventory and committed `web/dist` drift gate remain mandatory before merge. See [CHAPTER_VERSIONS.md](CHAPTER_VERSIONS.md).
+
+## Phase 9 Autopilot workspace
+
+The Autopilot route lists persisted jobs for the selected project and supports real Start, Pause, Stop and Resume commands through the typed API client. It displays the current boundary, completed/target chapter, bounded retries, pending control intent and safe failure code. Events and polling refresh server state; a button click is not treated as completion.
+
+Every-chapter/every-N policies pause before the selected candidate is committed as Final. The page exposes candidate text and the chapter plan for review, then offers explicit approval. Approvals are bound to the selected candidate ID. Read-only details remain available while a task runs; edits require a paused/stopped job and the shared project lease. Archiving/deleting requires stopping any unfinished task.
+
+The changed UI passed Svelte/TypeScript checking, one focused component test and a production asset build. The existing broad suites remain in the repository but were not run for this limited-scope delivery. New dependencies and local-storage credentials were not added. Task semantics, recovery and API contracts are in [AUTOPILOT.md](AUTOPILOT.md).

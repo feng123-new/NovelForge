@@ -66,3 +66,11 @@ New Novel saves the request without initiating a paid call. Its Autopilot link o
 Targeted checks cover durable control intent, recovery, worker exclusion/shutdown, configured generation through the actual quality/version pipeline, two-chapter review and restart without repeating persisted calls, project isolation, protected writes, route contracts, and the frontend review controls. The real entry and changed frontend assets must build.
 
 Full Go/frontend/race suites, platform matrices, paid models, and the historical 300-chapter simulation/1000-chapter performance targets are **not run under the current limited-check scope**. Foundation/planning creativity, general Provider compatibility, large casts and long-book quality retain those unverified limits. Phase 9 functional delivery must not be rewritten as full production-scale acceptance.
+
+### Delivery evidence
+
+Tested source: `3cf18bb1ed8393f794e0b6753baaaee6f9fbac6e`; source tree: `aff66ee85e2056d4d594f640c8fed79fcfed9f17`. GitHub Actions run `33962880165`, job `101297733300`, passed with Go 1.25.5 and Node 22. The final delivery PR may add documentation-only review; any such difference is checked separately and is not described as another full runtime test.
+
+The configured two-chapter flow uses a temporary provider HTTP endpoint, not an injected quality service: it exercises project/server configuration, both new planning operations, the actual HTTP model adapter, persisted model-call replay, current context compilation, existing continuity/editor checks, human review and immutable Finalization, plus rebuilding the Server between chapters. Six named Go tests and one focused frontend test passed. The final executable was built again after the changed `web/dist` was generated.
+
+Source whitespace checks and JavaScript syntax checks passed. Vite's exact generated JavaScript contains whitespace inside a string literal; that generated file is intentionally not rewritten by a whitespace trimmer. The first staging attempt stopped on that generic whitespace warning after its checks; no failing test was removed, no permanent CI configuration was weakened, and no product branch was published by that attempt.

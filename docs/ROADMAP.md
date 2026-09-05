@@ -2,13 +2,11 @@
 
 ## Current scope — 2026-09-05
 
-Phase 9 has been explicitly reopened for durable Autopilot delivery. Its implementation and limited verification boundary are documented in [AUTOPILOT.md](AUTOPILOT.md). Phase 10–13 stay paused. The earlier Phase 1–8 consolidation policy below is historical context, not an instruction to disable this newly requested worker.
+Phase 1–8 delivery and the cleanup remain the baseline. Phase 9 has been explicitly reopened and implemented as a durable local Autopilot over the existing quality/version coordinators. Phase 10–13 remain paused; finishing this phase does not start them automatically.
 
-Active work is limited to fixing and consolidating Phase 1–8: trace existing logic chains, distinguish historical delivery from default-entry readiness, and record narrowly scoped follow-up fixes. Phase 9–13 feature development and phase-specific maintenance are paused. Their descriptions below are retained backlog, not current work or instructions to resume those branches.
+[AUTOPILOT.md](AUTOPILOT.md) is the current Phase 9 behavior and verification boundary. [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md) records the earlier integration repair. Original reviews and acceptance evidence remain in [the archive](archive/README.md); they are not rewritten as new acceptance claims.
 
-[PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md) records current fixes and limited verification. [PHASE_01_08_REVIEW.md](archive/phase-01-08/PHASE_01_08_REVIEW.md) preserves the original maintenance review. [IMPLEMENTATION_STATUS.md](archive/phase-01-08/IMPLEMENTATION_STATUS.md) preserves historical PR/CI acceptance evidence. Historical acceptance is not revoked, and it is not a new claim that every default user path works end to end.
-
-Verification during this consolidation is static logic-chain review, with a named targeted test or short flow only when needed. Do not run full Go/frontend/race suites, platform build matrices, long-book simulations or scale benchmarks for this work. Existing tests and CI configuration are retained. Skipped or unexecuted checks must not be reported as passed. Reopening a later phase or full validation requires an explicit scope change; it is not automatic after this checklist.
+Verification is limited to the affected entry build, named short-flow tests, changed frontend type checking and asset build. No full Go/frontend/race suites, platform matrices, paid-model run or 300-chapter simulation is claimed. Actual run and exact source references are recorded in the delivery PR. Broader scale acceptance remains unverified.
 
 ## Phase 0 — Import upstream baseline — Historical acceptance retained
 
@@ -52,7 +50,7 @@ Current focus: follow the actual server constructor into configured services. An
 - Dark/light responsive IDE layout.
 - Later delivered Ledger and Versions pages consume their corresponding APIs.
 
-Current focus: distinguish module availability from model-service readiness and each action's prerequisites. New Novel stores a Foundation request; its worker remains unavailable and is outside this consolidation.
+Current focus: distinguish module availability from model-service readiness and each action's prerequisites. New Novel stores a Foundation request; Phase 9 now executes it after an explicit start from the Autopilot page.
 
 ## Phase 4 — Structured Truth Store — Delivered; preserve authority boundaries
 
