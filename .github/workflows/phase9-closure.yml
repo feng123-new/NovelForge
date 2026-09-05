@@ -29,7 +29,7 @@ jobs:
       - name: Apply fixed-base closure in isolated tree
         run: |
           git worktree add --detach "$RUNNER_TEMP/product" 1a96ab344a8d337af38da51bc080810a63d0a72d
-          python .phase9close/apply.py "$RUNNER_TEMP/product"
+          python .phase9close/prepare.py "$RUNNER_TEMP/product"
           python .phase9close/review.py "$RUNNER_TEMP/product"
       - name: Build and run named orchestration regressions only
         working-directory: ${{ runner.temp }}/product
