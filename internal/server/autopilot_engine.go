@@ -11,6 +11,7 @@ import (
 
 	"github.com/voocel/ainovel-cli/internal/autopilot"
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
+	"github.com/voocel/ainovel-cli/internal/observability"
 	"github.com/voocel/ainovel-cli/internal/project"
 	"github.com/voocel/ainovel-cli/internal/qualitygate"
 	"github.com/voocel/ainovel-cli/internal/server/qualityruntime"
@@ -58,7 +59,16 @@ func (s *Server) autopilotModel(ctx context.Context, id string, profile map[stri
 	return model, nil
 }
 
-func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.Job, error) {
+func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (next autopilot.Job, resultErr error) {
+	ctx = observability.WithTask(ctx, j.ID)
+	defer func() {
+		if code := observability.ControlCode(resultErr); code != "" {
+			next = j
+			next.State = autopilot.Paused
+			next.ErrorCode = code
+			resultErr = nil
+		}
+	}()
 	if _, err := e.s.projects.Get(ctx, j.ProjectID); err != nil {
 		return j, autopilot.Stop("PROJECT_UNAVAILABLE")
 	}
@@ -103,9 +113,12 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 			return nil, err
 		}
 		invoker := qualitygate.RetryingModelInvoker{Invoker: model, MaxRetries: e.s.cfg.QualityMaxRetries}
-		caller := qualitygate.IdempotentModelCaller{Repository: quality.Store, Invoker: invoker}
+		caller := qualitygate.IdempotentModelCaller{Repository: quality.Store, Invoker: invoker, Observer: e.s.observationStore(quality.Store, j.ProjectID)}
 		out, _, _, err := caller.Call(ctx, qualitygate.CallRequest{IdempotencyKey: j.CallKey(agent + ":" + operation), ProjectID: j.ProjectID, Chapter: j.Chapter, TransactionID: j.ID, Agent: agent, Operation: operation, Payload: data})
 		if err != nil {
+			if observability.ControlCode(err) != "" {
+				return nil, err
+			}
 			var ce *qualitygate.ModelCallError
 			if errors.As(err, &ce) && ce.Retryable {
 				return nil, autopilot.Retry("PLANNING_PROVIDER_RETRY")
@@ -292,6 +305,13 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 		if err != nil {
 			if ctx.Err() != nil {
 				return j, ctx.Err()
+			}
+			if observability.ControlCode(err) != "" {
+				return j, err
+			}
+			var modelFailure *qualitygate.ModelCallError
+			if errors.As(err, &modelFailure) && !modelFailure.Retryable {
+				return j, autopilot.Stop(modelFailure.Code)
 			}
 			return j, autopilot.Retry("QUALITY_STEP_ERROR")
 		}
