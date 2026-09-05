@@ -1,5 +1,12 @@
 # NovelForge 文档导航
 
+## Current delivery: Phase 12 + Phase 13A
+
+Phase 1–12 functionality is delivered; Phase 13A supplies default-entry smoke, local verification tools and an explicit release-candidate pipeline. Phase 13B full/platform/scale/real-provider acceptance is pending local execution.
+
+Start with [local deployment](DEPLOYMENT.md), follow [local acceptance](LOCAL_ACCEPTANCE.md), and use the [candidate process](RELEASING.md). A prerelease is not stable/latest, and cross-compilation is not target-platform runtime validation.
+
+
 当前维护 Phase 1–9，Phase 9 已由用户明确恢复实施；Phase 11–13 继续暂停。源码功能交付、局部验证与正式发布是不同状态。
 
 ## 当前使用与设计
@@ -29,11 +36,11 @@
 
 ## Phase 10 authoring systems
 
-Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](AUTHORING.md) for limits, storage and actual runtime behavior. Phase 11 is now connected; Phase 12–13 remain paused; no full-suite or long-book acceptance is claimed.
+Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](AUTHORING.md) for limits, storage and actual runtime behavior. Phase 11 is now connected; Phase 12 is delivered; Phase 13B remains local; no full-suite or long-book acceptance is claimed.
 
 ## Phase 11 lifecycle
 
-[Manuscript import, export, backup and restore](LIFECYCLE.md) now connect to immutable versions and the existing semantic review path. Upload and restore do not start paid work. Phase 12–13 remain paused. Verification is bounded to named short flows and affected builds; no whole-book or full-suite acceptance is implied.
+[Manuscript import, export, backup and restore](LIFECYCLE.md) now connect to immutable versions and the existing semantic review path. Upload and restore do not start paid work. Phase 12 is delivered. Phase 13A supplies candidate delivery; Phase 13B full acceptance remains local. Verification is bounded to named short flows and affected builds; no whole-book or full-suite acceptance is implied.
 
 
 ## Phase 12 — diagnostics and costs

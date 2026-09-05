@@ -1,0 +1,113 @@
+name: Publish release candidate
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'New candidate tag, e.g. v0.1.0-rc.1'
+        required: true
+        type: string
+  push:
+    branches: ['release/v*-rc.*']
+permissions:
+  contents: read
+concurrency:
+  group: candidate-publication
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+      commit: ${{ steps.identity.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate candidate identity against merged main
+        id: identity
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python - <<'PY'
+          import os,re,subprocess
+          tag=os.environ['INPUT_TAG'] if os.environ['EVENT_NAME']=='workflow_dispatch' else os.environ['REF_NAME'].removeprefix('release/')
+          if not re.fullmatch(r'v\d+\.\d+\.\d+-rc\.\d+',tag): raise SystemExit('invalid candidate tag')
+          sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          subprocess.run(['git','merge-base','--is-ancestor',sha,'origin/main'],check=True)
+          if subprocess.check_output(['git','tag','--list',tag],text=True).strip(): raise SystemExit('tag already exists; choose a new candidate')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write(f'tag={tag}\ncommit={sha}\n')
+          PY
+      - name: Execute bounded candidate gates only
+        run: python scripts/verify.py --mode quick --output verification-results/candidate
+      - name: Build six archives with exact source identity
+        env:
+          CANDIDATE_TAG: ${{ steps.identity.outputs.tag }}
+        run: python scripts/package_candidate.py --version "$CANDIDATE_TAG" --verification verification-results/candidate/result.json --output candidate-dist
+      - name: Upload complete candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-packages
+          path: candidate-dist/*
+          if-no-files-found: error
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-validation-${{ github.sha }}
+          path: verification-results/candidate
+          if-no-files-found: warn
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-packages
+          path: candidate-dist
+      - name: Validate assets, create draft, upload, and publish as prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CANDIDATE_TAG: ${{ needs.build.outputs.tag }}
+          CANDIDATE_COMMIT: ${{ needs.build.outputs.commit }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          root=Path('candidate-dist');tag=os.environ['CANDIDATE_TAG'];commit=os.environ['CANDIDATE_COMMIT'];repo=os.environ['GH_REPO']
+          manifest=json.loads((root/'release-manifest.json').read_text())
+          assert manifest['commit']==commit and manifest['version']==tag and len(manifest['artifacts'])==6
+          allowed={a['name'] for a in manifest['artifacts']}|{'release-manifest.json','verification-summary.json','novelforge_checksums.txt'}
+          assert {p.name for p in root.iterdir()}==allowed
+          for line in (root/'novelforge_checksums.txt').read_text().splitlines():
+            digest,name=line.split('  ',1);assert name in allowed;assert hashlib.sha256((root/name).read_bytes()).hexdigest()==digest
+          for endpoint in [f'repos/{repo}/releases/tags/{tag}',f'repos/{repo}/git/ref/tags/{tag}']:
+            response=subprocess.run(['gh','api',endpoint],text=True,capture_output=True)
+            if response.returncode==0:raise SystemExit('release/tag already exists; never overwrite published identity')
+            if '404' not in response.stderr and '404' not in response.stdout:raise SystemExit('cannot establish that release/tag is absent')
+          notes=f'''NovelForge {tag}\n\nPhase 1–12 functional candidate, plus Phase 13A deployment and verification tooling. Source commit: `{commit}`.\n\nDownload the matching OS/architecture archive and verify `novelforge_checksums.txt`. Start with `novelforge server --workspace <test-workspace>`; read `docs/DEPLOYMENT.md` and `docs/LOCAL_ACCEPTANCE.md` included in each archive. `--no-autopilot` opens inspection mode without a task worker. Configure actual model endpoints and credentials locally; then set explicit project limits/prices before starting paid work.\n\nThese packages passed quick named checks and native Linux no-model entry smoke. Windows/macOS/ARM archives are cross-compiled, not target-platform runtime certified. Full regression/race/platform/scale, real-provider billing and literary acceptance remain Phase 13B for local execution. This is a pre-release, not the stable/latest release. SHA-256 checksums are provided; no OS code signing/notarization claim.\n\nDefault repository PR checks are quick; original comprehensive CI remains manually runnable. Source checkout: `python scripts/verify.py --mode full`, `--mode recovery`, `--mode scale`. These commands do not automatically run paid models. Do not use your only manuscript copy for failure testing.\n'''
+          Path('release-notes.md').write_text(notes)
+          assets=[str(root/name) for name in sorted(allowed)]
+          subprocess.run(['gh','release','create',tag,*assets,'--repo',repo,'--target',commit,'--title',f'NovelForge {tag}','--notes-file','release-notes.md','--draft','--prerelease','--latest=false'],check=True)
+          release=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}'],text=True))
+          assert release['draft'] and release['prerelease'];assert {a['name'] for a in release['assets']}==allowed
+          for asset in release['assets']:
+            assert asset['size']==(root/asset['name']).stat().st_size
+            if asset.get('digest'):assert asset['digest']=='sha256:'+hashlib.sha256((root/asset['name']).read_bytes()).hexdigest()
+          subprocess.run(['gh','release','edit',tag,'--repo',repo,'--draft=false','--prerelease','--latest=false'],check=True)
+          final=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}'],text=True))
+          assert not final['draft'] and final['prerelease'];print(json.dumps({'url':final['html_url'],'tag':tag,'commit':commit,'assets':len(final['assets'])}))
+          PY

@@ -1,0 +1,12 @@
+{
+  "provider": "my_provider",
+  "model": "REPLACE_WITH_YOUR_MODEL_ID",
+  "providers": {
+    "my_provider": {
+      "type": "openai",
+      "api": "chat",
+      "base_url": "https://REPLACE_WITH_YOUR_PROVIDER.example/v1",
+      "api_key": "${NOVELFORGE_API_KEY}"
+    }
+  }
+}

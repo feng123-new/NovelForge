@@ -50,3 +50,7 @@ tasks
 refer/
 output*
 workspace/
+
+# Candidate builds and local acceptance evidence (may contain private paths)
+/candidate-dist/
+/verification-results/

@@ -1,5 +1,12 @@
 # NovelForge
 
+## Current delivery: Phase 12 + Phase 13A
+
+Phase 1–12 functionality is delivered; Phase 13A supplies default-entry smoke, local verification tools and an explicit release-candidate pipeline. Phase 13B full/platform/scale/real-provider acceptance is pending local execution.
+
+Start with [local deployment](docs/DEPLOYMENT.md), follow [local acceptance](docs/LOCAL_ACCEPTANCE.md), and use the [candidate process](docs/RELEASING.md). A prerelease is not stable/latest, and cross-compilation is not target-platform runtime validation.
+
+
 > 面向长篇小说的本地 AI 创作与人机共创工程平台。百万字规模是设计目标，不是本轮验证结论。
 
 NovelForge 基于 Apache-2.0 上游 [`voocel/ainovel-cli`](https://github.com/voocel/ainovel-cli)。保留原有 TUI、Headless、Engine、Agent Runtime、Checkpoint、滚动规划、模型路由、导入导出和诊断能力，新增 Web 工作台、Truth Store、质量门禁、叙事账本和章节版本。
@@ -140,11 +147,11 @@ Apache License 2.0；保留 ainovel-cli 的原始版权与来源。详见 [LICEN
 
 ## Phase 10 authoring systems
 
-Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](docs/AUTHORING.md) for limits, storage and actual runtime behavior. Phase 11 is now connected; Phase 12–13 remain paused; no full-suite or long-book acceptance is claimed.
+Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](docs/AUTHORING.md) for limits, storage and actual runtime behavior. Phase 11 is now connected; Phase 12 is delivered; Phase 13B remains local; no full-suite or long-book acceptance is claimed.
 
 ## Phase 11 lifecycle
 
-[Manuscript import, export, backup and restore](docs/LIFECYCLE.md) now connect to immutable versions and the existing semantic review path. Upload and restore do not start paid work. Phase 12–13 remain paused. Verification is bounded to named short flows and affected builds; no whole-book or full-suite acceptance is implied.
+[Manuscript import, export, backup and restore](docs/LIFECYCLE.md) now connect to immutable versions and the existing semantic review path. Upload and restore do not start paid work. Phase 12 is delivered. Phase 13A supplies candidate delivery; Phase 13B full acceptance remains local. Verification is bounded to named short flows and affected builds; no whole-book or full-suite acceptance is implied.
 
 
 ## Phase 12 — diagnostics and costs

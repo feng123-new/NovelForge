@@ -1,6 +1,6 @@
 # Phase 10 — Skills, style and reference libraries
 
-Phase 10 adds project-local Markdown Skills, distinct style/reference collections and configurable advisory expression/repetition checks. Phase 12–13 remain paused. The current Web/Autopilot model path is connected; this does not rewrite the retained upstream TUI skill/configuration loader.
+Phase 10 adds project-local Markdown Skills, distinct style/reference collections and configurable advisory expression/repetition checks. Phase 12 is delivered. Phase 13A supplies candidate delivery; Phase 13B full acceptance remains local. The current Web/Autopilot model path is connected; this does not rewrite the retained upstream TUI skill/configuration loader.
 
 ## Storage and editing
 
