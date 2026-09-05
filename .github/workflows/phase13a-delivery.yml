@@ -24,7 +24,7 @@ jobs:
       - name: Apply bounded release and local-validation tooling
         run: |
           git worktree add --detach "$RUNNER_TEMP/product" 9fe83d2268dfa9a8f317e58cbabc8c682fc716fa
-          python .delivery13/prepare.py "$RUNNER_TEMP/product"
+          python .delivery13/finalize.py "$RUNNER_TEMP/product"
       - name: Exercise the exact new quick verification tool
         working-directory: ${{ runner.temp }}/product
         run: python scripts/verify.py --mode quick --output verification-results/premerge
