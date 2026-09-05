@@ -1,6 +1,6 @@
 # NovelForge Implementation Status
 
-> Historical acceptance archive: prior PR/SHA/CI records are unchanged. Current Phase 1–8 maintenance changes and limited validation are recorded in [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md). Phase 9–13 remain frozen.
+> Historical acceptance archive: prior PR/SHA/CI records are unchanged. Current Phase 1–8 maintenance changes and limited validation are recorded in [PHASE_01_08_FIXES.md](../../PHASE_01_08_FIXES.md). Phase 9–13 remain frozen.
 
 Last updated: 2026-09-03
 
@@ -352,7 +352,7 @@ The Finalize recovery matrix injects one failure after version creation, Truth c
 | Phase 8 acceptance record PR #31 | `300e0e944069b3e902c19514503cdea5505c852c` | `33747489810` — success | `8cc2759bd44d554b9c259531192fba120f38e5da` | `33747741718` — success |
 | Phase 8 final closure PR #32 | `bb7a532bf00fad371b6eedb010ef388c8c324bfc` | `33748179603` — success | `2718a0728321328e51cfc6773c5f8fd40178f908` | `33748407175` — success |
 
-Full evidence and the acceptance rule are in `docs/PHASE_08_ACCEPTANCE.md`.
+Full evidence and the acceptance rule are in `docs/archive/phase-01-08/PHASE_08_ACCEPTANCE.md`.
 
 ### Repository hygiene
 

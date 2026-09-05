@@ -1,6 +1,6 @@
 # Phase 1–8 逻辑链复核与维护范围
 
-> 本文保留 5dbcadfa 基线的静态复核结果。后续五项源码修复与有限验证见 [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md)；不要将以下历史“未修复”状态当作新提交状态。Phase 9–13 仍冻结。
+> 本文保留 5dbcadfa 基线的静态复核结果。后续五项源码修复与有限验证见 [PHASE_01_08_FIXES.md](../../PHASE_01_08_FIXES.md)；不要将以下历史“未修复”状态当作新提交状态。Phase 9–13 仍冻结。
 
 决策日期：2026-09-05。
 
@@ -24,7 +24,7 @@
 | 待小范围验证 | 尚需受影响路径的命名测试或短流程确认 | 不允许直接标为通过 |
 | 已修复 | 必须同时记录真实代码提交和采用的验证范围 | 不能因更新了本文而改成已修复 |
 
-[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) 继续作为历史交付档案；其中的 complete、CI success 和 Phase 9 handoff 是历史语境。当前维护范围以本文和 [ROADMAP.md](ROADMAP.md) 为准，不自动开始下一阶段。
+[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) 继续作为历史交付档案；其中的 complete、CI success 和 Phase 9 handoff 是历史语境。当前维护范围以本文和 [ROADMAP.md](../../ROADMAP.md) 为准，不自动开始下一阶段。
 
 ## 3. Phase 1–8 分阶段复核矩阵
 
@@ -56,7 +56,7 @@ novelforge server
 
 已确认断点：默认命令只传入基础服务器参数，未注入 QualityModel 或三个质量服务。配置解析与 Provider 绑定应在现有入口体系内回补；不以虚构成功状态、测试专用注入或新增 Autopilot 代替。
 
-证据：[server command](../cmd/novelforge/server.go)、[quality coordinator](../internal/server/quality.go)、[version coordinator wiring](../internal/server/chapter_versions_routes.go)、[capabilities](../internal/server/workspace.go)。
+证据：[server command](../../../cmd/novelforge/server.go)、[quality coordinator](../../../internal/server/quality.go)、[version coordinator wiring](../../../internal/server/chapter_versions_routes.go)、[capabilities](../../../internal/server/workspace.go)。
 
 ### B. 上下文到 Writer 的输入
 
@@ -70,7 +70,7 @@ novelforge server
 
 第二行是回补目标，不是已经观察到的运行结果。需要检查真实 Truth/Ledger/FTS 提供者与实际发送的输入；不能只检查 context_sha 或诊断字段出现了就宣布接通。
 
-证据：[novel_context](../internal/tools/novel_context.go)、[legacy adapter](../internal/contextcompiler/legacy.go)、[compiler](../internal/contextcompiler/compiler.go)、[FTS store](../internal/contextcompiler/fts.go)。
+证据：[novel_context](../../../internal/tools/novel_context.go)、[legacy adapter](../../../internal/contextcompiler/legacy.go)、[compiler](../../../internal/contextcompiler/compiler.go)、[FTS store](../../../internal/contextcompiler/fts.go)。
 
 中文检索目前登记为风险，本文不重复宣称已完成运行复现。后续必要时只选一个无空格中文句子和句中人名/地点做小样本核对；不以英文命中或全文整句命中替代中文关键词召回验证，也不为此引入外部向量服务。
 
@@ -90,7 +90,7 @@ novelforge server
 
 所有失败分支都要写清：草稿或修订保留在哪里、是否允许继续、哪个键用于重放。禁止把 Continuity FAIL 降级为可 Finalize，也禁止 Writer/Librarian 直接修改权威事实。
 
-证据：[quality routes](../internal/server/quality.go)、[Phase 8 quality bridge](../internal/server/quality_phase8.go)、[Final coordinator](../internal/chapterversion/coordinator_finalize.go)、[agent boundaries](AGENTS.md)。
+证据：[quality routes](../../../internal/server/quality.go)、[Phase 8 quality bridge](../../../internal/server/quality_phase8.go)、[Final coordinator](../../../internal/chapterversion/coordinator_finalize.go)、[agent boundaries](../../AGENTS.md)。
 
 ### D. 人工修改与后续读取
 
@@ -107,7 +107,7 @@ Save Human Revision / Restore as New Version / Explicit External Sync
 
 Save/Restore 与需要语义服务的审核不是同一个能力。新审核依赖默认服务接线；已有持久化评估的恢复路径应单独判断。外部文件变动不能悄悄覆盖 Active Final；恢复历史内容也不能删除历史。
 
-证据：[version actions](../internal/server/chapter_versions_actions.go)、[evaluation](../internal/chapterversion/coordinator_evaluate.go)、[finalization](../internal/chapterversion/coordinator_finalize.go)、[ChapterVersion contract](CHAPTER_VERSIONS.md)。
+证据：[version actions](../../../internal/server/chapter_versions_actions.go)、[evaluation](../../../internal/chapterversion/coordinator_evaluate.go)、[finalization](../../../internal/chapterversion/coordinator_finalize.go)、[ChapterVersion contract](../../CHAPTER_VERSIONS.md)。
 
 ## 5. 有序回补清单（本轮没有实施业务代码修复）
 

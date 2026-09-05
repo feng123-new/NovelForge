@@ -1,5 +1,9 @@
 # NovelForge development
 
+## Current maintenance scope
+
+Use the [current documentation index](README.md) and [Roadmap](ROADMAP.md) for Phase 1–8 maintenance. Phase 9–13 remain paused. This maintenance round uses static logic-chain checks, an affected entry build and named tests only; it does not run the full validation commands below. Record the actual commit and verification scope in the PR and current maintenance record. Historical documents under `docs/archive/` preserve prior evidence and are not the place to record new completion claims.
+
 ## Required toolchain
 
 - Go version declared by `go.mod`
@@ -7,9 +11,9 @@
 - Docker for image validation
 - GitHub Actions for Linux and Windows gates
 
-## Baseline validation
+## Full baseline validation — retained reference, not this maintenance round
 
-Run from the repository root:
+Run from the repository root when full validation is explicitly in scope:
 
 ```bash
 test -z "$(gofmt -l .)"
@@ -22,23 +26,23 @@ sh scripts/brand_audit.sh
 docker build --tag novelforge-local .
 ```
 
-Run targeted race tests when changing concurrent server, store, event or job code.
+Select affected checks for the agreed change scope. Do not silently expand a limited maintenance task into a full regression run, or report skipped checks as passed.
 
 ## Delivery protocol
 
-Each roadmap phase is delivered through a focused feature branch and pull request:
+Changes are delivered through a focused branch and pull request:
 
 1. start from the latest `main`;
-2. update `docs/IMPLEMENTATION_STATUS.md`;
-3. implement the production path before UI controls;
-4. add unit and integration tests;
+2. update the applicable current module or maintenance documentation, not archived acceptance records;
+3. implement the production path before UI controls when adding functionality;
+4. preserve existing tests and add targeted coverage when behavior changes;
 5. update OpenAPI and documentation when applicable;
-6. run local gates;
+6. run the checks agreed for the current scope and record what was not run;
 7. open a pull request;
-8. merge only after GitHub Actions succeeds;
-9. record the exact resume point.
+8. merge only after the agreed checks succeed and applicable branch protections permit it;
+9. record the exact delivery point and retain required historical evidence.
 
-Do not combine Phase 2 through Phase 13 into one unreviewable change.
+Do not combine Phase 2 through Phase 13 into one unreviewable change. Finishing a cleanup does not reopen a paused phase.
 
 ## Command compatibility profiles
 

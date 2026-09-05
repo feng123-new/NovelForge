@@ -1,5 +1,7 @@
 # NovelForge Architecture
 
+This document describes NovelForge architecture and design targets. For current delivery status use the [documentation index](README.md); the retained [ainovel runtime architecture](upstream/ainovel-runtime-architecture.md) documents the existing TUI/Headless runtime, not a competing current specification.
+
 ## 1. Purpose
 
 NovelForge is an engineering evolution of ainovel-cli for novels in the 1–3 million Chinese-character range, 300–1000+ chapters, 50–300 characters, and 100,000+ facts/events. The system must support Human Copilot and resumable Autopilot without sending the whole book to an LLM on every chapter.

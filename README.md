@@ -6,9 +6,11 @@ NovelForge 基于 Apache-2.0 上游 [`voocel/ainovel-cli`](https://github.com/vo
 
 ## 当前维护范围
 
+[文档导航与当前维护记录](docs/README.md) · [历史交付档案](docs/archive/README.md)
+
 **只维护 Phase 1–8；Phase 9–13 暂停开发和专项维护。** 不开发 Durable Autopilot、不建立新任务队列、不发布新 Release。Foundation 请求仍只保存，`worker_available=false`。
 
-历史 PR、合并与 CI 证据保留在 [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)。当前源码修复和有限验证边界见 [PHASE_01_08_FIXES.md](docs/PHASE_01_08_FIXES.md)。模块存在、配置满足、定向测试通过和全量验收是不同状态。本轮没有全量回归、付费模型验收或规模测试。
+历史 PR、合并与 CI 证据保留在 [IMPLEMENTATION_STATUS.md](docs/archive/phase-01-08/IMPLEMENTATION_STATUS.md)。当前源码修复和有限验证边界见 [PHASE_01_08_FIXES.md](docs/PHASE_01_08_FIXES.md)。模块存在、配置满足、定向测试通过和全量验收是不同状态。本轮没有全量回归、付费模型验收或规模测试。
 
 ## 已有能力
 
