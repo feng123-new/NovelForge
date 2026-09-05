@@ -66,7 +66,7 @@ func (c *Coordinator) Generate(ctx context.Context, projectID string, chapter in
 		return c.Store.Snapshot(ctx, projectID, chapter)
 	}
 	if tx.State == StateHold {
-		if candidates, candidateErr := c.Store.Candidates(ctx, tx.ID); candidateErr == nil && len(candidates) > 0 {
+		if candidates, candidateErr := c.Store.Candidates(ctx, tx.ID); candidateErr == nil && len(candidates) > 0 && candidates[len(candidates)-1].Attempt >= tx.Attempt {
 			return c.Store.Snapshot(ctx, projectID, chapter)
 		}
 	}
@@ -76,7 +76,33 @@ func (c *Coordinator) Generate(ctx context.Context, projectID string, chapter in
 			return Snapshot{}, err
 		}
 	}
-	result, err := c.Writer.Write(ctx, WriterRequest{ProjectID: projectID, Chapter: chapter, TransactionID: tx.ID, Attempt: tx.Attempt, Plan: plan})
+	request := WriterRequest{ProjectID: projectID, Chapter: chapter, TransactionID: tx.ID, Attempt: tx.Attempt, Plan: plan}
+	if tx.Attempt > 0 {
+		candidates, readErr := c.Store.Candidates(ctx, tx.ID)
+		if readErr != nil {
+			return Snapshot{}, readErr
+		}
+		var previous *Candidate
+		for i := range candidates {
+			if candidates[i].Attempt < tx.Attempt && (previous == nil || candidates[i].Attempt > previous.Attempt) {
+				previous = &candidates[i]
+			}
+		}
+		if previous == nil {
+			return Snapshot{}, errors.New("rewrite source candidate is missing")
+		}
+		request.PreviousDraft = previous.Text
+		request.Feedback = []string{}
+		if continuity, e := c.Store.Continuity(ctx, tx.ID, previous.ID); e == nil {
+			for _, issue := range continuity.Issues {
+				request.Feedback = append(request.Feedback, issue.IssueCode+": "+issue.SuggestedAction)
+			}
+		}
+		if review, e := c.Store.Editor(ctx, tx.ID, previous.ID); e == nil {
+			request.Feedback = append(request.Feedback, review.Weaknesses...)
+		}
+	}
+	result, err := c.Writer.Write(ctx, request)
 	if err != nil {
 		_, _ = c.Store.Transition(ctx, tx.ID, StateHold, "writer failed", "writer", tx.Attempt)
 		return c.Store.Snapshot(ctx, projectID, chapter)

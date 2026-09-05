@@ -69,7 +69,12 @@ func (s *Server) handleAutopilot(w http.ResponseWriter, r *http.Request) {
 		for _, j := range jobs {
 			views = append(views, s.jobView(j))
 		}
-		writeJSON(w, 200, map[string]any{"jobs": views, "worker_available": s.autopilotReady(), "model_available": s.qualityConfigured(id), "limit": limit, "offset": offset})
+		nextChapter, nextErr := s.projects.AutopilotNextChapter(r.Context(), id)
+		if nextErr != nil {
+			writeFailure(w, r, *projectFailure(nextErr))
+			return
+		}
+		writeJSON(w, 200, map[string]any{"next_chapter": nextChapter, "jobs": views, "worker_available": s.autopilotReady(), "model_available": s.qualityConfigured(id), "limit": limit, "offset": offset})
 		return
 	case http.MethodPost:
 		if !s.autopilotReady() {
@@ -91,7 +96,11 @@ func (s *Server) handleAutopilot(w http.ResponseWriter, r *http.Request) {
 				return f.Status, nil, f
 			}
 			if options.StartChapter == 0 {
-				options.StartChapter = p.CompletedChapters + 1
+				options.StartChapter, err = s.projects.AutopilotNextChapter(r.Context(), id)
+				if err != nil {
+					f := projectFailure(err)
+					return f.Status, nil, f
+				}
 			}
 			if options.TargetChapter == 0 {
 				options.TargetChapter = p.TotalChapters
@@ -109,7 +118,7 @@ func (s *Server) handleAutopilot(w http.ResponseWriter, r *http.Request) {
 			if foundation.Automation.Mode == "copilot" {
 				every = 1
 			}
-			in := autopilot.Input{FoundationID: foundation.ID, Idea: foundation.Idea, Style: foundation.Style, Language: p.Language, WordsPerChapter: p.WordsPerChapter, StartChapter: options.StartChapter, TargetChapter: options.TargetChapter, ReviewEvery: every, MaxRewrites: foundation.Automation.MaxRewrites, MaxRetries: 2, ModelProfile: foundation.ModelProfile}
+			in := autopilot.Input{BookTargetChapter: max(p.TotalChapters, options.TargetChapter), FoundationID: foundation.ID, Idea: foundation.Idea, Style: foundation.Style, Language: p.Language, WordsPerChapter: p.WordsPerChapter, StartChapter: options.StartChapter, TargetChapter: options.TargetChapter, ReviewEvery: every, MaxRewrites: foundation.Automation.MaxRewrites, MaxRetries: 2, ModelProfile: foundation.ModelProfile}
 			if options.ReviewEvery != nil {
 				in.ReviewEvery = *options.ReviewEvery
 			}
@@ -167,6 +176,7 @@ func (s *Server) handleAutopilotJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text := ""
+	displayedCandidateID := ""
 	qs, err := s.projects.OpenQualityStore(r.Context(), j.ProjectID)
 	if err != nil {
 		writeFailure(w, r, *projectFailure(err))
@@ -194,9 +204,10 @@ func (s *Server) handleAutopilotJob(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			text = c.Text
+			displayedCandidateID = c.ID
 		}
 	}
-	writeJSON(w, 200, map[string]any{"job": s.jobView(j), "foundation": j.Foundation, "chapter_plan": j.Plan, "candidate_text": text, "quality": snap})
+	writeJSON(w, 200, map[string]any{"job": s.jobView(j), "foundation": j.Foundation, "chapter_plan": j.Plan, "candidate_text": text, "candidate_id": displayedCandidateID, "quality": snap})
 }
 func (s *Server) handleAutopilotControl(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -214,8 +225,8 @@ func (s *Server) handleAutopilotControl(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.executeIdempotent(w, r, "autopilot."+action, j.ProjectID, func(body []byte) (int, any, *apiFailure) {
-		var empty struct{}
-		if f := decodeJSONBody(body, &empty, true); f != nil {
+		var approval autopilot.Approval
+		if f := decodeJSONBody(body, &approval, true); f != nil {
 			return f.Status, nil, f
 		}
 		if action == "resume" {
@@ -233,7 +244,7 @@ func (s *Server) handleAutopilotControl(w http.ResponseWriter, r *http.Request) 
 			}
 			defer lease.Close()
 		}
-		next, err := s.jobs.Control(r.Context(), j.ID, action)
+		next, err := s.jobs.ControlApproved(r.Context(), j.ID, action, approval)
 		if err != nil {
 			f := jobFailure(err)
 			return f.Status, nil, f
@@ -307,16 +318,14 @@ func (s *Server) autopilotWriteGuard(next http.Handler) http.Handler {
 		}
 		destructive := r.Method == http.MethodDelete || strings.HasSuffix(r.URL.Path, "/archive")
 		if destructive {
-			jobs, err := s.jobs.List(r.Context(), id, 100, 0)
+			unfinished, err := s.jobs.Unfinished(r.Context(), id)
 			if err != nil {
 				writeFailure(w, r, *jobFailure(err))
 				return
 			}
-			for _, job := range jobs {
-				if !job.Terminal() {
-					writeFailure(w, r, apiFailure{Status: 409, Code: "PROJECT_JOB_UNFINISHED", Message: "stop the unfinished job before archiving or deleting this project"})
-					return
-				}
+			if unfinished {
+				writeFailure(w, r, apiFailure{Status: 409, Code: "PROJECT_JOB_UNFINISHED", Message: "stop the unfinished job before archiving or deleting this project"})
+				return
 			}
 		}
 		active, err := s.jobs.Active(r.Context(), id)
@@ -335,6 +344,9 @@ func (s *Server) autopilotWriteGuard(next http.Handler) http.Handler {
 		}
 		defer lease.Close()
 		active, err = s.jobs.Active(r.Context(), id)
+		if destructive {
+			active, err = s.jobs.Unfinished(r.Context(), id)
+		}
 		if err != nil {
 			writeFailure(w, r, *jobFailure(err))
 			return

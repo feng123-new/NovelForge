@@ -30,20 +30,24 @@ const (
 )
 
 type Input struct {
-	FoundationID    string            `json:"foundation_id"`
-	ModelProfile    map[string]string `json:"model_profile,omitempty"`
-	Idea            string            `json:"idea"`
-	Style           string            `json:"style"`
-	Language        string            `json:"language"`
-	WordsPerChapter int               `json:"words_per_chapter"`
-	StartChapter    int               `json:"start_chapter"`
-	TargetChapter   int               `json:"target_chapter"`
-	ReviewEvery     int               `json:"review_every"`
-	MaxRewrites     int               `json:"max_rewrites"`
-	MaxRetries      int               `json:"max_retries"`
+	BookTargetChapter int               `json:"book_target_chapter,omitempty"`
+	FoundationID      string            `json:"foundation_id"`
+	ModelProfile      map[string]string `json:"model_profile,omitempty"`
+	Idea              string            `json:"idea"`
+	Style             string            `json:"style"`
+	Language          string            `json:"language"`
+	WordsPerChapter   int               `json:"words_per_chapter"`
+	StartChapter      int               `json:"start_chapter"`
+	TargetChapter     int               `json:"target_chapter"`
+	ReviewEvery       int               `json:"review_every"`
+	MaxRewrites       int               `json:"max_rewrites"`
+	MaxRetries        int               `json:"max_retries"`
 }
 
 func (in Input) Validate() error {
+	if in.BookTargetChapter != 0 && (in.BookTargetChapter < in.TargetChapter || in.BookTargetChapter > 1000) {
+		return errors.New("invalid book horizon")
+	}
 	if len(in.ModelProfile) > 16 {
 		return errors.New("too many model roles")
 	}
@@ -81,13 +85,17 @@ type Foundation struct {
 }
 
 func (f Foundation) Validate(target int) error {
+	raw, err := json.Marshal(f)
+	if err != nil || len(raw) > 48*1024 || target < 1 || target > 1000 {
+		return errors.New("foundation exceeds bounded planning budget")
+	}
 	if strings.TrimSpace(f.StoryCompass) == "" || len(f.StoryCompass) > 12000 || len(f.Ending) > 6000 || len(f.Characters) == 0 || len(f.Characters) > 100 || len(f.WorldRules) > 100 || len(f.Arcs) == 0 || len(f.Arcs) > 100 {
 		return errors.New("invalid foundation")
 	}
 	seen := map[string]bool{}
 	found := false
 	for _, c := range f.Characters {
-		if c.ID == "" || len(c.ID) > 128 || c.Name == "" || c.InitialState == "" || len(c.InitialState) > 2000 || seen[c.ID] {
+		if c.ID == "" || len(c.ID) > 128 || c.Name == "" || len(c.Name) > 256 || c.InitialState == "" || len(c.InitialState) > 2000 || seen[c.ID] {
 			return errors.New("invalid foundation character")
 		}
 		seen[c.ID] = true
@@ -101,7 +109,12 @@ func (f Foundation) Validate(target int) error {
 			return errors.New("invalid world rule")
 		}
 	}
+	next := 1
 	for _, a := range f.Arcs {
+		if a.FirstChapter != next || len(a.Title) > 512 {
+			return errors.New("arcs must be ordered and contiguous")
+		}
+		next = a.LastChapter + 1
 		if a.Title == "" || a.Summary == "" || len(a.Summary) > 4000 || a.FirstChapter < 1 || a.LastChapter < a.FirstChapter || a.LastChapter > target {
 			return errors.New("invalid arc range")
 		}
@@ -110,30 +123,32 @@ func (f Foundation) Validate(target int) error {
 }
 
 type Job struct {
-	ID                string                   `json:"id"`
-	ProjectID         string                   `json:"project_id"`
-	State             string                   `json:"state"`
-	Stage             string                   `json:"stage"`
-	Chapter           int                      `json:"chapter"`
-	CompletedThrough  int                      `json:"completed_through"`
-	Control           string                   `json:"control,omitempty"`
-	ErrorCode         string                   `json:"error_code,omitempty"`
-	Retries           int                      `json:"retries"`
-	NextRun           time.Time                `json:"next_run"`
-	Revision          int                      `json:"revision"`
-	CreatedAt         time.Time                `json:"created_at"`
-	UpdatedAt         time.Time                `json:"updated_at"`
-	Input             Input                    `json:"input"`
-	Foundation        *Foundation              `json:"foundation,omitempty"`
-	Plan              *qualitygate.ChapterPlan `json:"plan,omitempty"`
-	PlanningContext   json.RawMessage          `json:"planning_context,omitempty"`
-	ReviewApproved    bool                     `json:"review_approved"`
-	ReviewCandidateID string                   `json:"review_candidate_id,omitempty"`
+	ClaimRevision        int                      `json:"claim_revision,omitempty"`
+	AuthorityFingerprint string                   `json:"authority_fingerprint,omitempty"`
+	ID                   string                   `json:"id"`
+	ProjectID            string                   `json:"project_id"`
+	State                string                   `json:"state"`
+	Stage                string                   `json:"stage"`
+	Chapter              int                      `json:"chapter"`
+	CompletedThrough     int                      `json:"completed_through"`
+	Control              string                   `json:"control,omitempty"`
+	ErrorCode            string                   `json:"error_code,omitempty"`
+	Retries              int                      `json:"retries"`
+	NextRun              time.Time                `json:"next_run"`
+	Revision             int                      `json:"revision"`
+	CreatedAt            time.Time                `json:"created_at"`
+	UpdatedAt            time.Time                `json:"updated_at"`
+	Input                Input                    `json:"input"`
+	Foundation           *Foundation              `json:"foundation,omitempty"`
+	Plan                 *qualitygate.ChapterPlan `json:"plan,omitempty"`
+	PlanningContext      json.RawMessage          `json:"planning_context,omitempty"`
+	ReviewApproved       bool                     `json:"review_approved"`
+	ReviewCandidateID    string                   `json:"review_candidate_id,omitempty"`
 }
 
 // View omits model prompts, foundation secrets and prose from task listings/SSE.
 func (j Job) View() map[string]any {
-	return map[string]any{"id": j.ID, "project_id": j.ProjectID, "state": j.State, "stage": j.Stage, "chapter": j.Chapter, "completed_through": j.CompletedThrough, "target_chapter": j.Input.TargetChapter, "start_chapter": j.Input.StartChapter, "review_every": j.Input.ReviewEvery, "max_rewrites": j.Input.MaxRewrites, "max_retries": j.Input.MaxRetries, "retries": j.Retries, "control": j.Control, "error_code": j.ErrorCode, "revision": j.Revision, "created_at": j.CreatedAt, "updated_at": j.UpdatedAt, "next_run": j.NextRun}
+	return map[string]any{"id": j.ID, "project_id": j.ProjectID, "state": j.State, "stage": j.Stage, "chapter": j.Chapter, "completed_through": j.CompletedThrough, "target_chapter": j.Input.TargetChapter, "start_chapter": j.Input.StartChapter, "review_every": j.Input.ReviewEvery, "max_rewrites": j.Input.MaxRewrites, "max_retries": j.Input.MaxRetries, "retries": j.Retries, "control": j.Control, "error_code": j.ErrorCode, "revision": j.Revision, "created_at": j.CreatedAt, "updated_at": j.UpdatedAt, "next_run": j.NextRun, "review_candidate_id": j.ReviewCandidateID}
 }
 func (j Job) Terminal() bool { return j.State == Completed || j.State == Cancelled }
 func Identity(project, key string) string {
@@ -170,4 +185,21 @@ func Decode(data []byte, target any) error {
 		return errors.New("structured output has trailing data")
 	}
 	return nil
+}
+
+// PlanningTarget is the book horizon, not the finite execution batch.
+func (in Input) PlanningTarget() int {
+	if in.BookTargetChapter > 0 {
+		return in.BookTargetChapter
+	}
+	return in.TargetChapter
+}
+func (f Foundation) Covers(chapter int) bool {
+	return len(f.Arcs) > 0 && f.Arcs[len(f.Arcs)-1].LastChapter >= chapter
+}
+
+// Approval binds the explicit human decision to the detail that was displayed.
+type Approval struct {
+	Revision    int    `json:"expected_revision,omitempty"`
+	CandidateID string `json:"review_candidate_id,omitempty"`
 }

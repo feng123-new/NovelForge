@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -31,7 +32,15 @@ func Start(store *Store, engine Engine, acquire func(context.Context, string) (i
 	if store == nil || engine == nil || acquire == nil {
 		return nil, errors.New("autopilot dependencies required")
 	}
-	lock := flock.New(filepath.Join(filepath.Dir(store.Path), "autopilot-worker.lock"), flock.SetPermissions(0600))
+	lockPath := filepath.Join(filepath.Dir(store.Path), "autopilot-worker.lock")
+	if info, err := os.Lstat(lockPath); err == nil {
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return nil, errors.New("unsafe worker lock")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	lock := flock.New(lockPath, flock.SetPermissions(0600))
 	ok, err := lock.TryLock()
 	if err != nil || !ok {
 		lock.Close()

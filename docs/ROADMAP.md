@@ -130,3 +130,7 @@ Current focus: distinguish save/restore from semantic Check/Accept and Finalize.
 - 100/500/1000 chapter benchmarks.
 - Frontend tests/build, Docker build and release matrices.
 - Full documentation set and signed/checksummed multi-platform release.
+
+### Phase 9 closure scope
+
+Phase 9 production implementation was merged in PR #37; orchestration follow-up and recovery limits are documented in [AUTOPILOT.md](AUTOPILOT.md). Phase 10–13 remain paused. Historical 300-chapter and full-suite acceptance are still deferred by the limited-check policy, not reported as passed.

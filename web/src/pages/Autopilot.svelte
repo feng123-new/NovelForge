@@ -33,6 +33,8 @@
   try { const p = await api.getProject(id); if (!disposed && generation === epoch) { startChapter = p.completed_chapters + 1; targetChapter = Math.max(startChapter, Math.min(p.total_chapters || startChapter + 2, 1000)); } }
   catch { if (!disposed && generation === epoch) error = '项目读取失败'; }
   await refresh();
+  const recommended = (page as AutopilotPage | null)?.next_chapter;
+  if (recommended) startChapter = recommended;
  }
  onMount(() => {
   disposed = false;
@@ -53,13 +55,19 @@
  }
  async function control(id: string, action: 'pause' | 'stop' | 'resume') {
   pending = true; error = '';
-  try { await api.controlAutopilot(projectID, id, action); detail = null; await refresh(); }
+  try {
+   const job = page?.jobs.find((item) => item.id === id);
+   const approval = action === 'resume' && job?.error_code === 'REVIEW_REQUIRED' ? { expected_revision: detail?.job.revision, review_candidate_id: detail?.candidate_id } : {};
+   if (action === 'resume' && job?.error_code === 'REVIEW_REQUIRED' && (!detail || detail.job.id !== id || !detail.candidate_id)) throw new Error('请先查看当前候选稿');
+   await api.controlAutopilot(projectID, id, action, approval); detail = null; await refresh();
+  }
   catch (cause) { error = cause instanceof APIClientError ? cause.message : '控制请求失败'; }
   finally { pending = false; }
  }
  async function inspect(id: string) {
   pending = true; error = '';
-  try { detail = await api.autopilotDetail(projectID, id); }
+  const project = projectID, generation = epoch;
+  try { const result = await api.autopilotDetail(project, id); if (!disposed && generation === epoch && project === projectID) detail = result; }
   catch (cause) { error = cause instanceof APIClientError ? cause.message : '候选正文读取失败'; }
   finally { pending = false; }
  }
@@ -90,7 +98,7 @@
      <div class="flex flex-wrap gap-2">
       <button class="btn btn-sm" disabled={pending} on:click={() => inspect(job.id)}>查看候选与计划</button>
       <button class="btn btn-sm" disabled={pending || !job.actions.pause} on:click={() => control(job.id, 'pause')}>暂停</button>
-      <button class="btn btn-sm btn-primary" disabled={pending || !job.actions.resume} on:click={() => control(job.id, 'resume')}>{job.error_code === 'REVIEW_REQUIRED' ? '批准本章并继续' : '继续 / 重试'}</button>
+      <button class="btn btn-sm btn-primary" disabled={pending || !job.actions.resume || (job.error_code === 'REVIEW_REQUIRED' && (!detail || detail.job.id !== job.id || detail.job.revision !== job.revision || detail.candidate_id !== job.review_candidate_id))} on:click={() => control(job.id, 'resume')}>{job.error_code === 'REVIEW_REQUIRED' ? '批准本章并继续' : '继续 / 重试'}</button>
       <button class="btn btn-sm btn-outline" disabled={pending || !job.actions.stop} on:click={() => control(job.id, 'stop')}>停止</button>
       <a class="btn btn-sm btn-ghost" href={`#/versions?project=${projectID}`}>章节版本</a>
      </div>

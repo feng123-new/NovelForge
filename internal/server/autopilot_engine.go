@@ -36,7 +36,7 @@ func (s *Server) autopilotModel(ctx context.Context, id string, profile map[stri
 		cfg.Roles = map[string]bootstrap.RoleConfig{}
 	}
 	for role, value := range profile {
-		if role != "architect" && role != "writer" && role != "librarian" && role != "editor" {
+		if role != "architect" && role != "planner" && role != "writer" && role != "librarian" && role != "editor" {
 			return nil, autopilot.Stop("MODEL_PROFILE_INVALID")
 		}
 		provider, model, ok := strings.Cut(value, "/")
@@ -102,6 +102,9 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 	case "foundation":
 		saved, loadErr := e.s.projects.LoadAutopilotFoundation(ctx, j.ProjectID, j.Input.FoundationID)
 		if loadErr == nil {
+			if saved.Validate(1000) != nil || !saved.Covers(j.Input.PlanningTarget()) {
+				return j, autopilot.Stop("FOUNDATION_HORIZON_MISMATCH")
+			}
 			j.Foundation = saved
 			j.Stage = "plan_context"
 			j.ErrorCode = ""
@@ -110,7 +113,9 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 		if !errors.Is(loadErr, os.ErrNotExist) {
 			return j, autopilot.Stop("FOUNDATION_STORAGE_ERROR")
 		}
-		data, err := call("architect", "foundation", j.Input)
+		foundationInput := j.Input
+		foundationInput.TargetChapter = j.Input.PlanningTarget()
+		data, err := call("architect", "foundation", foundationInput)
 		if err != nil {
 			return j, err
 		}
@@ -118,7 +123,7 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 		if err = autopilot.Decode(data, &f); err != nil {
 			return j, autopilot.Stop("FOUNDATION_SCHEMA_INVALID")
 		}
-		if f.Validate(j.Input.TargetChapter) != nil {
+		if f.Validate(j.Input.PlanningTarget()) != nil || !f.Covers(j.Input.PlanningTarget()) {
 			return j, autopilot.Stop("FOUNDATION_INVALID")
 		}
 		if err = e.s.projects.SaveAutopilotFoundation(ctx, j.ProjectID, j.Input.FoundationID, f); err != nil {
@@ -139,12 +144,23 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 		if err != nil {
 			return j, autopilot.Stop("PLANNING_CONTEXT_FAILED")
 		}
+		fingerprint, err := e.s.projects.AutopilotFingerprint(ctx, j.ProjectID, j.Chapter)
+		if err != nil {
+			return j, autopilot.Stop("AUTHORITY_SNAPSHOT_FAILED")
+		}
+		j.AuthorityFingerprint = fingerprint
 		j.PlanningContext = data
 		j.Stage = "plan"
 		j.ErrorCode = ""
 		return j, nil
 	case "plan":
-		data, err := call("planner", "chapter", map[string]any{"chapter": j.Chapter, "target_chapter": j.Input.TargetChapter, "language": j.Input.Language, "foundation": j.Foundation, "selected_context": j.PlanningContext})
+		if j.Foundation == nil || len(j.PlanningContext) == 0 {
+			return j, autopilot.Stop("PLANNING_CONTEXT_MISSING")
+		}
+		if err := e.checkAuthority(ctx, j); err != nil {
+			return j, err
+		}
+		data, err := call("planner", "chapter", map[string]any{"chapter": j.Chapter, "target_chapter": j.Input.PlanningTarget(), "batch_target_chapter": j.Input.TargetChapter, "planning_pov": j.Foundation.POV, "style": j.Input.Style, "words_per_chapter": j.Input.WordsPerChapter, "language": j.Input.Language, "foundation": j.Foundation, "selected_context": j.PlanningContext})
 		if err != nil {
 			return j, err
 		}
@@ -156,8 +172,8 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 		for _, c := range j.Foundation.Characters {
 			known = known || c.ID == p.POV
 		}
-		if !known {
-			return j, autopilot.Stop("PLAN_POV_UNKNOWN")
+		if !known || p.POV != j.Foundation.POV {
+			return j, autopilot.Stop("PLAN_POV_SCOPE_MISMATCH")
 		}
 		j.Plan = &p
 		j.Stage = "generate"
@@ -170,6 +186,20 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 		snapshot, err := quality.Store.Snapshot(ctx, j.ProjectID, j.Chapter)
 		if err != nil && !errors.Is(err, qualitygate.ErrNotFound) {
 			return j, autopilot.Stop("QUALITY_STATE_UNAVAILABLE")
+		}
+		// Partial generated Final commits must converge before any takeover or stale-input check.
+		partial := err == nil && (snapshot.Transaction.State == qualitygate.StateTruthCommitPending || snapshot.Transaction.State == qualitygate.StateCheckpointPending)
+		if !partial {
+			complete, proofErr := e.s.projects.AutopilotFinalComplete(ctx, j.ProjectID, j.Chapter)
+			if proofErr != nil {
+				return j, autopilot.Stop("FINAL_PROOF_UNAVAILABLE")
+			}
+			if complete {
+				return e.advance(ctx, j)
+			} // explicit Human Final may finish a paused chapter
+			if authorityErr := e.checkAuthority(ctx, j); authorityErr != nil {
+				return j, authorityErr
+			}
 		}
 		if errors.Is(err, qualitygate.ErrNotFound) {
 			if err = e.checkBoundary(ctx, j, true); err != nil {
@@ -205,6 +235,9 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 					return j, autopilot.Retry("FINALIZE_INCOMPLETE")
 				}
 			case qualitygate.StateRewritePending:
+				if snapshot.Transaction.Attempt >= j.Input.MaxRewrites {
+					return j, autopilot.Stop("REWRITE_BUDGET_EXHAUSTED")
+				}
 				snapshot, err = quality.Rewrite(ctx, j.ProjectID, j.Chapter, *j.Plan)
 			case qualitygate.StatePlanned, qualitygate.StateDrafting:
 				snapshot, err = quality.Generate(ctx, j.ProjectID, j.Chapter, *j.Plan)
@@ -212,7 +245,7 @@ func (e chapterJobEngine) Step(ctx context.Context, j autopilot.Job) (autopilot.
 				if snapshot.Continuity != nil && snapshot.Continuity.Status == qualitygate.ContinuityFail && snapshot.Transaction.Attempt >= snapshot.Transaction.MaxRewrites {
 					return j, autopilot.Stop("CONTINUITY_REWRITE_EXHAUSTED")
 				}
-				if len(snapshot.Candidates) == 0 {
+				if len(snapshot.Candidates) == 0 || snapshot.Candidates[len(snapshot.Candidates)-1].Attempt < snapshot.Transaction.Attempt {
 					snapshot, err = quality.Generate(ctx, j.ProjectID, j.Chapter, *j.Plan)
 				} else {
 					snapshot, err = quality.Check(ctx, j.ProjectID, j.Chapter)
@@ -257,6 +290,10 @@ func (e chapterJobEngine) checkBoundary(ctx context.Context, j autopilot.Job, re
 	}
 	defer versions.Close()
 	if j.Chapter > 1 {
+		complete, proofErr := e.s.projects.AutopilotFinalComplete(ctx, j.ProjectID, j.Chapter-1)
+		if proofErr != nil || !complete {
+			return autopilot.Stop("PRIOR_FINAL_CHECKPOINT_REQUIRED")
+		}
 		active, err := versions.ActiveFinal(ctx, j.Chapter-1, false)
 		if err != nil || active == nil {
 			return autopilot.Stop("PRIOR_FINAL_REQUIRED")
@@ -294,6 +331,10 @@ func (e chapterJobEngine) checkBoundary(ctx context.Context, j autopilot.Job, re
 	return nil
 }
 func (e chapterJobEngine) advance(ctx context.Context, j autopilot.Job) (autopilot.Job, error) {
+	complete, proofErr := e.s.projects.AutopilotFinalComplete(ctx, j.ProjectID, j.Chapter)
+	if proofErr != nil || !complete {
+		return j, autopilot.Stop("FINAL_CHECKPOINT_MISSING")
+	}
 	versions, err := e.s.projects.OpenChapterVersionStore(ctx, j.ProjectID)
 	if err != nil {
 		return j, autopilot.Stop("VERSION_STORE_UNAVAILABLE")
@@ -311,6 +352,7 @@ func (e chapterJobEngine) advance(ctx context.Context, j autopilot.Job) (autopil
 	j.Chapter++
 	j.Plan = nil
 	j.PlanningContext = nil
+	j.AuthorityFingerprint = ""
 	j.ReviewApproved = false
 	j.ReviewCandidateID = ""
 	j.ErrorCode = ""
@@ -320,4 +362,21 @@ func (e chapterJobEngine) advance(ctx context.Context, j autopilot.Job) (autopil
 		j.Stage = "completed"
 	}
 	return j, nil
+}
+
+// Conservatively reject stale plans/reviews after any authoritative edit.
+// No prompt, fact or secret is exposed by this digest. A completed explicit
+// Human Final may take over the chapter; it is verified before this guard.
+func (e chapterJobEngine) checkAuthority(ctx context.Context, j autopilot.Job) error {
+	if j.AuthorityFingerprint == "" {
+		return autopilot.Stop("CONTEXT_BASELINE_REQUIRED")
+	}
+	fingerprint, err := e.s.projects.AutopilotFingerprint(ctx, j.ProjectID, j.Chapter)
+	if err != nil {
+		return autopilot.Stop("AUTHORITY_SNAPSHOT_FAILED")
+	}
+	if fingerprint != j.AuthorityFingerprint {
+		return autopilot.Stop("CHAPTER_CONTEXT_CHANGED")
+	}
+	return e.checkBoundary(ctx, j, false)
 }
