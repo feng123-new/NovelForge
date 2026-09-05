@@ -1,4 +1,4 @@
-name: Phase 13A bounded delivery
+name: Remove verified unpublished candidate draft
 on:
   push:
     branches: [ops/phase13a-20260906]
@@ -8,57 +8,12 @@ concurrency:
   group: phase13a-delivery
   cancel-in-progress: false
 jobs:
-  prepare:
+  cleanup-draft:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Apply bounded release and local-validation tooling
-        run: |
-          git worktree add --detach "$RUNNER_TEMP/product" 9fe83d2268dfa9a8f317e58cbabc8c682fc716fa
-          python .delivery13/finalize.py "$RUNNER_TEMP/product"
-      - name: Exercise the exact new quick verification tool
-        working-directory: ${{ runner.temp }}/product
-        run: python scripts/verify.py --mode quick --output verification-results/premerge
-      - name: Verify packaging rejects invalid release identity without building
-        working-directory: ${{ runner.temp }}/product
-        run: |
-          python - <<'PY'
-          import subprocess,sys
-          r=subprocess.run([sys.executable,'scripts/package_candidate.py','--version','v0.1.0','--verification','verification-results/premerge/result.json'],capture_output=True,text=True)
-          assert r.returncode!=0 and 'candidate tag' in r.stderr
-          PY
-      - name: Preserve exact evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase13a-premerge-${{ github.run_id }}
-          path: ${{ runner.temp }}/product/verification-results/premerge
-          if-no-files-found: warn
-      - name: Publish source only; workflow files require the authorized maintainer connection
-        working-directory: ${{ runner.temp }}/product
-        run: |
-          git diff --exit-code 9fe83d2268dfa9a8f317e58cbabc8c682fc716fa -- go.mod go.sum web/package-lock.json web/dist docs/archive .goreleaser.yml
-          git diff --cached --check
-          test -z "$(git diff --name-only)"
-          echo "FULL_VERIFIED_TREE=$(git write-tree)"
-          git ls-files -s .github/workflows
-          git restore --source=9fe83d2268dfa9a8f317e58cbabc8c682fc716fa --staged --worktree .github
-          git diff --exit-code 9fe83d2268dfa9a8f317e58cbabc8c682fc716fa -- .github
-          test -z "$(git ls-remote --heads origin feat/phase13a-candidate)"
-          test "$(git ls-remote --heads origin main | cut -f1)" = 9fe83d2268dfa9a8f317e58cbabc8c682fc716fa
-          git config user.name feng123-new
-          git config user.email 203426027+feng123-new@users.noreply.github.com
-          git commit -m 'feat: add Phase 13A candidate packaging and local verification'
-          git push origin HEAD:refs/heads/feat/phase13a-candidate
-          echo "PRODUCT_COMMIT=$(git rev-parse HEAD)"
-          echo "PRODUCT_TREE=$(git rev-parse HEAD^{tree})"
-          git diff --stat HEAD^
+      - name: Check draft identity and failed-run evidence before removal
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .delivery13/remove_unpublished.py
