@@ -1,4 +1,4 @@
-name: Remove verified unpublished candidate draft
+name: Phase 12 and 13A post-release cleanup
 on:
   push:
     branches: [ops/phase13a-20260906]
@@ -8,12 +8,14 @@ concurrency:
   group: phase13a-delivery
   cancel-in-progress: false
 jobs:
-  cleanup-draft:
+  cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Check draft identity and failed-run evidence before removal
+        with:
+          fetch-depth: 0
+      - name: Verify published candidate, archive exact refs, and prune only this delivery
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python .delivery13/remove_unpublished.py
+        run: python .delivery13/cleanup.py
