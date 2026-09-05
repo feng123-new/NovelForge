@@ -74,7 +74,7 @@ func finalizeCompiledContextPayload(ctx context.Context, result map[string]any, 
     if budget <= 0 { return nil, fmt.Errorf("context byte budget must be positive") }
     tokenBudget := budget / 4
     if tokenBudget < 1 { tokenBudget = 1 }
-    // Only the compiler trims. Mandatory errors never fall back to raw data.
+    // Selection remains compiler-owned. Mandatory errors never fall back.
     for attempt := 0; attempt < 4; attempt++ {
         compiled, err := contextcompiler.CompileLegacyMap(ctx, result, contextcompiler.Request{
             Chapter: chapter, TotalTokens: tokenBudget, RecentChapterCount: 3,
@@ -83,19 +83,39 @@ func finalizeCompiledContextPayload(ctx context.Context, result map[string]any, 
         if err != nil { return nil, fmt.Errorf("compile context: %w", err) }
         selected, err := contextcompiler.SelectLegacyMap(result, compiled)
         if err != nil { return nil, err }
+        trimmedSet := map[string]bool{}
+        if prior, ok := result["_trimmed"].([]string); ok {
+            for _, name := range prior { trimmedSet[name] = true }
+        }
+        for _, layer := range compiled.Diagnostics.Layers {
+            for _, item := range layer.Trimmed { trimmedSet[item.Kind] = true }
+        }
+        if len(trimmedSet) > 0 {
+            trimmed := make([]string, 0, len(trimmedSet))
+            for name := range trimmedSet { trimmed = append(trimmed, name) }
+            sort.Strings(trimmed)
+            selected["_trimmed"] = trimmed
+        }
         selected["_loading_summary"] = buildLoadingSummary(selected, chapter)
-        selected["_context_compiler"] = map[string]any{
+        diagnostic := map[string]any{
             "version": 2, "status": "applied", "context_sha": compiled.ContextSHA,
             "total_tokens": compiled.Diagnostics.TotalTokens,
             "used_tokens": compiled.Diagnostics.UsedTokens,
             "system_tokens": compiled.Diagnostics.SystemTokens,
             "layers": compiled.Diagnostics.Layers,
         }
+        selected["_context_compiler"] = diagnostic
         data, err := json.Marshal(selected)
         if err != nil { return nil, fmt.Errorf("marshal context payload: %w", err) }
         if len(data) <= budget { return data, nil }
-        reduction := (len(data)-budget+1)/2
-        if reduction < 256 { reduction = 256 }
+        // Diagnostic detail is optional; compact it before trimming content.
+        delete(diagnostic, "layers")
+        diagnostic["compact"] = true
+        data, err = json.Marshal(selected)
+        if err != nil { return nil, fmt.Errorf("marshal context payload: %w", err) }
+        if len(data) <= budget { return data, nil }
+        reduction := (len(data)-budget+3)/4
+        if reduction < 1 { reduction = 1 }
         tokenBudget -= reduction
         if tokenBudget < 1 { break }
     }
@@ -105,7 +125,6 @@ edit('internal/tools/novel_context.go','bbe5849e80ef555941656cf9ac3cce31ae47b38d
  ('func (t *ContextTool) Execute(_ context.Context, args json.RawMessage)','func (t *ContextTool) Execute(ctx context.Context, args json.RawMessage)',1),
  ('return finalizeContextPayload(result, a.Chapter, budget)','return finalizeCompiledContextPayload(ctx, result, a.Chapter, budget)',1),
  (old,new,1)])
-# Existing documentation is read at the fixed worktree commit before modification.
 one('docs/IMPLEMENTATION_STATUS.md',None,'# NovelForge Implementation Status\n','# NovelForge Implementation Status\n\n> Historical acceptance archive: prior PR/SHA/CI records are unchanged. Current Phase 1–8 maintenance changes and limited validation are recorded in [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md). Phase 9–13 remain frozen.\n')
 one('docs/WEB.md',None,'# NovelForge Web Workspace\n','# NovelForge Web Workspace\n\n> Maintenance update (2026-09-05): the CLI server now loads project/global quality model configuration and accepts `server --config`. Writer requests include compiled project context. Provider availability is a configuration condition, not a health probe. Workers remain unavailable. See [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md) for current scope and verification limits.\n')
 one('docs/CONTEXT_COMPILER.md',None,'# Context Compiler and Hybrid Retrieval\n','# Context Compiler and Hybrid Retrieval\n\n> Maintenance update (2026-09-05): `novel_context` now returns compiler-selected records, and Web Writer hashes include compiled project context. Compilation errors stop the call. Additive Migration 8 supports character search without changing Migration 5. Older diagnostic-only integration notes below describe historical Phase 7 delivery; see [PHASE_01_08_FIXES.md](PHASE_01_08_FIXES.md).\n')
