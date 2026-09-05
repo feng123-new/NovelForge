@@ -140,4 +140,8 @@ Apache License 2.0；保留 ainovel-cli 的原始版权与来源。详见 [LICEN
 
 ## Phase 10 authoring systems
 
-Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](docs/AUTHORING.md) for limits, storage and actual runtime behavior. Phase 11–13 remain paused; no full-suite or long-book acceptance is claimed.
+Markdown Writing/Review/Polish/Planning Skills, separate style and reference libraries with Chinese-capable FTS, and configurable advisory phrase/repetition rules are connected to the Web/Autopilot model requests. See [Authoring systems](docs/AUTHORING.md) for limits, storage and actual runtime behavior. Phase 11 is now connected; Phase 12–13 remain paused; no full-suite or long-book acceptance is claimed.
+
+## Phase 11 lifecycle
+
+[Manuscript import, export, backup and restore](docs/LIFECYCLE.md) now connect to immutable versions and the existing semantic review path. Upload and restore do not start paid work. Phase 12–13 remain paused. Verification is bounded to named short flows and affected builds; no whole-book or full-suite acceptance is implied.

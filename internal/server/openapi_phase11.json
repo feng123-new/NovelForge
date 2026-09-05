@@ -1,0 +1,1373 @@
+{
+  "paths": {
+    "/api/projects/{id}/lifecycle/imports": {
+      "get": {
+        "operationId": "listManuscriptImports",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "imports": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ManuscriptImport"
+                      }
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    },
+                    "model_available": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "imports",
+                    "limit",
+                    "offset",
+                    "model_available"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "stageManuscript",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "import": {
+                      "$ref": "#/components/schemas/ManuscriptImport"
+                    },
+                    "model_called": {
+                      "type": "boolean"
+                    },
+                    "finalized": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "import",
+                    "model_called",
+                    "finalized"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "start_chapter": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/lifecycle/imports/{import}": {
+      "get": {
+        "operationId": "getManuscriptImport",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "import",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "import": {
+                      "$ref": "#/components/schemas/ManuscriptImport"
+                    },
+                    "chapters": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ImportedChapter"
+                      }
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "import",
+                    "chapters",
+                    "limit",
+                    "offset"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/lifecycle/imports/{import}/step": {
+      "post": {
+        "operationId": "stepManuscript",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "import",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "chapter": {
+                      "$ref": "#/components/schemas/ImportedChapter"
+                    },
+                    "accepted": {
+                      "type": "boolean"
+                    },
+                    "finalized": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "chapter",
+                    "accepted",
+                    "finalized"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "chapter": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000
+                  },
+                  "analyze": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "chapter",
+                  "analyze"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/lifecycle/export": {
+      "get": {
+        "operationId": "exportManuscript",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "txt",
+                "md",
+                "epub"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment; active Finals only for manuscript export",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/epub+zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/markdown": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/lifecycle/backup": {
+      "get": {
+        "operationId": "backupProject",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment; active Finals only for manuscript export",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/epub+zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/markdown": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/lifecycle/backups/{backup}": {
+      "get": {
+        "operationId": "downloadMigrationBackup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "backup",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment; active Finals only for manuscript export",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/epub+zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/markdown": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/lifecycle/migrate": {
+      "post": {
+        "operationId": "migrateProjectFormat",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "from_format": {
+                      "type": "integer"
+                    },
+                    "to_format": {
+                      "type": "integer"
+                    },
+                    "schema_version": {
+                      "type": "integer"
+                    },
+                    "backup_id": {
+                      "type": "string"
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "from_format",
+                    "to_format",
+                    "schema_version",
+                    "backup_id",
+                    "changed"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_format": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2
+                  },
+                  "confirm": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "expected_format",
+                  "confirm"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lifecycle/restore": {
+      "post": {
+        "operationId": "restoreProjectBackup",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "project": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "format_version": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "format_version"
+                      ]
+                    },
+                    "replayed": {
+                      "type": "boolean"
+                    },
+                    "requires_configuration": {
+                      "type": "boolean"
+                    },
+                    "jobs_resumed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "project",
+                    "replayed",
+                    "requires_configuration",
+                    "jobs_resumed"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleError"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Lifecycle response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "project": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "format_version": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "format_version"
+                      ]
+                    },
+                    "replayed": {
+                      "type": "boolean"
+                    },
+                    "requires_configuration": {
+                      "type": "boolean"
+                    },
+                    "jobs_resumed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "project",
+                    "replayed",
+                    "requires_configuration",
+                    "jobs_resumed"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ManuscriptImport": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "source_sha": {
+            "type": "string"
+          },
+          "start_chapter": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "saved": {
+            "type": "integer"
+          },
+          "analyzed": {
+            "type": "integer"
+          },
+          "next_save": {
+            "type": "integer"
+          },
+          "next_analysis": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "filename",
+          "source_sha",
+          "start_chapter",
+          "total",
+          "saved",
+          "analyzed",
+          "next_save",
+          "next_analysis",
+          "created_at"
+        ]
+      },
+      "ImportedChapter": {
+        "type": "object",
+        "properties": {
+          "chapter": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "characters": {
+            "type": "integer"
+          },
+          "version_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "saved",
+              "analyzed"
+            ]
+          },
+          "error_code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chapter",
+          "title",
+          "characters",
+          "version_id",
+          "state"
+        ]
+      },
+      "LifecycleError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "trace_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "details",
+              "retryable",
+              "trace_id"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      }
+    }
+  }
+}

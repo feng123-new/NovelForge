@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Dashboard from './pages/Dashboard.svelte';
+  import Lifecycle from './pages/Lifecycle.svelte';
   import Autopilot from './pages/Autopilot.svelte';
   import Authoring from './pages/Authoring.svelte';
   import Projects from './pages/Projects.svelte';
@@ -18,6 +19,7 @@
 
   const pages = {
     dashboard: Dashboard,
+    lifecycle: Lifecycle,
     autopilot: Autopilot,
     authoring: Authoring,
     projects: Projects,
@@ -33,6 +35,7 @@
   const navigation: { name: RouteName; label: string; icon: string; href: string }[] = [
     { name: 'dashboard', label: 'Dashboard', icon: '◫', href: '#/dashboard' },
     { name: 'projects', label: 'Projects', icon: '◇', href: '#/projects' },
+    { name: 'lifecycle', label: 'Import & Backup', icon: '⇄', href: '#/lifecycle' },
     { name: 'autopilot', label: 'Autopilot', icon: '▷', href: '#/autopilot' },
     { name: 'authoring', label: 'Skills & Libraries', icon: '✎', href: '#/authoring' },
     { name: 'new', label: 'New Novel', icon: '＋', href: '#/new' },

@@ -1,4 +1,4 @@
-export type RouteName = 'authoring' | 'autopilot' | 'dashboard' | 'projects' | 'new' | 'chapters' | 'versions' | 'foreshadows' | 'secrets' | 'models' | 'logs' | 'settings';
+export type RouteName = 'lifecycle' | 'authoring' | 'autopilot' | 'dashboard' | 'projects' | 'new' | 'chapters' | 'versions' | 'foreshadows' | 'secrets' | 'models' | 'logs' | 'settings';
 
 export interface Route {
   name: RouteName;
@@ -8,6 +8,7 @@ export interface Route {
 
 const knownRoutes: Record<string, RouteName> = {
   '/': 'dashboard',
+  '/lifecycle': 'lifecycle',
   '/dashboard': 'dashboard',
   '/projects': 'projects',
   '/autopilot': 'autopilot',
