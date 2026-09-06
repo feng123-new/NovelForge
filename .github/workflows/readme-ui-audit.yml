@@ -1,0 +1,131 @@
+name: README UI compatibility audit
+on:
+  push:
+    branches: [ops/readme-ui-audit-20260906]
+permissions:
+  contents: write
+concurrency:
+  group: readme-ui-audit
+  cancel-in-progress: true
+jobs:
+  audit:
+    if: ${{ !contains(github.event.head_commit.message, '[ui-audit-output]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Frontend source checks and focused page tests
+        working-directory: web
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          npx vitest run \
+            src/pages/Dashboard.test.ts \
+            src/pages/Autopilot.test.ts \
+            src/pages/Authoring.test.ts \
+            src/pages/Observability.test.ts \
+            src/pages/Lifecycle.test.ts
+          npm run build
+          node --check dist/assets/app.js
+          git diff --exit-code -- dist
+      - name: Build real embedded Web server
+        run: CGO_ENABLED=0 GOWORK=off go build -trimpath -o "$RUNNER_TEMP/novelforge" ./cmd/novelforge
+      - name: Run backend and exercise browser pages
+        env:
+          AUDIT_BASE: http://127.0.0.1:48090
+        run: |
+          set -euo pipefail
+          WORKSPACE="$RUNNER_TEMP/readme-workspace"
+          mkdir -p "$WORKSPACE" docs/assets/ui
+          "$RUNNER_TEMP/novelforge" server --workspace "$WORKSPACE" --host 127.0.0.1 --port 48090 --no-autopilot >"$RUNNER_TEMP/server.log" 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 50); do
+            if curl -fsS "$AUDIT_BASE/api/health" >/dev/null; then break; fi
+            sleep .2
+          done
+          curl -fsS "$AUDIT_BASE/api/health" | tee "$RUNNER_TEMP/health.json"
+          cd web
+          npm install --no-save --package-lock=false --ignore-scripts playwright-core@1.55.0 >/dev/null
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          test -n "$CHROME"
+          cat > "$RUNNER_TEMP/ui-audit.mjs" <<'NODE'
+          import { chromium } from 'playwright-core';
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const base = process.env.AUDIT_BASE;
+          const chrome = process.env.CHROME;
+          const out = path.resolve(process.cwd(), '../docs/assets/ui');
+          fs.mkdirSync(out, { recursive: true });
+
+          const create = await fetch(base + '/api/projects', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json','Idempotency-Key':'readme-ui-demo-project'},
+            body: JSON.stringify({title:'雾港纪事'})
+          });
+          if (!create.ok) throw new Error(`create project ${create.status}: ${await create.text()}`);
+          const project = await create.json();
+          if (!project.id) throw new Error('project id missing');
+
+          const browser = await chromium.launch({headless:true, executablePath:chrome, args:['--no-sandbox']});
+          const context = await browser.newContext({viewport:{width:1440,height:960}, deviceScaleFactor:1});
+          const page = await context.newPage();
+          const errors = [];
+          const failed = [];
+          page.on('pageerror', e => errors.push(String(e)));
+          page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
+          page.on('response', r => { if (r.status() >= 500) failed.push(`${r.status()} ${r.url()}`); });
+          await page.addInitScript(() => localStorage.setItem('theme','light'));
+
+          const shots = [
+            ['dashboard', '#/dashboard', '创作总览'],
+            ['autopilot', `#/autopilot?project=${project.id}`, 'Autopilot'],
+            ['authoring', `#/authoring?project=${project.id}`, 'Skills'],
+            ['diagnostics', `#/observability?project=${project.id}`, 'Diagnostics & Cost'],
+            ['lifecycle', `#/lifecycle?project=${project.id}`, 'Import']
+          ];
+          const results = [];
+          for (const [name, hash, needle] of shots) {
+            await page.goto(base + '/' + hash, {waitUntil:'networkidle'});
+            await page.waitForTimeout(250);
+            const body = await page.locator('body').innerText();
+            if (!body.includes(needle)) throw new Error(`${name}: expected text ${needle} missing`);
+            const alerts = await page.locator('[role="alert"]').allInnerTexts();
+            const fatalAlerts = alerts.filter(t => !/Worker|模型未配置|Provider/.test(t));
+            if (fatalAlerts.length) throw new Error(`${name}: fatal alert ${fatalAlerts.join(' | ')}`);
+            await page.screenshot({path:path.join(out, `${name}.png`), fullPage:false});
+            results.push({name, hash, heading:(await page.locator('h1').first().innerText()).trim(), alerts});
+          }
+          await browser.close();
+          if (errors.length) throw new Error(`browser errors: ${errors.join(' | ')}`);
+          if (failed.length) throw new Error(`backend 5xx: ${failed.join(' | ')}`);
+          fs.writeFileSync(path.join(out, 'compatibility.json'), JSON.stringify({project_title:project.title, project_id:project.id, pages:results, browser_errors:errors, backend_5xx:failed}, null, 2));
+          console.log(JSON.stringify({project_id:project.id, pages:results.map(r=>r.name), browser_errors:errors.length, backend_5xx:failed.length}));
+          NODE
+          CHROME="$CHROME" node "$RUNNER_TEMP/ui-audit.mjs"
+          cd ..
+          test -s docs/assets/ui/dashboard.png
+          test -s docs/assets/ui/autopilot.png
+          test -s docs/assets/ui/authoring.png
+          test -s docs/assets/ui/diagnostics.png
+          test -s docs/assets/ui/lifecycle.png
+          cat docs/assets/ui/compatibility.json
+      - name: Commit audited screenshots only
+        run: |
+          git add docs/assets/ui/dashboard.png docs/assets/ui/autopilot.png docs/assets/ui/authoring.png docs/assets/ui/diagnostics.png docs/assets/ui/lifecycle.png docs/assets/ui/compatibility.json
+          git diff --cached --check
+          git config user.name feng123-new
+          git config user.email 203426027+feng123-new@users.noreply.github.com
+          git commit -m 'docs: capture audited Web workbench screenshots [ui-audit-output]'
+          git push origin HEAD:ops/readme-ui-audit-20260906
