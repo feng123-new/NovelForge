@@ -28,7 +28,7 @@ jobs:
           node web/prepare-i18n.mjs
           node web/localize.mjs
           node web/post-i18n.mjs
-          if test -f web/i18n-review.patch; then git apply --whitespace=nowarn web/i18n-review.patch; fi
+          python3 web/review-i18n.py
       - name: Build isolated review worktree
         run: |
           npm run build --prefix web
@@ -42,6 +42,7 @@ jobs:
           retention-days: 3
       - name: Check types and focused bilingual invariants
         run: |
+          npm run check:i18n --prefix web
           npm run check --prefix web -- --fail-on-warnings
           npm run test:i18n --prefix web
       - name: Affected page and wizard regression tests
