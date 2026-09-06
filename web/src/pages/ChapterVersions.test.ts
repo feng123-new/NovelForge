@@ -57,12 +57,12 @@ describe('ChapterVersions page', () => {
     const { default: ChapterVersions } = await import('./ChapterVersions.svelte');
     render(ChapterVersions);
     const history = await screen.findByTestId('version-history');
-    expect(within(history).getByText('v2 · final')).toBeInTheDocument();
-    expect(within(history).getByText('v1 · editor_revision')).toBeInTheDocument();
-    expect(within(history).getByText('Rejected')).toBeInTheDocument();
-    expect(await screen.findByTestId('sync-warning')).toHaveTextContent('Sync required');
-    expect(screen.getByText(/expected aaaaaaaaaaaa/)).toBeInTheDocument();
-    expect(screen.getByText(/observed cccccccccccc/)).toBeInTheDocument();
+    expect(within(history).getByText("版本 2 · 定稿")).toBeInTheDocument();
+    expect(within(history).getByText("版本 1 · 审稿修订")).toBeInTheDocument();
+    expect(within(history).getByText("已拒绝")).toBeInTheDocument();
+    expect(await screen.findByTestId('sync-warning')).toHaveTextContent("需要同步");
+    expect(screen.getByText(/预期 aaaaaaaaaaaa/)).toBeInTheDocument();
+    expect(screen.getByText(/当前 cccccccccccc/)).toBeInTheDocument();
   });
 
   it('saves editor content as a new human_revision while leaving the displayed Active Final unchanged', async () => {
@@ -71,16 +71,16 @@ describe('ChapterVersions page', () => {
     vi.stubGlobal('fetch', fetcher);
     const { default: ChapterVersions } = await import('./ChapterVersions.svelte');
     render(ChapterVersions);
-    const editor = await screen.findByLabelText('Chapter markdown editor');
+    const editor = await screen.findByLabelText("章节 Markdown 编辑器");
     await fireEvent.input(editor, { target: { value: 'Character A is severely injured but escaped alive.' } });
-    const save = screen.getByRole('button', { name: 'Save Human Revision' });
+    const save = screen.getByRole('button', { name: "保存人工修订" });
     await fireEvent.click(save);
     await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
       '/api/projects/p1/chapters/50/versions',
       expect.objectContaining({ method: 'POST' })
     ));
-    expect(await screen.findByText(/Human revision v3 已创建/)).toBeInTheDocument();
+    expect(await screen.findByText(/已创建人工修订版本 3/)).toBeInTheDocument();
     const history = await screen.findByTestId('version-history');
-    expect(within(history).getByText('v2 · final')).toBeInTheDocument();
+    expect(within(history).getByText("版本 2 · 定稿")).toBeInTheDocument();
   });
 });

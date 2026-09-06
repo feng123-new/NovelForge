@@ -18,12 +18,12 @@ describe('Autopilot controls', () => {
    return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }));
   const view = render(Autopilot);
-  await waitFor(() => expect(screen.getByText('批准本章并继续')).toBeTruthy());
-  expect((screen.getByText('暂停') as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByText('批准本章并继续') as HTMLButtonElement).disabled).toBe(true);
-  await fireEvent.click(screen.getByText('查看候选与计划'));
+  await waitFor(() => expect(screen.getByText("批准本章并继续")).toBeTruthy());
+  expect((screen.getByText("暂停") as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByText("批准本章并继续") as HTMLButtonElement).disabled).toBe(true);
+  await fireEvent.click(screen.getByText("查看候选与计划"));
   await waitFor(() => expect(screen.getByText('A reviewed chapter.')).toBeTruthy());
-  await fireEvent.click(screen.getByText('批准本章并继续'));
+  await fireEvent.click(screen.getByText("批准本章并继续"));
   await waitFor(() => expect(requests.some((r) => r.url.endsWith('/resume') && r.init?.method === 'POST')).toBe(true));
   const write = requests.find((r) => r.url.endsWith('/resume'))!;
   expect(new Headers(write.init?.headers).get('Idempotency-Key')).toBeTruthy();

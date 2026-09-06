@@ -172,11 +172,11 @@ export interface EditorReview {
 
 export interface QualitySnapshot {
   transaction: QualityTransaction;
-  candidates: QualityCandidate[];
+  candidates: QualityCandidate[] | null;
   proposal?: Record<string, unknown>;
   continuity?: ContinuityResult;
   editor?: EditorReview;
-  state_changes: Array<Record<string, unknown>>;
+  state_changes: Array<Record<string, unknown>> | null;
 }
 
 export interface QualityActions {

@@ -26,7 +26,7 @@ describe('Projects page', () => {
     const { default: Projects } = await import('./Projects.svelte');
     render(Projects);
     expect(await screen.findByText('Sky Road')).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: '归档' }));
+    await fireEvent.click(screen.getByRole('button', { name: "归档" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
       '/api/projects/p1/archive',
       expect.objectContaining({ method: 'POST' })
@@ -46,7 +46,7 @@ describe('Projects page', () => {
     const { default: Projects } = await import('./Projects.svelte');
     render(Projects);
     expect(await screen.findByText('Sky Road')).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: '移入回收站' }));
+    await fireEvent.click(screen.getByRole('button', { name: "移入回收站" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
       '/api/projects/p1',
       expect.objectContaining({ method: 'DELETE' })

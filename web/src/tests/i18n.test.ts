@@ -54,7 +54,7 @@ describe('bilingual display-only locale', () => {
     expect(errors.map(e => renderMessage(e, 'en'))).toContain('Title is required');
   });
   it('has no network, model, router or project dependency in the locale module', () => {
-    const source = readFileSync(new URL('../lib/i18n/index.ts', import.meta.url), 'utf8');
+    const source = readFileSync(process.cwd() + '/src/lib/i18n/index.ts', 'utf8');
     expect(source).not.toMatch(/import .*from ['"].*(?:api|router|autopilot|project|wizard)/);
     expect(source).not.toMatch(/\bfetch\s*\(|location\.(?:reload|hash)\s*\(|new EventSource/);
   });

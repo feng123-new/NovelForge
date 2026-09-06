@@ -1,3 +1,4 @@
+import { message as uiMessage } from './i18n';
 import type { CreateProjectInput, FoundationRequestInput } from './types';
 
 export interface WizardState {
@@ -35,15 +36,15 @@ export const initialWizardState: WizardState = {
 export function validateWizardStep(step: number, state: WizardState): string[] {
   const errors: string[] = [];
   if (step === 1) {
-    if (!state.title.trim()) errors.push('标题不能为空');
-    if (state.targetWords < 1_000) errors.push('目标字数至少为 1000');
-    if (state.targetChapters < 1) errors.push('目标章节至少为 1');
-    if (state.wordsPerChapter < 100) errors.push('每章字数至少为 100');
+    if (!state.title.trim()) errors.push(uiMessage("ui_015edb6a8f1a"));
+    if (state.targetWords < 1_000) errors.push(uiMessage("ui_80d44788785d"));
+    if (state.targetChapters < 1) errors.push(uiMessage("ui_098ca67fa50a"));
+    if (state.wordsPerChapter < 100) errors.push(uiMessage("ui_0dbe529fce81"));
   }
-  if (step === 2 && !state.idea.trim()) errors.push('请填写核心创意');
+  if (step === 2 && !state.idea.trim()) errors.push(uiMessage("ui_3de3e150fe40"));
   // Empty role selections inherit the configured project providers.
   if (step === 5 && state.reviewPolicy === 'every_n' && (state.reviewEveryN < 1 || state.reviewEveryN > 100)) {
-    errors.push('审阅间隔必须为 1 到 100 章');
+    errors.push(uiMessage("ui_44c5a045fcb3"));
   }
   return errors;
 }
