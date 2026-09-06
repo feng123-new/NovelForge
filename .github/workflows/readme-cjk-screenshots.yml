@@ -1,0 +1,192 @@
+name: README CJK screenshot refresh
+on:
+  push:
+    branches: [fix/readme-cjk-screenshots-20260906]
+permissions:
+  contents: write
+concurrency:
+  group: readme-cjk-screenshots
+  cancel-in-progress: true
+jobs:
+  capture:
+    if: ${{ !contains(github.event.head_commit.message, '[cjk-screenshot-output]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install CJK fonts for Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk fontconfig
+          fc-cache -f
+          echo 'Chinese font matches:'
+          fc-match ':lang=zh-cn'
+          fc-list :lang=zh-cn family | head -20
+          fc-list :lang=zh-cn family | grep -E 'Noto Sans CJK|Noto Serif CJK' >/dev/null
+      - name: Verify frontend and embedded server
+        run: |
+          cd web
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          npx vitest run \
+            src/pages/Dashboard.test.ts \
+            src/pages/Autopilot.test.ts \
+            src/pages/Authoring.test.ts \
+            src/pages/Observability.test.ts \
+            src/pages/Lifecycle.test.ts
+          npm run build
+          node --check dist/assets/app.js
+          git diff --exit-code -- dist
+          cd ..
+          CGO_ENABLED=0 GOWORK=off go build -trimpath -o "$RUNNER_TEMP/novelforge" ./cmd/novelforge
+      - name: Render five production routes with real Chrome
+        env:
+          AUDIT_BASE: http://127.0.0.1:48090
+        run: |
+          set -euo pipefail
+          WORKSPACE="$RUNNER_TEMP/readme-cjk-workspace"
+          mkdir -p "$WORKSPACE" docs/assets/ui
+          "$RUNNER_TEMP/novelforge" server --workspace "$WORKSPACE" --host 127.0.0.1 --port 48090 --no-autopilot >"$RUNNER_TEMP/server.log" 2>&1 &
+          SERVER_PID=$!
+          CHROME_PID=''
+          cleanup() {
+            if [ -n "$CHROME_PID" ]; then kill "$CHROME_PID" 2>/dev/null || true; fi
+            kill "$SERVER_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for i in $(seq 1 50); do
+            if curl -fsS "$AUDIT_BASE/api/health" >"$RUNNER_TEMP/health.json"; then break; fi
+            sleep .2
+          done
+          cat "$RUNNER_TEMP/health.json"
+          curl -fsS -X POST "$AUDIT_BASE/api/projects" \
+            -H 'Content-Type: application/json' \
+            -H 'Idempotency-Key: readme-cjk-demo-project' \
+            --data '{"title":"雾港纪事"}' >"$RUNNER_TEMP/project.json"
+          PROJECT_ID="$(python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/project.json', encoding='utf-8') as f:
+              print(json.load(f)['id'])
+          PY
+          )"
+          test -n "$PROJECT_ID"
+          CHROME="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)"
+          test -n "$CHROME"
+          PROFILE="$RUNNER_TEMP/chrome-cjk-profile"
+          "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --hide-scrollbars \
+            --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 \
+            --user-data-dir="$PROFILE" about:blank >"$RUNNER_TEMP/chrome.log" 2>&1 &
+          CHROME_PID=$!
+          for i in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:9222/json/version >/dev/null; then break; fi
+            sleep .2
+          done
+          cat >"$RUNNER_TEMP/capture.mjs" <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const base = process.env.AUDIT_BASE;
+          const projectID = process.env.PROJECT_ID;
+          const outDir = path.join(process.env.GITHUB_WORKSPACE, 'docs/assets/ui');
+          const targets = await (await fetch('http://127.0.0.1:9222/json/list')).json();
+          const target = targets.find(t => t.type === 'page');
+          if (!target?.webSocketDebuggerUrl) throw new Error('Chrome page target unavailable');
+          const ws = new WebSocket(target.webSocketDebuggerUrl);
+          await new Promise((resolve, reject) => {
+            ws.addEventListener('open', resolve, {once:true});
+            ws.addEventListener('error', reject, {once:true});
+          });
+          let nextID = 0;
+          const pending = new Map();
+          const browserExceptions = [];
+          const backend5xx = [];
+          ws.addEventListener('message', event => {
+            const message = JSON.parse(String(event.data));
+            if (message.id) {
+              const waiter = pending.get(message.id);
+              if (!waiter) return;
+              pending.delete(message.id);
+              if (message.error) waiter.reject(new Error(JSON.stringify(message.error)));
+              else waiter.resolve(message.result ?? {});
+              return;
+            }
+            if (message.method === 'Runtime.exceptionThrown') browserExceptions.push(message.params?.exceptionDetails?.text ?? 'runtime exception');
+            if (message.method === 'Network.responseReceived' && (message.params?.response?.status ?? 0) >= 500) backend5xx.push(`${message.params.response.status} ${message.params.response.url}`);
+          });
+          function cdp(method, params = {}) {
+            const id = ++nextID;
+            return new Promise((resolve, reject) => {
+              pending.set(id, {resolve, reject});
+              ws.send(JSON.stringify({id, method, params}));
+            });
+          }
+          const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+          async function evalValue(expression) {
+            const result = await cdp('Runtime.evaluate', {expression, returnByValue:true, awaitPromise:true});
+            if (result.exceptionDetails) throw new Error(`evaluation failed: ${result.exceptionDetails.text}`);
+            return result.result?.value;
+          }
+          async function waitForText(text, timeout = 10000) {
+            const end = Date.now() + timeout;
+            while (Date.now() < end) {
+              if (await evalValue(`document.body?.innerText.includes(${JSON.stringify(text)}) ?? false`)) return;
+              await sleep(100);
+            }
+            throw new Error(`Timed out waiting for text: ${text}`);
+          }
+          await cdp('Page.enable');
+          await cdp('Runtime.enable');
+          await cdp('Network.enable');
+          await cdp('Emulation.setDeviceMetricsOverride', {width:1440,height:960,deviceScaleFactor:1,mobile:false});
+          await cdp('Page.addScriptToEvaluateOnNewDocument', {source:`localStorage.setItem('novelforge-theme','novelforge-light')`});
+
+          const pages = [
+            ['dashboard', '#/dashboard', '创作总览', '最近项目'],
+            ['autopilot', `#/autopilot?project=${projectID}`, 'Autopilot', '尚无任务'],
+            ['authoring', `#/authoring?project=${projectID}`, 'Skills · 风格库 · 资料库', '项目资源修订'],
+            ['diagnostics', `#/observability?project=${projectID}`, 'Diagnostics & Cost', '已知费用小计'],
+            ['lifecycle', `#/lifecycle?project=${projectID}`, '导入、导出与备份', '导入作品']
+          ];
+          const report = [];
+          for (const [name, hash, heading, marker] of pages) {
+            backend5xx.length = 0;
+            const beforeExceptions = browserExceptions.length;
+            await cdp('Page.navigate', {url: base + '/' + hash});
+            await waitForText(heading);
+            await waitForText(marker);
+            await waitForText('雾港纪事');
+            await sleep(250);
+            const errorAlerts = await evalValue(`document.querySelectorAll('[role="alert"].alert-error').length`);
+            if (errorAlerts) throw new Error(`${name}: rendered ${errorAlerts} error alerts`);
+            if (backend5xx.length) throw new Error(`${name}: backend 5xx: ${backend5xx.join(' | ')}`);
+            if (browserExceptions.length !== beforeExceptions) throw new Error(`${name}: browser exception: ${browserExceptions.slice(beforeExceptions).join(' | ')}`);
+            const screenshot = await cdp('Page.captureScreenshot', {format:'png',fromSurface:true,captureBeyondViewport:false});
+            fs.writeFileSync(path.join(outDir, `${name}.png`), Buffer.from(screenshot.data, 'base64'));
+            report.push({name, heading, marker, error_alerts:errorAlerts, backend_5xx:0, browser_exceptions:0});
+          }
+          ws.close();
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'cjk-report.json'), JSON.stringify({pages:report,browser_exceptions:browserExceptions.length}, null, 2));
+          console.log(JSON.stringify({pages:report.map(p=>p.name), browser_exceptions:browserExceptions.length}));
+          NODE
+          PROJECT_ID="$PROJECT_ID" node "$RUNNER_TEMP/capture.mjs"
+          cat "$RUNNER_TEMP/cjk-report.json"
+          for f in dashboard autopilot authoring diagnostics lifecycle; do test -s "docs/assets/ui/$f.png"; done
+      - name: Commit refreshed screenshots
+        run: |
+          git add docs/assets/ui/dashboard.png docs/assets/ui/autopilot.png docs/assets/ui/authoring.png docs/assets/ui/diagnostics.png docs/assets/ui/lifecycle.png
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          git config user.name feng123-new
+          git config user.email 203426027+feng123-new@users.noreply.github.com
+          git commit -m 'docs: recapture Web screenshots with CJK fonts [cjk-screenshot-output]'
+          git push origin HEAD:fix/readme-cjk-screenshots-20260906
