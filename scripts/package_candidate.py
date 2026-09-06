@@ -21,7 +21,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = [('linux','amd64','Linux','x86_64'),('linux','arm64','Linux','arm64'),('darwin','amd64','Darwin','x86_64'),('darwin','arm64','Darwin','arm64'),('windows','amd64','Windows','x86_64'),('windows','arm64','Windows','arm64')]
-INCLUDED = ['README.md','LICENSE','THIRD_PARTY_NOTICES.md','docs/DEPLOYMENT.md','docs/LOCAL_ACCEPTANCE.md','docs/DIAGNOSTICS.md','docs/LIFECYCLE.md','docs/AUTHORING.md','docs/AUTOPILOT.md','docs/RELEASING.md','docs/DEPENDENCY_LICENSES.md','docs/FRONTEND_DEPENDENCY_LICENSES.md','examples/server-config.json','scripts/smoke_candidate.py','scripts/start-web.sh','scripts/start-web.ps1']
+INCLUDED = ['README.en.md','docs/I18N.md','docs/releases/v0.1.0-rc.2.md','README.md','LICENSE','THIRD_PARTY_NOTICES.md','docs/DEPLOYMENT.md','docs/LOCAL_ACCEPTANCE.md','docs/DIAGNOSTICS.md','docs/LIFECYCLE.md','docs/AUTHORING.md','docs/AUTOPILOT.md','docs/RELEASING.md','docs/DEPENDENCY_LICENSES.md','docs/FRONTEND_DEPENDENCY_LICENSES.md','examples/server-config.json','scripts/smoke_candidate.py','scripts/start-web.sh','scripts/start-web.ps1']
 
 
 def git(*arguments: str) -> str:

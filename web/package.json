@@ -1,14 +1,16 @@
 {
   "name": "novelforge-web",
   "private": true,
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-rc.2",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:i18n": "vitest run src/tests/i18n",
+    "check:i18n": "node check-i18n.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.0",

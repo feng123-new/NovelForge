@@ -1,10 +1,11 @@
+import { renderMessage } from './i18n';
 import { describe, expect, it } from 'vitest';
 import { buildWizardRequests, initialWizardState, validateWizardStep } from './wizard';
 
 describe('new novel wizard', () => {
   it('validates required basic and idea fields', () => {
-    expect(validateWizardStep(1, { ...initialWizardState, title: '' })).toContain('标题不能为空');
-    expect(validateWizardStep(2, { ...initialWizardState, idea: '' })).toContain('请填写核心创意');
+    expect(validateWizardStep(1, { ...initialWizardState, title: '' }).map(value => renderMessage(value, 'zh-CN'))).toContain('标题不能为空');
+    expect(validateWizardStep(2, { ...initialWizardState, idea: '' }).map(value => renderMessage(value, 'zh-CN'))).toContain('请填写核心创意');
   });
 
   it('builds separate project and secret-free foundation requests', () => {

@@ -42,7 +42,7 @@ describe('Secrets page', () => {
     vi.stubGlobal('fetch', fetcher);
     const { default: Secrets } = await import('./Secrets.svelte');
     render(Secrets);
-    expect((await screen.findAllByText('尚无 Secret')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("尚无秘密")).length).toBeGreaterThan(0);
   });
 
   it('renders a structured server error', async () => {
@@ -56,9 +56,9 @@ describe('Secrets page', () => {
     vi.stubGlobal('fetch', fetcher);
     const { default: Secrets } = await import('./Secrets.svelte');
     render(Secrets);
-    expect(await screen.findByText('secret store unavailable')).toBeInTheDocument();
+    expect(await screen.findByText('秘密存储暂不可用，请检查项目数据库后重试。 (SECRET_STORE_UNAVAILABLE)')).toBeInTheDocument();
     expect(screen.getByText('SECRET_STORE_UNAVAILABLE')).toBeInTheDocument();
-    expect(screen.getByText('trace trace-secret-page')).toBeInTheDocument();
+    expect(screen.getByText('追踪标识：trace-secret-page')).toBeInTheDocument();
   });
 
   it('creates a private Secret through a real idempotent write', async () => {
@@ -72,11 +72,11 @@ describe('Secrets page', () => {
     vi.stubGlobal('fetch', fetcher);
     const { default: Secrets } = await import('./Secrets.svelte');
     render(Secrets);
-    await screen.findByText('尚无 Secret');
-    await fireEvent.input(screen.getByLabelText('Description'), { target: { value: "The heir's origin" } });
-    await fireEvent.input(screen.getByLabelText('Authority truth'), { target: { value: 'The heir is from the old capital' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create private Secret' }));
-    expect(await screen.findByText('Secret 已写入权威管理视图')).toBeInTheDocument();
+    await screen.findByText("尚无秘密");
+    await fireEvent.input(screen.getByLabelText("描述"), { target: { value: "The heir's origin" } });
+    await fireEvent.input(screen.getByLabelText("权威真相"), { target: { value: 'The heir is from the old capital' } });
+    await fireEvent.click(screen.getByRole('button', { name: "创建未公开秘密" }));
+    expect(await screen.findByText("秘密已写入权威管理视图")).toBeInTheDocument();
 
     const call = fetcher.mock.calls.find(([input, init]) => String(input) === '/api/projects/p1/secrets' && init?.method === 'POST');
     expect(call).toBeTruthy();
@@ -103,9 +103,9 @@ describe('Secrets page', () => {
 
     const comboboxes = screen.getAllByRole('combobox');
     await fireEvent.change(comboboxes[1], { target: { value: 'heir-origin' } });
-    await fireEvent.input(screen.getByPlaceholderText('角色 / entity ID'), { target: { value: 'hero' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Add from Chapter 50' }));
-    expect(await screen.findByText('Holder 时态范围已添加')).toBeInTheDocument();
+    await fireEvent.input(screen.getByPlaceholderText("角色或实体 ID"), { target: { value: 'hero' } });
+    await fireEvent.click(screen.getByRole('button', { name: '从第 50 章起添加知情关系' }));
+    expect(await screen.findByText("已添加知情角色的时态范围")).toBeInTheDocument();
 
     const holderCall = fetcher.mock.calls.find(([input, init]) => String(input).endsWith('/secrets/heir-origin/holders') && init?.method === 'POST');
     expect(JSON.parse(String(holderCall?.[1]?.body))).toMatchObject({
@@ -113,14 +113,14 @@ describe('Secrets page', () => {
       authority: 'human_final', provenance: { chapter: 50, version: 'human-v1' }
     });
 
-    const revealButton = await screen.findByRole('button', { name: 'Public Reveal' });
+    const revealButton = await screen.findByRole('button', { name: "公开秘密" });
     await fireEvent.click(revealButton);
-    expect(await screen.findByText("The heir's origin 已在 Chapter 50 公开")).toBeInTheDocument();
+    expect(await screen.findByText("The heir's origin 已在第 50 章公开")).toBeInTheDocument();
     const revealCall = fetcher.mock.calls.find(([input, init]) => String(input).endsWith('/secrets/heir-origin') && init?.method === 'PATCH');
     expect(JSON.parse(String(revealCall?.[1]?.body))).toMatchObject({
       public_status: 'public', revealed_chapter: 50, chapter: 50,
       reason: 'human public reveal'
     });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Public Reveal' })).not.toBeDisabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: "公开秘密" })).not.toBeDisabled());
   });
 });

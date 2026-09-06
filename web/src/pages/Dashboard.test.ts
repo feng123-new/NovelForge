@@ -21,7 +21,7 @@ describe('Dashboard page states', () => {
     }));
     const { default: Dashboard } = await import('./Dashboard.svelte');
     render(Dashboard);
-    expect(await screen.findByText('还没有项目')).toBeInTheDocument();
+    expect(await screen.findByText("还没有项目")).toBeInTheDocument();
   });
 
   it('renders a structured server error', async () => {
@@ -36,6 +36,6 @@ describe('Dashboard page states', () => {
     }), { status: 503 })));
     const { default: Dashboard } = await import('./Dashboard.svelte');
     render(Dashboard);
-    expect(await screen.findByText('workspace unavailable')).toBeInTheDocument();
+    expect(await screen.findByText('工作区暂不可用，请检查本地服务和工作区目录。 (WORKSPACE_UNAVAILABLE)')).toBeInTheDocument();
   });
 });

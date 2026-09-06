@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'New candidate tag, e.g. v0.1.0-rc.1'
+        description: 'New candidate tag, e.g. v0.1.0-rc.2'
         required: true
         type: string
   push:
@@ -49,6 +49,10 @@ jobs:
           PY
       - name: Execute bounded candidate gates only
         run: python scripts/verify.py --mode quick --output verification-results/candidate
+      - name: Verify bilingual guards for the exact candidate source
+        run: |
+          npm run check:i18n --prefix web
+          npm run test:i18n --prefix web
       - name: Build six archives with exact source identity
         env:
           CANDIDATE_TAG: ${{ steps.identity.outputs.tag }}
@@ -105,7 +109,9 @@ jobs:
           response=subprocess.run(['gh','api',f'repos/{repo}/git/ref/tags/{tag}'],text=True,capture_output=True)
           if response.returncode==0:raise SystemExit('tag already exists; never overwrite published identity')
           if '404' not in response.stderr and '404' not in response.stdout:raise SystemExit('cannot establish that tag is absent')
-          notes=f'''NovelForge {tag}\n\nPhase 1–12 functional candidate, plus Phase 13A deployment and verification tooling. Source commit: `{commit}`.\n\nDownload the matching OS/architecture archive and verify `novelforge_checksums.txt`. Start with `novelforge server --workspace <test-workspace>`; read `docs/DEPLOYMENT.md` and `docs/LOCAL_ACCEPTANCE.md` included in each archive. `--no-autopilot` opens inspection mode without a task worker. Configure actual model endpoints and credentials locally; then set explicit project limits/prices before starting paid work.\n\nThese packages passed quick named checks and native Linux no-model entry smoke. Windows/macOS/ARM archives are cross-compiled, not target-platform runtime certified. Full regression/race/platform/scale, real-provider billing and literary acceptance remain Phase 13B for local execution. This is a pre-release, not the stable/latest release. SHA-256 checksums are provided; no OS code signing/notarization claim.\n\nDefault repository PR checks are quick; original comprehensive CI remains manually runnable. Source checkout: `python scripts/verify.py --mode full`, `--mode recovery`, `--mode scale`. These commands do not automatically run paid models. Do not use your only manuscript copy for failure testing.\n'''
+          notes=f'''NovelForge {tag}\n\nPhase 1–12 functional candidate, plus Phase 13A deployment and verification tooling. Source commit: `{commit}`.\n\nDownload the matching OS/architecture archive and verify `novelforge_checksums.txt`. Start with `novelforge server --workspace <test-workspace>`; read `docs/DEPLOYMENT.md` and `docs/LOCAL_ACCEPTANCE.md` included in each archive. `--no-autopilot` disables the task worker, not all writes. Configure actual model endpoints and credentials locally; then set explicit project limits/prices before starting paid work.\n\nThese packages passed quick named checks and native Linux no-model entry smoke. Windows/macOS/ARM archives are cross-compiled, not target-platform runtime certified. Full regression/race/platform/scale, real-provider billing and literary acceptance remain Phase 13B for local execution. This is a pre-release, not the stable/latest release. SHA-256 checksums are provided; no OS code signing/notarization claim.\n\nDefault repository PR checks are bounded; original comprehensive CI remains manually runnable. Source checkout: `python scripts/verify.py --mode full`, `--mode recovery`, `--mode scale`. These commands do not automatically run paid models. Do not use your only manuscript copy for failure testing.\n'''
+          if tag == 'v0.1.0-rc.2':
+            notes = '## 中英双语工作台 / Bilingual workspace\n\n全部 14 个 Web 页面支持简体中文与 English。顶栏或设置切换，保持作品、创作语言、未保存编辑、文件选择和任务状态，不触发模型调用。\n\nAll 14 Web routes support Chinese and English. Switching preserves manuscripts, unsaved edits, file selections and jobs; it never starts model calls. The change passed 20 bilingual tests, 23 affected page/wizard tests and 28 real browser route/language checks. See docs/I18N.md and docs/releases/v0.1.0-rc.2.md included in every archive.\n\n' + notes
           Path('release-notes.md').write_text(notes)
           assets=[str(root/name) for name in sorted(allowed)]
           subprocess.run(['gh','release','create',tag,*assets,'--repo',repo,'--target',commit,'--title',f'NovelForge {tag}','--notes-file','release-notes.md','--draft','--prerelease','--latest=false'],check=True)

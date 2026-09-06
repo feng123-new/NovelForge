@@ -58,7 +58,7 @@ describe('Foreshadows page', () => {
     vi.stubGlobal('fetch', readFetcher([]));
     const { default: Foreshadows } = await import('./Foreshadows.svelte');
     render(Foreshadows);
-    expect((await screen.findAllByText('当前筛选没有伏笔')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("当前筛选没有伏笔")).length).toBeGreaterThan(0);
   });
 
   it('renders a structured server error', async () => {
@@ -72,9 +72,9 @@ describe('Foreshadows page', () => {
     vi.stubGlobal('fetch', fetcher);
     const { default: Foreshadows } = await import('./Foreshadows.svelte');
     render(Foreshadows);
-    expect(await screen.findByText('ledger unavailable')).toBeInTheDocument();
+    expect(await screen.findByText('叙事账本暂不可用，请检查项目数据库后重试。 (LEDGER_UNAVAILABLE)')).toBeInTheDocument();
     expect(screen.getByText('LEDGER_UNAVAILABLE')).toBeInTheDocument();
-    expect(screen.getByText('trace trace-ledger-page')).toBeInTheDocument();
+    expect(screen.getByText('追踪标识：trace-ledger-page')).toBeInTheDocument();
   });
 
   it('creates a planted foreshadow through the typed API client', async () => {
@@ -90,11 +90,11 @@ describe('Foreshadows page', () => {
     vi.stubGlobal('fetch', fetcher);
     const { default: Foreshadows } = await import('./Foreshadows.svelte');
     render(Foreshadows);
-    await screen.findByText('当前筛选没有伏笔');
-    await fireEvent.input(screen.getByLabelText('标题'), { target: { value: 'The sealed gate' } });
-    await fireEvent.input(screen.getByLabelText('Description'), { target: { value: 'The gate must reopen.' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
-    expect(await screen.findByText('伏笔已写入权威 Narrative Ledger')).toBeInTheDocument();
+    await screen.findByText("当前筛选没有伏笔");
+    await fireEvent.input(screen.getByLabelText("标题"), { target: { value: 'The sealed gate' } });
+    await fireEvent.input(screen.getByLabelText("描述"), { target: { value: 'The gate must reopen.' } });
+    await fireEvent.click(screen.getByRole('button', { name: "创建" }));
+    expect(await screen.findByText("伏笔已写入权威叙事账本")).toBeInTheDocument();
 
     const call = fetcher.mock.calls.find(([input, init]) => String(input) === '/api/projects/p1/foreshadows' && init?.method === 'POST');
     expect(call).toBeTruthy();
@@ -121,8 +121,8 @@ describe('Foreshadows page', () => {
     vi.stubGlobal('fetch', fetcher);
     const { default: Foreshadows } = await import('./Foreshadows.svelte');
     render(Foreshadows);
-    expect(await screen.findByText('OVERDUE +5')).toBeInTheDocument();
-    const resolveButton = screen.getByRole('button', { name: 'Resolve' });
+    expect(await screen.findByText('逾期 5 章')).toBeInTheDocument();
+    const resolveButton = screen.getByRole('button', { name: "回收" });
     await fireEvent.click(resolveButton);
     await waitFor(() => expect(resolveButton).toBeDisabled());
 
@@ -132,7 +132,7 @@ describe('Foreshadows page', () => {
       reason: 'human resolved'
     });
     releasePatch(json({ ...foreshadow, status: 'resolved', actual_payoff: 135, overdue: false, overdue_by_chapters: 0 }));
-    expect(await screen.findByText('The sealed gate → resolved')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Resolve' })).not.toBeDisabled());
+    expect(await screen.findByText('The sealed gate → 已回收')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: "回收" })).not.toBeDisabled());
   });
 });

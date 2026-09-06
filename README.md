@@ -1,62 +1,39 @@
 # NovelForge
 
+[English](README.en.md) · [中英界面说明](docs/I18N.md)
+
 > 面向长篇小说的本地优先 AI 创作与人机共创工作台：让事实有来源、改稿有版本、自动写作可暂停恢复，作品可以导入、导出、备份并持续维护。
 
 [部署指南](docs/DEPLOYMENT.md) · [本地完整验收](docs/LOCAL_ACCEPTANCE.md) · [发布流程](docs/RELEASING.md) · [文档导航](docs/README.md) · [Roadmap](docs/ROADMAP.md)
+
+## 中英双语工作台
+
+顶部或“设置 → 界面语言”可切换 **简体中文 / English**，刷新后保留偏好。两种界面覆盖全部 14 个页面、操作提示、表单校验与诊断指导。切换不刷新页面，不更改作品的创作语言，不丢失未保存编辑或所选文件，不改变任务，也不触发模型请求。用户正文、资料、模型标识和原始技术记录保持原样。
+
+`v0.1.0-rc.2` 的变更与验收边界见 [候选版说明](docs/releases/v0.1.0-rc.2.md)。
 
 ## 当前状态
 
 - **Phase 1–12 已进入主线功能。** Web 工作台、Truth Store、质量门禁、叙事账本、上下文编译、章节版本、可恢复 Autopilot、Skills/风格/资料库、作品生命周期以及诊断/成本管理均已接入实际运行路径。
 - **Phase 13A 已交付。** 默认启动入口、分级验证工具、候选版打包与预发布流程已经落地。
-- **可下载候选版：[`v0.1.0-rc.1`](https://github.com/feng123-new/NovelForge/releases/tag/v0.1.0-rc.1)。** 提供 Linux / macOS / Windows 的 amd64、arm64 六个包，以及 SHA-256、manifest 和验证摘要。
+- **可下载候选版：[`v0.1.0-rc.2`](https://github.com/feng123-new/NovelForge/releases/tag/v0.1.0-rc.2)。** 提供 Linux / macOS / Windows 的 amd64、arm64 六个包，以及 SHA-256、manifest 和验证摘要。
 - **Phase 13B 仍待本地完整验收。** 当前没有宣称全量回归、所有目标平台运行、100/500/1000 章规模、真实付费模型账单或文学质量已经通过。
 
 百万字长篇是设计目标，不是当前验证结论。候选版是 **prerelease**，不是稳定版或 `latest`。
 
 ## Web 工作台实机预览
 
-下面的图片不是设计稿。它们由 2026-09-06 的限定 UI 审计直接启动当前嵌入式 Go Server，创建临时项目 **「雾港纪事」**，再用真实 Chrome 打开生产路由后截图；该审计没有配置或调用付费模型。
+下图为本次中英双语审计中，真实嵌入式 Go 服务与 Chrome 的截图，不是设计稿。审计使用独立测试项目，不配置或调用付费模型。
 
-### 创作总览
+### 简体中文
 
-![NovelForge Dashboard](docs/assets/ui/dashboard.png)
+![中文工作台](docs/assets/ui/dashboard-zh-CN.png)
 
-<table>
-<tr>
-<td width="50%">
-<strong>可恢复 Autopilot</strong><br/>
-<img src="docs/assets/ui/autopilot.png" alt="NovelForge Autopilot" />
-</td>
-<td width="50%">
-<strong>Skills · 风格库 · 资料库</strong><br/>
-<img src="docs/assets/ui/authoring.png" alt="NovelForge Skills and Libraries" />
-</td>
-</tr>
-<tr>
-<td width="50%">
-<strong>Diagnostics & Cost</strong><br/>
-<img src="docs/assets/ui/diagnostics.png" alt="NovelForge Diagnostics and Cost" />
-</td>
-<td width="50%">
-<strong>导入、导出与备份</strong><br/>
-<img src="docs/assets/ui/lifecycle.png" alt="NovelForge Import Export Backup" />
-</td>
-</tr>
-</table>
+### English
 
-### 前后端兼容性实际检查
+![English workspace](docs/assets/ui/dashboard-en.png)
 
-本次 README 更新前额外跑了一轮针对 Web 的真实检查，而不是只确认页面源码存在：
-
-- Svelte / TypeScript：**0 errors / 0 warnings**。
-- Dashboard、Autopilot、Authoring、Diagnostics、Lifecycle：**5 个前端测试文件、9 个测试通过**。
-- Vite production build 成功，生成的 `web/dist` 与仓库内嵌产物一致，生成 JavaScript 语法检查通过。
-- `CGO_ENABLED=0` 构建真实 `novelforge` 可执行文件成功，并由该可执行文件启动实际 Web Server。
-- Chrome 实际打开 **Dashboard / Autopilot / Skills & Libraries / Diagnostics & Cost / Import & Backup** 五条生产路由；五个页面都显示后端创建的同一测试项目和各自的后端加载标记。
-- 浏览器会话中这五个页面的 **error alert = 0、browser exception = 0、HTTP 5xx = 0**。
-- 审计没有执行模型生成，所以这只能证明上述页面与实际后端在无模型短流程中的兼容性；真实模型和完整规模验收仍属于 Phase 13B。
-
-审计运行：GitHub Actions `34003983051`。早先一次审计因临时安装浏览器驱动触发 npm 自身错误，随后改为 Runner 自带 Chrome DevTools 协议；失败记录保留，没有通过删测试或忽略错误获得绿色结果。
+全部 14 个页面的 28 个语言视图和编辑状态保留检查见 [本次预发布说明](docs/releases/v0.1.0-rc.2.md)。这不是长篇规模或真实模型文学质量验收。
 
 ## NovelForge 解决什么问题
 
@@ -113,9 +90,9 @@ flowchart LR
 
 ## 快速开始
 
-### 方式一：下载 `v0.1.0-rc.1`
+### 方式一：下载 `v0.1.0-rc.2`
 
-从 [GitHub Releases](https://github.com/feng123-new/NovelForge/releases/tag/v0.1.0-rc.1) 下载与你的系统 / 架构对应的压缩包，并使用同页的 `novelforge_checksums.txt` 核对 SHA-256。
+从 [GitHub Releases](https://github.com/feng123-new/NovelForge/releases/tag/v0.1.0-rc.2) 下载与你的系统 / 架构对应的压缩包，并使用同页的 `novelforge_checksums.txt` 核对 SHA-256。
 
 解压后先在新的测试目录启动：
 
@@ -131,7 +108,7 @@ flowchart LR
 
 浏览器访问 `http://127.0.0.1:48090`。确认工作台正常后，按 [部署指南](docs/DEPLOYMENT.md) 配置模型并移除 `--no-autopilot` 启用正常任务 Worker。
 
-> `v0.1.0-rc.1` 中 Linux amd64 做过原生无模型二进制烟测；其他平台包为交叉编译产物，仍需要在对应机器完成 Phase 13B 运行验收。
+> `v0.1.0-rc.2` 中 Linux amd64 做过原生无模型二进制烟测；其他平台包为交叉编译产物，仍需要在对应机器完成 Phase 13B 运行验收。
 
 ### 方式二：Docker Compose
 
@@ -281,7 +258,7 @@ python scripts/verify.py --mode scale
 
 ## 已知边界
 
-- 当前公开版本是 **`v0.1.0-rc.1` 候选版**，Phase 13B 尚未完成。
+- 当前公开版本是 **`v0.1.0-rc.2` 候选版**，Phase 13B 尚未完成。
 - 百万字、1000 章以及所有平台稳定运行尚未形成正式验收结论。
 - EPUB 当前以文本作品生命周期为主，不保证复杂图片、字体、排版或 DRM 保真。
 - 项目备份包含小说正文、版本、事实和资料，**不是脱敏分享包**；凭据和工作区任务不会随项目备份恢复。
