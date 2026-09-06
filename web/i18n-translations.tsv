@@ -1,0 +1,556 @@
+Dashboard	创作总览
+Projects	项目管理
+Import & Backup	导入、导出与备份
+Autopilot	自动创作
+Skills & Libraries	写作技能与资料库
+New Novel	新建小说
+Chapters	章节管理
+Versions	章节版本
+Foreshadows	伏笔管理
+Secrets	秘密与知情关系
+Models	模型
+Logs	日志
+Settings	设置
+打开导航	Open navigation
+切换主题	Toggle theme
+NovelForge · authoritative state from local server	NovelForge · 本地服务权威状态
+AI Inspector	状态检查
+此面板只显示已接入的服务能力；未实现的生成动作不会显示假按钮。	Inspect connected services and current workspace status.	查看已接入服务与当前工作台状态。
+SSE	实时事件连接
+事件缓存	Buffered events
+权威状态	Authoritative state
+server	本地服务
+OpenAPI 3.1	OpenAPI 3.1
+任务和日志	Tasks and logs
+Task / Log	任务与日志
+connection={p0}	连接：{p0}
+latest={p0}{p1}	最新事件：{p0}{p1}
+等待持久化事件…	Waiting for persisted events…
+关闭导航	Close navigation
+N	N
+NovelForge	NovelForge
+Long-form story system	长篇小说创作系统
+主导航	Main navigation
+Local-first	本地优先
+API Key 不进入静态 JavaScript、SSE 或浏览器持久化。	API keys are never stored in static JavaScript, event streams or browser storage.	API 密钥不进入静态脚本、事件流或浏览器存储。
+Skills · 风格库 · 资料库	Writing skills and libraries	写作技能与资料库
+Markdown 写作方法与参考资料，不是小说事实。不会执行脚本、访问资料链接或绕过定稿审核。	Markdown writing methods and references are not story facts. They cannot run scripts, visit links or bypass final review.
+小说项目	Novel project
+选择项目	Select a project
+资源分类	Resource category
+Skills	写作技能
+风格库	Style library
+资料库	Reference library
+正在读取或提交…	Loading or saving…
+项目资源修订 {p0} · 当前分类共 {p1} 项。任务运行中需先暂停才能编辑；规划后变更会触发旧计划保护。	Resource revision {p0} · {p1} entries in this category. Pause running jobs before editing. Changes after planning trigger stale-plan protection.
+内置 Markdown Skills（只读；自定义规则作为补充）	Built-in Markdown skills (read-only; custom rules supplement them)	内置 Markdown 写作技能（只读；自定义规则作为补充）
+资源列表	Resource list
+项目资源	Project resources
+新建资源	New resource
+启用	Enabled
+停用	Disabled
+· 置顶	· Pinned
+此分类尚无自定义资源。	No custom resources in this category.
+上一页	Previous page
+下一页	Next page
+资源编辑	Resource editor
+编辑资源	Edit resource
+标题	Title
+Skill 类型	Skill type	技能类型
+写作 Writing	Writing	写作
+审稿 Review	Review	审稿
+润色 Polish	Polish	润色
+规划 Planning	Planning	规划
+Markdown 内容（最多 16 KiB）	Markdown content (up to 16 KiB)
+导入单份 Markdown	Import a Markdown file
+来源说明（只作文本记录，不自动访问）	Source note (text only; never visited automatically)
+优先级	Priority
+可用起始章	Available from chapter
+限定 POV（可空）	POV restriction (optional)	限定视角人物（可空）
+置顶候选	Pin as context candidate
+保存资源	Save resource
+确认删除当前资源	Confirm deletion of this resource
+删除资源	Delete resource
+检索预览	Search preview
+只返回已启用且符合章节／POV 范围的当前分类资料。实际模型上下文仍受预算裁剪；每类最多检索 6 项，加最多 6 项置顶候选。	Returns enabled resources in this category matching the chapter and POV. Model context is still budget-limited: up to 6 search results and 6 pinned candidates per category.	仅返回已启用且符合章节与视角范围的当前分类资料。模型上下文仍受预算裁剪；每类最多检索 6 项，加最多 6 项置顶候选。
+查询词	Search terms
+预览章节	Preview chapter
+预览 POV	Preview POV	预览视角人物
+检索当前分类	Search this category
+写作规则	Writing rules
+表达与重复规则	Expression and repetition rules
+只生成可解释的编辑建议，不判定作品是否由 AI 写成，不自动扣分或绕过一致性门禁。跨章比较最多使用前 3 章有效定稿的前 48,000 字符。	Produces explainable editing advice, not AI authorship detection, automatic penalties or continuity bypasses. Cross-chapter comparison uses up to 48,000 characters from the previous 3 valid final chapters.
+启用规则检查	Enable rule checks
+关注词组（每行一个，最多 32 个）	Watched phrases (one per line, up to 32)
+单章词组次数上限	Maximum phrase occurrences per chapter
+同句次数上限	Maximum sentence repetitions
+最短比较句长	Minimum sentence length
+比较前文章数	Previous chapters to compare
+保存规则	Save rules
+试检文本（使用已保存规则与上面的预览章节，不调用模型）	Test text (uses saved rules and the preview chapter; no model call)
+检查表达与重复	Check expression and repetition
+规则修订 {p0} · {p1} 项建议{p2}	Rule revision {p0} · {p1} suggestions{p2}
+（结果已截断）	(results truncated)
+操作失败	Operation failed
+已保存到当前项目。新请求使用更新；已有请求保留其选定资料。	Saved to this project. New requests use the update; existing requests retain their selected resources.
+仅支持不超过 16 KiB 的 Markdown 文件	Only Markdown files up to 16 KiB are supported
+持久化任务 → Foundation → 章节计划 → 质量门禁 → 版本定稿。模型调用可能产生费用。	Persistent job → story foundation → chapter plan → quality checks → final version. Model calls may incur charges.	持久化任务 → 创作基础规划 → 章节计划 → 质量检查 → 版本定稿。模型调用可能产生费用。
+Worker 未运行；不会启动或恢复模型任务。	The task worker is not running. Model jobs cannot start or resume.	任务执行器未运行；不会启动或恢复模型任务。
+项目模型未配置。请先配置服务端 Provider；模型目录不代表连接可用。	No project model is configured. Configure a server-side provider first; a catalogue listing does not prove connectivity.	项目模型未配置。请先配置服务端模型服务商；模型目录不代表连接可用。
+起始章节	Start chapter
+结束章节	End chapter
+审阅间隔（0 为全自动）	Review interval (0 for fully automatic)
+需要已有新建小说请求。同一项目一次只保留一个未结束任务；暂停后可人工修改，停止不删除正文。暂停／停止在当前有界步骤结束后生效。	Requires a saved new-novel request. Only one unfinished job is allowed per project. Pause before manual editing; stopping does not delete text. Pause and stop take effect after the current bounded step.
+启动创作任务	Start writing job
+任务列表	Job list
+已完成至第 {p0} 章 / 目标 {p1} 章	Completed through chapter {p0} / target {p1}
+已请求 {p0}，当前步骤尚未退出。	{p0} requested; the current step has not finished.
+待人工确认：请查看本章候选，批准后再定稿。	Review required: inspect this chapter's candidate and approve it before finalization.
+重试 {p0}/{p1} · {p2}	Retry {p0}/{p1} · {p2}
+查看候选与计划	Inspect candidate and plan
+暂停	Pause
+批准本章并继续	Approve chapter and continue
+继续 / 重试	Continue / retry
+停止	Stop
+章节版本	Chapter versions
+尚无任务。启动前确认模型配置和新建小说请求。	No jobs yet. Check model configuration and the new-novel request before starting.
+候选正文	Candidate text
+第 {p0} 章候选	Chapter {p0} candidate
+当前尚未生成候选正文。	No candidate text has been generated yet.
+章节计划	Chapter plan
+Foundation（规划，不是已发生事实）	Story foundation (plans, not established facts)	创作基础规划（不是已发生事实）
+任务读取失败	Failed to load jobs
+项目读取失败	Failed to load project
+项目列表读取失败	Failed to load project list
+请检查章节范围和审阅间隔	Check the chapter range and review interval
+任务启动失败	Failed to start job
+请先查看当前候选稿	Inspect the current candidate first
+控制请求失败	Job control request failed
+候选正文读取失败	Failed to load candidate text
+Chapter Versions	章节版本
+不可变 History、Human Revision、Diff、Restore、External Sync 与 Active Final 都来自后端权威状态。	Immutable history, human revisions, comparisons, restoration, external sync and the active final all use authoritative server state.	不可变历史、人工修订、差异比较、恢复、外部同步与当前定稿均来自服务端权威状态。
+刷新权威状态	Refresh authoritative state
+项目	Project
+Chapter	章节
+trace {p0}	追踪标识：{p0}
+External edit detected · Sync required	检测到外部修改，需要同步
+expected {p0} · observed {p1}	预期 {p0} · 当前 {p1}
+不会静默覆盖数据库 Final，也不会继续把旧派生状态当作最新权威。	The database final will not be silently overwritten, and stale derived state will not be treated as current authority.	不会静默覆盖数据库定稿，也不会继续把旧派生状态当作最新权威。
+请先创建项目。	Create a project first.
+History	版本历史
+暂无版本。	No versions yet.
+v{p0} · {p1}	版本 {p0} · {p1}
+Active	当前有效
+Rejected	已拒绝
+Human Final	人工定稿
+Markdown Editor / Reader	Markdown 编辑与阅读
+Save 总是创建 human_revision；不会覆盖 Active Final。	Saving always creates a human revision; it does not overwrite the active final.	保存总是创建人工修订，不会覆盖当前定稿。
+Chapter markdown editor	章节 Markdown 编辑器
+Accept	接受
+Reject	拒绝
+Restore as New Version	恢复为新版本
+Reject reason	拒绝原因
+Inspector	状态检查
+Active Final	当前定稿
+Continuity	一致性检查
+Conflicts	冲突
+Derived state	派生状态
+Rebuild	重建
+Parent:	父版本：
+SHA:	SHA：
+Created: {p0}	创建时间：{p0}
+Authority: {p0}	权威级别：{p0}
+Plan Impact	后续计划影响
+无后续计划影响。	No impact on subsequent plans.
+Chapter {p0} · {p1}	第 {p0} 章 · {p1}
+From version	原版本
+To version	目标版本
+Mode	显示模式
+Inline	行内比较
+Side-by-side	并排比较
+Truncated	结果已截断
+Next diff chunk	下一段差异
+无法加载 ChapterVersion 工作区	Failed to load the chapter version workspace	无法加载章节版本工作区
+无法读取版本正文	Failed to load version content
+Human revision v{p0} 已创建；Active Final 未被覆盖。	Human revision v{p0} created; the active final was not overwritten.	已创建人工修订版本 {p0}；当前定稿未被覆盖。
+Continuity、Review 与 Truth Conflict 检查已完成。	Continuity, review and fact-conflict checks completed.	一致性、审稿与事实冲突检查已完成。
+候选版本已 Accept；尚未提交 Truth。	Candidate accepted; facts have not been committed yet.	候选版本已接受；尚未提交权威事实。
+版本已 Reject 并保留在 History。	Version rejected and retained in history.	版本已拒绝，并保留在历史中。
+Restore 已创建新版本 v{p0}，没有覆盖历史版本。	Restoration created version v{p0} without overwriting history.	恢复操作已创建新版本 {p0}，没有覆盖历史版本。
+Finalize 完成：Active Final v{p0}，Truth events {p1}。	Finalized: active final v{p0}, {p1} fact events.	定稿完成：当前定稿版本 {p0}，事实事件 {p1} 个。
+外部修改已显式同步为 human_revision，并重新执行质量与冲突检查。	External edits were explicitly synced as a human revision and quality/conflict checks were rerun.	外部修改已显式同步为人工修订，并重新执行质量与冲突检查。
+{p0} 操作失败	{p0} failed
+Diff 失败	Comparison failed	差异比较失败
+Syncing…	同步中…
+Sync External Edit	同步外部修改
+Saving…	保存中…
+Save Human Revision	保存人工修订
+Checking…	检查中…
+Check	检查
+Finalizing…	定稿中…
+Finalize	定稿
+Comparing…	比较中…
+Compare	比较
+Diff	差异比较
+Loading…	加载中…
+章节	Chapter
+章节文件仍由服务端权威保存；质量事务现在提供 Librarian、Continuity、Editor、有限 Rewrite 与 Finalize。版本历史、Diff、Restore 仍留在 Phase 8。	Generate a draft, extract proposed facts, check continuity, review, rewrite and finalize. Use Chapter versions for history, comparison and restoration.	生成草稿、提取事实提议、检查一致性、审稿、有限重写并定稿。历史、差异比较和恢复请使用章节版本页面。
+质量事务章节	Chapter for quality checks
+请先创建项目	Create a project first
+Chapter {p0} Quality Gate	第 {p0} 章质量检查
+所有状态刷新后均从后端恢复。	Refreshing reloads all state from the server.
+刷新	Refresh
+Transaction	处理状态
+Draft candidates	候选草稿
+Librarian	事实整理
+Editor score	审稿评分
+Rewrite	重写
+Final candidate	定稿候选
+HOLD	等待处理
+Continuity issues	一致性问题
+当前后端未配置质量模型服务，因此不会显示可执行的 Generate 操作；读取权威状态仍然可用。	Quality model services are not configured, so generation is unavailable. Authoritative state remains readable.	尚未配置质量模型服务，暂不能生成章节；仍可读取权威状态。
+Structured Chapter Plan	结构化章节计划
+该计划直接作为 Generate / Rewrite 的严格 JSON 请求，不会在浏览器中修改 Truth。	This plan is submitted as a strict JSON generation/rewrite request. The browser does not modify authoritative facts.	该计划作为生成或重写的严格 JSON 请求，不会在浏览器中修改权威事实。
+POV	视角人物
+地点	Location
+Ending hook	章末悬念
+Objective	章节目标
+Conflict	核心冲突
+Required beats · 每行一项	Required beats · one per line	必需情节节点（每行一项）
+Forbidden outcomes	禁止结果
+Knowledge boundary	知识边界
+Inventory constraints	物品约束
+Foreshadow obligations	伏笔要求
+字符数	Characters
+更新时间	Updated
+状态	Status
+暂无已 Finalize 的章节文件。质量事务可以先生成 Draft，只有 Finalize 完成后才进入这里。	No finalized chapter files yet. Generation creates a draft; chapters appear here only after finalization completes.	暂无已定稿的章节文件。生成会先创建草稿，只有定稿完成后才会显示在这里。
+无法加载章节	Failed to load chapters
+无法加载章节质量状态	Failed to load chapter quality state
+{p0} 已提交并从服务端恢复最新权威状态	{p0} submitted; authoritative state reloaded from the server
+质量操作失败	Quality operation failed
+无法加载章节工作区	Failed to load chapter workspace
+Generating…	生成中…
+Generate	生成
+Rewriting…	重写中…
+FACTS PROPOSED	已提出事实建议
+PENDING	待处理
+LOCAL-FIRST NOVEL OPERATIONS	本地优先小说工作台
+创作总览	Dashboard
+项目、章节、字数和运行连接均来自本地 NovelForge 服务。	Projects, chapters, text counts and connection status come from the local NovelForge service.
+已完成章节	Completed chapters
+累计字数	Total text count
+服务状态	Service status
+最近项目	Recent projects
+按后端稳定顺序展示。	Displayed in the server's stable order.
+第 {p0} 章 · {p1} 字	Chapter {p0} · {p1} characters
+已归档	Archived
+进行中	In progress
+还没有项目	No projects yet
+从新建小说向导创建第一部作品。	Create your first work with the new-novel wizard.
+新建小说	New novel
+无法加载工作台状态	Failed to load workspace status
+NARRATIVE LEDGER	叙事账本
+OVERDUE 是 Chapter-N 计算结果，而不是可写状态。所有状态和指标均来自项目 SQLite。	Overdue status is calculated at the selected chapter, not stored as an editable state. All metrics come from the project database.	逾期状态按所选章节计算，不是可直接写入的状态。所有状态与指标均来自项目数据库。
+Chapter-N	查看截至章节
+OVERDUE	已逾期
+Critical overdue	关键伏笔逾期
+Upcoming	即将回收
+Diagnostics	诊断
+Create planned / planted foreshadow	创建计划中或已埋下的伏笔
+Importance	重要程度
+low	低
+medium	中
+high	高
+critical	关键
+Urgency	紧急程度
+normal	普通
+Description	描述
+Planted chapter	埋下章节
+Source version	来源版本
+Expected min	最早回收章节
+Expected max	最晚回收章节
+Stable Chapter-N list	截至所选章节的伏笔列表
+排序由后端显式 ORDER BY 控制。	Displayed in a stable server-defined order.	按服务端指定的稳定顺序展示。
+仅 OVERDUE	Overdue only	仅显示逾期
+全部状态	All states
+planned	计划中
+planted	已埋下
+progressing	推进中
+resolved	已回收
+abandoned	已放弃
+contradicted	存在矛盾
+当前筛选没有伏笔	No foreshadows match this filter
+OVERDUE +{p0}	逾期 {p0} 章
+payoff {p0}–{p1} · last progress {p2} · {p3}	回收窗口 {p0}–{p1} · 最近推进 {p2} · {p3}
+Progress	推进
+Resolve	回收
+Abandon	放弃
+无法加载伏笔台账	Failed to load the foreshadow ledger
+伏笔已写入权威 Narrative Ledger	Foreshadow saved to the authoritative narrative ledger	伏笔已写入权威叙事账本
+创建伏笔失败	Failed to create foreshadow
+更新伏笔失败	Failed to update foreshadow
+无法加载伏笔页面	Failed to load foreshadows
+Creating…	创建中…
+Create	创建
+导入、导出与备份	Import, export and backup
+原文 → 候选版本 → 显式分析与审核 → 定稿。导入和恢复不会自动启动付费模型。	Original text → candidate version → explicit analysis and review → final. Import and restore do not automatically start paid models.
+请选择项目	Select a project
+导入作品	Import manuscript
+UTF-8 TXT／Markdown 或未加密、以 XHTML 正文为主的 EPUB。最多 1000 章，每章 1 MiB；请检查识别出的标题和章节顺序。	UTF-8 TXT/Markdown or unencrypted text-based EPUB with XHTML content. Up to 1,000 chapters, 1 MiB each. Check detected titles and chapter order.
+正文文件	Manuscript file
+暂存并检查章节	Stage file and inspect chapters
+{p0} · {p1}/{p2} 已导入	{p0} · {p1}/{p2} imported
+上一批记录	Previous batch
+下一批记录	Next batch
+{p0}：{p1}/{p2} 候选已保存；{p3} 章已分析。	{p0}: {p1}/{p2} candidates saved; {p3} chapters analyzed.
+继续导入候选（不调用模型）	Continue importing candidates (no model call)
+继续分析（调用模型）	Continue analysis (calls a model)
+当前步骤后暂停	Pause after current step
+我确认使用已配置的模型分析原文，可能产生费用。	I confirm analysis of the original text using configured models; charges may apply.
+尚未配置分析模型；仍可保存候选版本。	No analysis model configured; candidate versions can still be saved.
+版本	Version
+查看、审核与定稿	Inspect, review and finalize
+导出有效定稿	Export valid finals
+只导出连续、提交完整且与章节文件同步的 Final。不会把候选稿混入成品。	Exports only consecutive, fully committed finals synchronized with chapter files. Draft candidates are never included.	只导出连续、提交完整且与章节文件同步的定稿，不会把候选稿混入成品。
+格式	Format
+Markdown	Markdown
+TXT	TXT
+EPUB	EPUB
+从第	From
+章	chapter
+至第	To
+章（0 为全部）	chapter (0 for all)
+导出定稿	Export finals
+项目备份与格式迁移	Project backup and format migration
+备份包含正文、版本、事实、资料和导入进度，不包含模型配置、凭据、工作区任务、日志和旧备份。正文中的敏感内容不会自动脱敏。	Backups include text, versions, facts, resources and import progress, but exclude model configuration, credentials, workspace jobs, logs and old backups. Sensitive manuscript content is not automatically redacted.
+下载项目备份	Download project backup
+备份并迁移项目格式	Back up and migrate project format
+下载迁移前备份	Download pre-migration backup
+从备份恢复	Restore from backup
+保留原项目 ID，恢复到新目录。同 ID 项目已存在时拒绝覆盖；请在另一个工作区恢复。未完成任务不会自动复活。	Preserves the original project ID and restores into a new directory. Existing IDs cannot be overwritten; use another workspace. Unfinished jobs are not automatically resumed.
+项目 ZIP 备份	Project ZIP backup
+验证并恢复到新目录	Validate and restore into a new directory
+操作失败，请查看项目状态。	Operation failed. Check project status.
+正文文件上限为 32 MiB。	Manuscript files must not exceed 32 MiB.
+原文已暂存。继续导入只创建候选版本，不调用模型、不自动接受。	Original text staged. Continuing import creates candidates only; it does not call models or accept them automatically.
+已在当前步骤结束后暂停；可以继续。	Paused after the current step; ready to continue.
+本轮处理完成。分析完成不等于已接受或已定稿。	This processing pass is complete. Analysis does not imply acceptance or finalization.
+备份文件上限为 64 MiB。	Backup files must not exceed 64 MiB.
+已恢复项目。模型凭据需要重新配置；没有自动恢复写作任务。	Project restored. Reconfigure model credentials; writing jobs were not automatically resumed.
+迁移完成，原状态备份已保留。	Migration complete; the pre-migration backup was retained.
+项目格式和数据库已是当前版本。	Project format and database are already current.
+来自持久化 SSE Event Repository 的实时与重放事件。	Live and replayed events from the persistent event repository.	来自持久化事件仓库的实时与重放事件。
+尚无事件	No events yet
+连接成功后，服务器与项目事件会出现在这里。	Server and project events appear here after connection.
+project {p0}	项目 {p0}
+来自 Go 运行时模型注册表的真实窗口和价格元数据。	Context limits and pricing metadata from the Go runtime model registry.
+provider、model 或名称	Provider, model or name	服务商、模型标识或名称
+搜索模型	Search models
+筛选	Filter
+没有匹配模型	No matching models
+Provider	服务商
+Model	模型
+上下文	Context window
+最大输出	Maximum output
+输入 / 1M	Input / 1M tokens	输入／百万词元
+输出 / 1M	Output / 1M tokens	输出／百万词元
+模型列表加载失败	Failed to load model list
+六步向导创建真实项目并保存非敏感 Foundation 请求，不伪装 Autopilot 已运行。	Create a project and save its foundation request in six steps. Start automatic writing separately.	六步创建项目并保存创作基础规划请求，自动创作需另外启动。
+创建步骤	Creation steps
+打开章节页	Open chapters
+打开 Autopilot	Open automatic writing	打开自动创作
+题材	Genre
+东方玄幻 / 科幻 / 悬疑	Fantasy / science fiction / mystery
+语言	Manuscript language	创作语言
+简体中文	Simplified Chinese
+繁体中文	Traditional Chinese
+English	英语
+目标字数	Target text count
+目标章节	Target chapters
+每章字数	Text count per chapter
+核心创意	Core idea
+主角、目标、阻力、独特设定与终局方向	Protagonist, goals, obstacles, unique premise and ending direction
+风格要求	Style requirements
+视角、节奏、语言密度、对白比例、禁用模式	POV, pacing, language density, dialogue balance and prohibited patterns
+Architect	创作规划模型
+使用项目配置	Use project configuration
+Writer	写作模型
+没有可用模型元数据。请先检查 Models 页面和本地配置。	No model metadata available. Check the Models page and local configuration first.	没有可用模型元数据，请先检查模型页面和本地配置。
+协作模式	Collaboration mode
+Copilot	人机协作
+Autopilot（创建后单独启动）	Automatic writing (start separately after creation)	自动创作（创建后单独启动）
+审阅策略	Review policy
+每章审阅	Review every chapter
+每 N 章审阅	Review every N chapters
+全自动请求	Fully automatic
+审阅间隔	Review interval
+确认 Foundation 请求	Confirm foundation request	确认创作基础规划请求
+规模	Scale
+{p0} 章 / {p1} 字	{p0} chapters / {p1} characters
+模式	Mode
+审阅	Review
+提交会创建真实项目并保存 Foundation 请求；随后在 Autopilot 页面启动、暂停、停止或继续；不会在提交向导时自动产生模型费用。	Submitting creates a project and saves its foundation request. Start, pause, stop or continue on the automatic writing page. Submitting the wizard does not incur model charges.	提交会创建项目并保存创作基础规划请求；随后可在自动创作页面启动、暂停、停止或继续，提交向导不会自动产生模型费用。
+上一步	Previous step
+下一步	Next step
+提交中…	Submitting…
+创建项目并保存请求	Create project and save request
+基础信息	Basic information
+写作风格	Writing style
+模型配置	Model configuration
+自动化	Automation
+确认请求	Confirm request
+项目“{p0}”已创建；Foundation 请求 {p1} 已安全保存。尚未开始模型调用；请到 Autopilot 页面明确启动任务。	Project “{p0}” created; foundation request {p1} saved. No model calls started. Explicitly start a job on the automatic writing page.	项目“{p0}”已创建，创作基础规划请求 {p1} 已保存。尚未开始模型调用，请到自动创作页面明确启动任务。
+向导提交失败	Failed to submit wizard
+项目已创建，但 Foundation 请求失败：{p0}	Project created, but its foundation request failed: {p0}	项目已创建，但创作基础规划请求失败：{p0}
+标题不能为空	Title is required
+目标字数至少为 1000	Target text count must be at least 1,000
+目标章节至少为 1	At least one target chapter is required
+每章字数至少为 100	Text count per chapter must be at least 100
+请填写核心创意	Enter the core idea
+审阅间隔必须为 1 到 100 章	Review interval must be between 1 and 100 chapters
+Phase 12	运行诊断
+Diagnostics & Cost	诊断与费用
+实际请求尝试、未知费用与本地重放分开记录。价格表估算不是服务商最终账单。	Actual request attempts, unknown costs and local replays are tracked separately. Price-table estimates are not final provider bills.
+导出脱敏诊断	Export redacted diagnostics
+已知费用小计	Known cost subtotal
+未知费用 {p0} 次；执行中 {p1} 次	{p0} unknown-cost attempts; {p1} in progress
+实际尝试	Actual attempts
+成功 {p0} / 失败或未知结束 {p1}	Succeeded {p0} / failed or unknown outcome {p1}
+返回用量（不含未知）	Reported usage (excludes unknown)
+{p0} 次没有返回用量	{p0} attempts without reported usage
+项目级缓存重放	Project cache replays
+未单独追踪的旧逻辑调用 {p0}；不会补算为零费用	{p0} legacy calls not individually tracked; never assumed to be free
+待处理问题	Issues requiring attention
+当前限定检查未发现待处理项，不等于全项目验收通过。	No issues found by the current limited checks. This is not full project acceptance.
+打开任务	Open job
+章节 {p0} 版本	Chapter {p0} versions
+服务商观察状态	Observed provider health
+只依据已记录的请求，不自动发起连通性或付费探测。	Based only on recorded requests; no automatic connectivity or paid probes.
+· {p0} · 连续失败 {p1} {p2}	· {p0} · consecutive failures {p1} {p2}
+手动暂停	Manually paused
+· 冷却至 {p0}	· Cooling down until {p0}
+预算、模型价格和保护配置	Budgets, model prices and safeguards
+编辑基于修订 {p0}。任务运行中须先暂停；保存不自动恢复任务。预算与次数为 0 表示不启用该上限，手动章节操作归入 manual 范围。	Editing revision {p0}. Pause running jobs first; saving does not resume them. Zero budgets/counts disable that limit. Manual chapter operations use the manual scope.	编辑基于修订 {p0}。任务运行中须先暂停，保存不会自动恢复任务。预算与次数为 0 表示不启用该上限，手动章节操作归入手动操作范围。
+币种（已有调用后不可更改）	Currency (cannot change after calls exist)
+项目预算（币种单位）	Project budget (currency units)
+每任务预算	Budget per job
+项目尝试次数上限	Maximum project attempts
+每任务尝试次数上限	Maximum attempts per job
+单次最大输出 Token	Maximum output tokens per call	单次最大输出词元数
+输入估算上限（非计费用量）	Input estimate limit (not billed usage)
+连续失败触发阈值	Consecutive failure threshold
+冷却秒数	Cooldown seconds
+暂停的服务商别名（逗号分隔）	Paused provider aliases (comma-separated)
+缺少单价时阻止请求	Block requests when prices are missing
+存在未知费用时暂停（启用金额预算时始终生效）	Pause for unknown costs (always enforced with monetary budgets)
+精确模型价格表	Exact model price table
+与模型配置中的服务商别名、模型 ID 完全匹配。输入单位为微币种／百万 Token：例如 1 USD／百万 Token 填 1000000；显式填 0 才表示免费。当前不单独折算缓存及其他服务商特殊计费。	Match the configured provider alias and model ID exactly. Enter micro-currency units per million tokens: for USD 1 per million tokens, enter 1000000. Only an explicit 0 means free. Cache-specific and other special provider pricing are not calculated separately.	需与模型配置中的服务商别名及模型 ID 完全匹配。单位为微币种／百万词元：例如每百万词元 1 美元填 1000000；显式填 0 才表示免费。当前不单独折算缓存及其他特殊计费。
+服务商 {p0}	Provider {p0}
+provider alias	服务商别名
+模型 {p0}	Model {p0}
+model id	模型 ID
+输入单价 {p0}	Input price {p0}
+输出单价 {p0}	Output price {p0}
+移除	Remove
+添加价格	Add price
+保存预算和价格	Save budgets and prices
+放弃编辑并载入最新修订	Discard edits and load latest revision
+角色与模型汇总	Role and model summary
+角色	Role
+服务商 / 模型	Provider / model
+次数	Count
+已知费用	Known cost
+未知费用	Unknown cost
+任务 ID 筛选	Filter by job ID
+任务 ID 或 manual	Job ID or manual
+章节筛选	Filter by chapter
+筛选（章节 0 为全部）	Filter (chapter 0 for all)
+时间 / 章节	Time / chapter
+业务请求	Logical request
+角色 / 模型	Role / model
+返回用量	Reported usage
+费用	Cost
+处理	Action
+第 {p0} 章	Chapter {p0}
+未知	Unknown
+核对费用	Reconcile cost
+明确对账未知请求	Reconcile an unknown-cost request
+先暂停任务并确认请求不再执行。对账会保留原记录，不会把未知用量改成零。填写本次核对的费用，不确定时不要确认。	Pause the job and confirm the request has stopped. Reconciliation retains the original record and does not turn unknown usage into zero. Enter the verified cost; do not confirm an uncertain amount.
+本次费用（{p0}）	Cost for this attempt ({p0})
+已核对服务商记录，确认该金额	I checked the provider record and confirm this amount
+记录人工对账	Record manual reconciliation
+取消	Cancel
+配置已保存；历史价格快照不会被改写。	Settings saved; historical price snapshots are unchanged.
+已记录人工对账，原始未知记录保留在修改历史中。	Manual reconciliation recorded; the original unknown-cost record remains in the audit history.
+创建、打开、归档和安全复制均连接真实 Project API。	Create, open, archive and safely duplicate projects using the local service.	通过本地服务创建、打开、归档和安全复制项目。
+搜索标题或简介	Search title or synopsis
+搜索项目	Search projects
+搜索	Search
+没有匹配项目	No matching projects
+修改搜索条件或创建新项目。	Change the search terms or create a new project.
+{p0} 字 · {p1}/{p2} 章	{p0} characters · {p1}/{p2} chapters
+处理中…	Processing…
+取消归档	Unarchive
+归档	Archive
+安全复制	Safe duplicate
+移入回收站	Move to trash
+无法加载项目	Failed to load projects
+项目已恢复	Project unarchived
+项目已归档	Project archived
+项目状态更新失败	Failed to update project status
+副本已创建，敏感配置未复制	Copy created without sensitive configuration
+复制失败	Failed to duplicate project
+输入项目名称“{p0}”或项目 ID 以移入回收站	Enter project title “{p0}” or its ID to move it to trash
+项目已移入 Workspace 私有回收站	Project moved to the workspace's private trash	项目已移入工作区私有回收站
+删除失败	Deletion failed
+管理视图明确区分“权威真相”和“角色知识”。Planner/Writer 边界接口不会泄露未授权 Truth。	The management view separates authoritative truth from character knowledge. Planning/writing context never exposes unauthorized truth.	管理视图区分权威真相与角色知识，规划与写作上下文不会泄露未授权的真相。
+Create Secret	创建秘密
+Authority truth	权威真相
+Add Chapter-N Holder	添加知情角色及起始章节
+选择 Secret	Select a secret	选择秘密
+角色 / entity ID	Character / entity ID	角色或实体 ID
+Chapter-N authority and holder ranges	截至所选章节的真相与知情范围
+Secret 是独立模型，不等同于 Foreshadow。	Secrets are independent of foreshadows.	秘密独立管理，不等同于伏笔。
+尚无 Secret	No secrets yet	尚无秘密
+Authority truth · management only	权威真相（仅供管理）
+Knowledge holders at Chapter {p0}	第 {p0} 章的知情角色
+No role-bound holder at this chapter.	本章尚无已记录的知情角色。
+无法加载秘密台账	Failed to load the secret ledger
+Secret 已写入权威管理视图	Secret saved to the authoritative management view	秘密已写入权威管理视图
+创建 Secret 失败	Failed to create secret	创建秘密失败
+{p0} 已在 Chapter {p1} 公开	{p0} revealed publicly in chapter {p1}	{p0} 已在第 {p1} 章公开
+公开 Secret 失败	Failed to reveal secret	公开秘密失败
+Holder 时态范围已添加	Holder's knowledge range added	已添加知情角色的时态范围
+添加 Holder 失败	Failed to add holder	添加知情角色失败
+无法加载 Secrets 页面	Failed to load secrets	无法加载秘密页面
+Create private Secret	创建未公开秘密
+Add from Chapter {p0}	从第 {p0} 章起添加知情关系
+PUBLIC	已公开
+PRIVATE	未公开
+Truth hidden by this response policy	当前响应策略隐藏了真相
+Revealing…	公开中…
+Public Reveal	公开秘密
+仅展示安全的运行设置；Provider Secret 不进入 Web API 或浏览器存储。	Shows safe runtime settings only. Provider secrets never enter the Web API or browser storage.	仅展示安全的运行设置，服务商密钥不进入网页接口或浏览器存储。
+外观	Appearance
+Light	浅色
+Dark	深色
+主题只保存浏览器偏好，不保存凭据或权威项目状态。	The theme is a browser preference only; it stores no credentials or authoritative project state.
+本地服务	Local service
+Workspace	工作区
+Version	版本
+API	API
+Listen	监听地址
+Loopback only	仅限本机访问
+Body limit	请求大小上限
+{p0} bytes	{p0} 字节
+Capabilities	服务能力
+设置加载失败	Failed to load settings
+yes	是
+no	否
+true	是
+false	否
+界面语言	Interface language
+语言仅改变界面，不改变作品、未保存编辑或任务，也不调用模型。	Interface language does not change manuscripts, unsaved edits or jobs, and does not call models.
+NovelForge Workspace	NovelForge 工作台
+NovelForge local long-form fiction workspace	NovelForge 本地长篇小说创作工作台
