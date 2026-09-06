@@ -296,7 +296,7 @@ python scripts/verify.py --mode scale
 - [Quality Gate](docs/QUALITY_GATE.md) — 语义检查与质量门禁
 - [Narrative Ledger](docs/NARRATIVE_LEDGER.md) — 伏笔与秘密边界
 - [Context Compiler](docs/CONTEXT_COMPILER.md) — 上下文选择与预算
-- [Chapter Versions](docs/CHAPTER_VERSION.md) — 章节版本与定稿
+- [Chapter Versions](docs/CHAPTER_VERSIONS.md) — 章节版本与定稿
 - [Autopilot](docs/AUTOPILOT.md) — 可恢复连续创作
 - [Authoring systems](docs/AUTHORING.md) — Skills、风格、资料和规则
 - [Lifecycle](docs/LIFECYCLE.md) — 导入、导出、备份与恢复
