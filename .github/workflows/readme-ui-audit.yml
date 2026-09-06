@@ -49,7 +49,6 @@ jobs:
           mkdir -p "$WORKSPACE" docs/assets/ui
           "$RUNNER_TEMP/novelforge" server --workspace "$WORKSPACE" --host 127.0.0.1 --port 48090 --no-autopilot >"$RUNNER_TEMP/server.log" 2>&1 &
           SERVER_PID=$!
-          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           for i in $(seq 1 50); do
             if curl -fsS "$AUDIT_BASE/api/health" >"$RUNNER_TEMP/health.json"; then break; fi
             sleep .2
@@ -68,46 +67,107 @@ jobs:
           test -n "$PROJECT_ID"
           CHROME="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)"
           test -n "$CHROME"
+          "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --hide-scrollbars \
+            --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --remote-allow-origins='*' \
+            --user-data-dir="$RUNNER_TEMP/chrome-profile" about:blank >"$RUNNER_TEMP/chrome.log" 2>&1 &
+          CHROME_PID=$!
+          trap 'kill "$CHROME_PID" "$SERVER_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:9222/json/version >/dev/null; then break; fi
+            sleep .2
+          done
+          curl -fsS http://127.0.0.1:9222/json/version >/dev/null
 
-          render() {
-            name="$1"; url="$2"; heading="$3"; loaded="$4"
-            dom="$RUNNER_TEMP/${name}.html"
-            profile="$RUNNER_TEMP/chrome-${name}"
-            "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --hide-scrollbars \
-              --window-size=1440,960 --virtual-time-budget=3500 --user-data-dir="$profile" --dump-dom "$url" >"$dom" 2>"$RUNNER_TEMP/${name}.chrome.log"
-            grep -F "$heading" "$dom" >/dev/null
-            grep -F "$loaded" "$dom" >/dev/null
-            grep -F '雾港纪事' "$dom" >/dev/null
-            if grep -F 'alert-error' "$dom" >/dev/null; then
-              echo "unexpected error alert on $name" >&2
-              cat "$dom" >&2
-              exit 1
-            fi
-            rm -rf "$profile"
-            "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --hide-scrollbars \
-              --window-size=1440,960 --virtual-time-budget=3500 --user-data-dir="$profile" \
-              --screenshot="$GITHUB_WORKSPACE/docs/assets/ui/${name}.png" "$url" >/dev/null 2>"$RUNNER_TEMP/${name}.shot.log"
-            test -s "$GITHUB_WORKSPACE/docs/assets/ui/${name}.png"
-            rm -rf "$profile"
+          cat > "$RUNNER_TEMP/ui-audit.mjs" <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const base = process.env.AUDIT_BASE;
+          const projectId = process.env.PROJECT_ID;
+          const out = path.resolve('docs/assets/ui');
+          fs.mkdirSync(out, {recursive:true});
+
+          function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+          async function render(name, hash, heading, loaded) {
+            const url = `${base}/${hash}`;
+            const target = await fetch(`http://127.0.0.1:9222/json/new?${encodeURIComponent(url)}`, {method:'PUT'}).then(async r => {
+              if (!r.ok) throw new Error(`new target ${r.status}: ${await r.text()}`);
+              return r.json();
+            });
+            const ws = new WebSocket(target.webSocketDebuggerUrl);
+            let nextId = 0;
+            const pending = new Map();
+            const badResponses = [];
+            const exceptions = [];
+            ws.onmessage = (event) => {
+              const msg = JSON.parse(event.data);
+              if (msg.id && pending.has(msg.id)) {
+                const {resolve,reject} = pending.get(msg.id); pending.delete(msg.id);
+                if (msg.error) reject(new Error(JSON.stringify(msg.error))); else resolve(msg.result);
+                return;
+              }
+              if (msg.method === 'Network.responseReceived' && msg.params?.response?.status >= 500) badResponses.push(`${msg.params.response.status} ${msg.params.response.url}`);
+              if (msg.method === 'Runtime.exceptionThrown') exceptions.push(msg.params?.exceptionDetails?.text || 'runtime exception');
+            };
+            await new Promise((resolve,reject) => { ws.onopen=resolve; ws.onerror=reject; });
+            const call = (method, params={}) => new Promise((resolve,reject) => {
+              const id=++nextId; pending.set(id,{resolve,reject}); ws.send(JSON.stringify({id,method,params}));
+            });
+            await call('Page.enable'); await call('Runtime.enable'); await call('Network.enable');
+            await call('Emulation.setDeviceMetricsOverride',{width:1440,height:960,deviceScaleFactor:1,mobile:false});
+            await call('Page.navigate',{url});
+            let body='';
+            for (let i=0;i<50;i++) {
+              await sleep(160);
+              try {
+                const result=await call('Runtime.evaluate',{expression:'document.body ? document.body.innerText : ""',returnByValue:true});
+                body=result?.result?.value || '';
+                if (body.includes(heading) && body.includes(loaded) && body.includes('雾港纪事')) break;
+              } catch {}
+            }
+            if (!body.includes(heading)) throw new Error(`${name}: missing heading ${heading}`);
+            if (!body.includes(loaded)) throw new Error(`${name}: missing loaded marker ${loaded}`);
+            if (!body.includes('雾港纪事')) throw new Error(`${name}: backend project not rendered`);
+            const alertResult=await call('Runtime.evaluate',{expression:'Array.from(document.querySelectorAll(".alert-error")).map(e=>e.innerText)',returnByValue:true});
+            const alerts=alertResult?.result?.value || [];
+            if (alerts.length) throw new Error(`${name}: error alert ${alerts.join(' | ')}`);
+            if (badResponses.length) throw new Error(`${name}: backend 5xx ${badResponses.join(' | ')}`);
+            if (exceptions.length) throw new Error(`${name}: browser exception ${exceptions.join(' | ')}`);
+            const shot=await call('Page.captureScreenshot',{format:'png',fromSurface:true,captureBeyondViewport:false});
+            fs.writeFileSync(path.join(out,`${name}.png`),Buffer.from(shot.data,'base64'));
+            await call('Target.closeTarget',{targetId:target.id}).catch(()=>{});
+            ws.close();
+            return {name, heading, loaded, error_alerts:0, backend_5xx:0, browser_exceptions:0};
           }
 
-          render dashboard "$AUDIT_BASE/#/dashboard" '创作总览' '最近项目'
-          render autopilot "$AUDIT_BASE/#/autopilot?project=$PROJECT_ID" 'Autopilot' '尚无任务'
-          render authoring "$AUDIT_BASE/#/authoring?project=$PROJECT_ID" 'Skills · 风格库 · 资料库' '项目资源修订'
-          render diagnostics "$AUDIT_BASE/#/observability?project=$PROJECT_ID" 'Diagnostics & Cost' '已知费用小计'
-          render lifecycle "$AUDIT_BASE/#/lifecycle?project=$PROJECT_ID" '导入、导出与备份' '导入作品'
+          const pages=[];
+          pages.push(await render('dashboard','#/dashboard','创作总览','最近项目'));
+          pages.push(await render('autopilot',`#/autopilot?project=${projectId}`,'Autopilot','尚无任务'));
+          pages.push(await render('authoring',`#/authoring?project=${projectId}`,'Skills · 风格库 · 资料库','项目资源修订'));
+          pages.push(await render('diagnostics',`#/observability?project=${projectId}`,'Diagnostics & Cost','已知费用小计'));
+          pages.push(await render('lifecycle',`#/lifecycle?project=${projectId}`,'导入、导出与备份','导入作品'));
+          fs.writeFileSync(path.join(out,'browser-pages.json'),JSON.stringify(pages,null,2));
+          console.log(JSON.stringify(pages));
+          NODE
+          PROJECT_ID="$PROJECT_ID" timeout 90s node "$RUNNER_TEMP/ui-audit.mjs"
+          test -s docs/assets/ui/dashboard.png
+          test -s docs/assets/ui/autopilot.png
+          test -s docs/assets/ui/authoring.png
+          test -s docs/assets/ui/diagnostics.png
+          test -s docs/assets/ui/lifecycle.png
 
           python - <<'PY'
           import json, os, subprocess
           temp=os.environ['RUNNER_TEMP']
           with open(temp+'/health.json', encoding='utf-8') as f: health=json.load(f)
           with open(temp+'/project.json', encoding='utf-8') as f: project=json.load(f)
+          with open('docs/assets/ui/browser-pages.json', encoding='utf-8') as f: pages=json.load(f)
           report={
             'source_commit': subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
             'health': {'status': health['status'], 'api_version': health['api_version'], 'product': health['product']},
             'project_title': project['title'],
-            'pages': ['dashboard','autopilot','authoring','diagnostics','lifecycle'],
-            'page_contract': 'Each page rendered in system Chrome against the real embedded Go server, showed the created project and a page-specific backend-loaded marker, with no rendered alert-error.',
+            'pages': pages,
+            'page_contract': 'Five production Web routes rendered in real Chrome against the real embedded Go server, each showing the created backend project and a page-specific loaded marker with no alert-error, browser exception, or HTTP 5xx observed by the page session.',
             'frontend_checks': {'svelte_errors': 0, 'svelte_warnings': 0, 'focused_test_files': 5, 'focused_tests': 9, 'vite_reproducible': True},
             'model_calls': 0,
             'scope_note': 'Model-backed generation and Phase 13B full/platform/scale acceptance were not run.'
@@ -115,6 +175,7 @@ jobs:
           with open('docs/assets/ui/compatibility.json','w',encoding='utf-8') as f: json.dump(report,f,ensure_ascii=False,indent=2)
           print(json.dumps(report,ensure_ascii=False))
           PY
+          rm docs/assets/ui/browser-pages.json
       - name: Commit audited screenshots only
         run: |
           git add docs/assets/ui/dashboard.png docs/assets/ui/autopilot.png docs/assets/ui/authoring.png docs/assets/ui/diagnostics.png docs/assets/ui/lifecycle.png docs/assets/ui/compatibility.json
