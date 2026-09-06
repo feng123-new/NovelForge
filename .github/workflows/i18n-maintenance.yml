@@ -4,6 +4,9 @@ on:
     branches: [feat/web-i18n-rc2]
 permissions:
   contents: write
+concurrency:
+  group: bilingual-maintenance
+  cancel-in-progress: false
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -20,32 +23,31 @@ jobs:
         with:
           go-version-file: go.mod
       - run: npm ci --prefix web
-      - name: Inventory or apply reviewed migration
+      - name: Apply reviewed locale migration
         run: |
-          if test -f web/localize.mjs; then
-            node web/localize.mjs
-            npm run check --prefix web
-            npm run test --prefix web -- src/tests/i18n.test.ts src/tests/i18n-pages.test.ts
-            npm run build --prefix web
-            CGO_ENABLED=0 go build -o /tmp/novelforge ./cmd/novelforge
-            if test -f scripts/i18n-browser.mjs; then node scripts/i18n-browser.mjs /tmp/novelforge; fi
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add web docs scripts
-            if ! git diff --cached --quiet; then git commit -m 'feat: materialize and verify complete bilingual workspace'; git push origin HEAD:feat/web-i18n-rc2; fi
-          else
-            node --input-type=module <<'JS'
-          import {parse} from './web/node_modules/svelte/compiler/index.js';
-          import fs from 'node:fs';
-          const paths=['web/src/App.svelte',...fs.readdirSync('web/src/pages').filter(x=>x.endsWith('.svelte')).map(x=>'web/src/pages/'+x)];
-          for(const path of paths){
-            const source=fs.readFileSync(path,'utf8'),a=parse(source),out=[];
-            function walk(n){if(!n||typeof n!=='object')return;
-              if(n.type==='Text'&&/[a-zA-Z\u3400-\u9fff]/.test(n.data))out.push(['text',n.data.trim()]);
-              if(n.type==='Literal'&&typeof n.value==='string'&&/[\u3400-\u9fff]/.test(n.value))out.push(['literal',n.value]);
-              if(n.type==='TemplateLiteral'&&n.quasis.some(q=>/[\u3400-\u9fff]/.test(q.value.raw)))out.push(['template',source.slice(n.start,n.end)]);
-              for(const [k,v]of Object.entries(n)){if(['start','end','loc'].includes(k))continue;if(Array.isArray(v))v.forEach(walk);else walk(v);}
-            }walk(a); console.log('INVENTORY '+path+' '+JSON.stringify(out));
-          }
-          JS
+          node web/prepare-i18n.mjs
+          node web/localize.mjs
+      - name: Check types and focused bilingual invariants
+        run: |
+          npm run check --prefix web
+          npm run test:i18n --prefix web
+      - name: Build embedded production assets
+        run: |
+          npm run build --prefix web
+          CGO_ENABLED=0 go build -o /tmp/novelforge ./cmd/novelforge
+      - name: Real browser bilingual audit
+        run: |
+          if test -f scripts/i18n-browser.mjs; then
+            sudo apt-get update -qq
+            sudo apt-get install -y fonts-noto-cjk >/dev/null
+            node scripts/i18n-browser.mjs /tmp/novelforge
+          fi
+      - name: Record reviewed source and generated assets on this branch only
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web docs scripts
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat: materialize and verify complete bilingual workspace'
+            git push origin HEAD:feat/web-i18n-rc2
           fi
