@@ -58,7 +58,7 @@ jobs:
           name: bilingual-evidence
           path: verification-results/i18n
           if-no-files-found: ignore
-      - name: Prepare documented, clean candidate source after all gates pass
+      - name: Prepare clean candidate content after all gates pass
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -84,10 +84,24 @@ jobs:
           p.write_text(re.sub(r'## Web 工作台实机预览[\s\S]*?## NovelForge 解决什么问题',section,p.read_text()))
           PY
           node web/finish-i18n.mjs finalize
-          python3 -m py_compile scripts/package_candidate.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/package_candidate.py')
+          compile(p.read_text(),str(p),'exec')
+          PY
+          mkdir -p /tmp/reviewed-workflows
+          cp .github/workflows/candidate.yml .github/workflows/i18n.yml /tmp/reviewed-workflows/
+          # The Actions token commits application content only. Workflow changes
+          # are separately applied through the authorized repository connection.
+          git restore --source=HEAD -- .github/workflows/candidate.yml .github/workflows/i18n-maintenance.yml
+          rm .github/workflows/i18n.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A -- .github README.md README.en.md web docs scripts
+          git add -A -- README.md README.en.md web docs scripts
           git diff --cached --stat
-          git commit -m 'feat: ship verified bilingual Web workspace and clean rc.2 delivery preparation'
+          git commit -m 'feat: ship verified bilingual Web content and rc.2 documentation'
           git push origin HEAD:feat/web-i18n-rc2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-workflows
+          path: /tmp/reviewed-workflows
