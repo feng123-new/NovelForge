@@ -29,39 +29,24 @@ jobs:
           node web/localize.mjs
           node web/post-i18n.mjs
           python3 web/review-i18n.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('web/finish-i18n.mjs')
+          p.write_text(p.read_text().replace(chr(36)+'{{ github.', '\\'+chr(36)+'{{ github.'))
+          PY
+          node web/finish-i18n.mjs
       - name: Build isolated review worktree
         run: |
           npm run build --prefix web
           mkdir -p /tmp/i18n-native
           CGO_ENABLED=0 go build -o /tmp/i18n-native/novelforge ./cmd/novelforge
-          tar --exclude=.git --exclude=verification-results -I 'gzip -1' -cf /tmp/bilingual-worktree.tar.gz -C "$GITHUB_WORKSPACE" . -C /tmp/i18n-native novelforge
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bilingual-worktree
-          path: /tmp/bilingual-worktree.tar.gz
-          retention-days: 3
       - name: Check types and focused bilingual invariants
         run: |
           npm run check:i18n --prefix web
           npm run check --prefix web -- --fail-on-warnings
           npm run test:i18n --prefix web
       - name: Affected page and wizard regression tests
-        run: |
-          set +e
-          cd web
-          npm test -- src/pages src/lib/wizard.test.ts --reporter=json --outputFile=/tmp/ui-tests.json >/tmp/ui-tests.log 2>&1
-          status=$?
-          python3 - <<'PY'
-          import json
-          p=json.load(open('/tmp/ui-tests.json'))
-          print('AFFECTED_UI_RESULTS', p['numPassedTests'], 'passed;',p['numFailedTests'],'failed')
-          for suite in p['testResults']:
-            for test in suite['assertionResults']:
-              if test['status']=='failed':
-                print('FAILED',suite['name'],test['fullName'])
-                for message in test['failureMessages']: print(message.split('Ignored nodes:')[0][:2500])
-          PY
-          exit $status
+        run: npm test --prefix web -- src/pages src/lib/wizard.test.ts
       - name: Real browser bilingual audit
         run: |
           sudo apt-get update -qq
@@ -71,17 +56,38 @@ jobs:
         if: always()
         with:
           name: bilingual-evidence
-          path: |
-            verification-results/i18n
-            /tmp/ui-tests.json
-            /tmp/ui-tests.log
+          path: verification-results/i18n
           if-no-files-found: ignore
-      - name: Record reviewed source and generated assets on this branch only
+      - name: Prepare documented, clean candidate source after all gates pass
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil,re
+          for language in ['zh-CN','en']:
+            shutil.copyfile(f'verification-results/i18n/dashboard-{language}.png', f'docs/assets/ui/dashboard-{language}.png')
+          p=Path('README.md')
+          section='''## Web 工作台实机预览
+
+          下图为本次中英双语审计中，真实嵌入式 Go 服务与 Chrome 的截图，不是设计稿。审计使用独立测试项目，不配置或调用付费模型。
+
+          ### 简体中文
+
+          ![中文工作台](docs/assets/ui/dashboard-zh-CN.png)
+
+          ### English
+
+          ![English workspace](docs/assets/ui/dashboard-en.png)
+
+          全部 14 个页面的 28 个语言视图和编辑状态保留检查见 [本次预发布说明](docs/releases/v0.1.0-rc.2.md)。这不是长篇规模或真实模型文学质量验收。
+
+          ## NovelForge 解决什么问题'''
+          p.write_text(re.sub(r'## Web 工作台实机预览[\s\S]*?## NovelForge 解决什么问题',section,p.read_text()))
+          PY
+          node web/finish-i18n.mjs finalize
+          python3 -m py_compile scripts/package_candidate.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add web docs scripts
-          if ! git diff --cached --quiet; then
-            git commit -m 'feat: materialize and verify complete bilingual workspace'
-            git push origin HEAD:feat/web-i18n-rc2
-          fi
+          git add -A -- .github README.md README.en.md web docs scripts
+          git diff --cached --stat
+          git commit -m 'feat: ship verified bilingual Web workspace and clean rc.2 delivery preparation'
+          git push origin HEAD:feat/web-i18n-rc2
