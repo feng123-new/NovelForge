@@ -1,0 +1,51 @@
+name: Web bilingual maintenance
+on:
+  push:
+    branches: [feat/web-i18n-rc2]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/web-i18n-rc2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: npm ci --prefix web
+      - name: Inventory or apply reviewed migration
+        run: |
+          if test -f web/localize.mjs; then
+            node web/localize.mjs
+            npm run check --prefix web
+            npm run test --prefix web -- src/tests/i18n.test.ts src/tests/i18n-pages.test.ts
+            npm run build --prefix web
+            CGO_ENABLED=0 go build -o /tmp/novelforge ./cmd/novelforge
+            if test -f scripts/i18n-browser.mjs; then node scripts/i18n-browser.mjs /tmp/novelforge; fi
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add web docs scripts
+            if ! git diff --cached --quiet; then git commit -m 'feat: materialize and verify complete bilingual workspace'; git push origin HEAD:feat/web-i18n-rc2; fi
+          else
+            node --input-type=module <<'JS'
+          import {parse} from './web/node_modules/svelte/compiler/index.js';
+          import fs from 'node:fs';
+          const paths=['web/src/App.svelte',...fs.readdirSync('web/src/pages').filter(x=>x.endsWith('.svelte')).map(x=>'web/src/pages/'+x)];
+          for(const path of paths){
+            const source=fs.readFileSync(path,'utf8'),a=parse(source),out=[];
+            function walk(n){if(!n||typeof n!=='object')return;
+              if(n.type==='Text'&&/[a-zA-Z\u3400-\u9fff]/.test(n.data))out.push(['text',n.data.trim()]);
+              if(n.type==='Literal'&&typeof n.value==='string'&&/[\u3400-\u9fff]/.test(n.value))out.push(['literal',n.value]);
+              if(n.type==='TemplateLiteral'&&n.quasis.some(q=>/[\u3400-\u9fff]/.test(q.value.raw)))out.push(['template',source.slice(n.start,n.end)]);
+              for(const [k,v]of Object.entries(n)){if(['start','end','loc'].includes(k))continue;if(Array.isArray(v))v.forEach(walk);else walk(v);}
+            }walk(a); console.log('INVENTORY '+path+' '+JSON.stringify(out));
+          }
+          JS
+          fi
